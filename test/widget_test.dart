@@ -1,14 +1,20 @@
+\
+import 'package:ceh/models/session.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:qbook/main.dart';
 
 void main() {
-  testWidgets('QBook launches', (WidgetTester tester) async {
-    await tester.pumpWidget(const QBookApp());
+  test('CEH user role is parsed from login JSON', () {
+    final user = CehUser.fromJson({
+      'id': 1,
+      'full_name': 'CEH Admin',
+      'email': 'admin@example.com',
+      'phone': null,
+      'role': 'ADMIN',
+      'is_active': true,
+    });
 
-    // Allow the initial UI to render without waiting indefinitely
-    // for every animation/timer to settle.
-    await tester.pump(const Duration(seconds: 1));
-
-    expect(find.text('QBook'), findsWidgets);
+    expect(user.id, 1);
+    expect(user.isAdmin, true);
+    expect(user.isActive, true);
   });
 }
