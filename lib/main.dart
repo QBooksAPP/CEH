@@ -31,9 +31,16 @@ class _CehAppState extends State<CehApp> {
   }
 
   Future<void> _restoreSession() async {
-    final session = await _sessionStore.load();
+    CehSession? session;
+
+    try {
+      session = await _sessionStore.load();
+    } catch (_) {
+      session = null;
+    }
 
     if (!mounted) return;
+
     setState(() {
       _session = session;
       _loading = false;
@@ -41,14 +48,21 @@ class _CehAppState extends State<CehApp> {
   }
 
   Future<void> _onLoggedIn(CehSession session) async {
-    await _sessionStore.save(session);
+    if (mounted) {
+      setState(() => _session = session);
+    }
 
-    if (!mounted) return;
-    setState(() => _session = session);
+    try {
+      await _sessionStore.save(session);
+    } catch (_) {
+      // Keep the user logged in for this app session.
+    }
   }
 
   Future<void> _logout() async {
-    await _sessionStore.clear();
+    try {
+      await _sessionStore.clear();
+    } catch (_) {}
 
     if (!mounted) return;
     setState(() => _session = null);

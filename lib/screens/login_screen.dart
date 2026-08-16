@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
@@ -43,12 +46,27 @@ class _LoginScreenState extends State<LoginScreen> {
         case 'UNAUTHORIZED':
           return 'Your session is not authorised.';
         case 'INVALID_SERVER_RESPONSE':
-          return 'CEH could not read the server response.';
+          return 'CEH reached the server, but the response could not be read.';
+        case 'INVALID_LOGIN_RESPONSE':
+          return 'CEH reached the server, but the login response was incomplete.';
         default:
           return 'Login failed (${error.code}).';
       }
     }
-    return 'Could not connect to the CEH server. Check your internet connection and try again.';
+
+    if (error is SocketException) {
+      return 'Network error: ${error.message}';
+    }
+
+    if (error is HandshakeException) {
+      return 'Secure connection error: ${error.message}';
+    }
+
+    if (error is TimeoutException) {
+      return 'The CEH server did not respond within 20 seconds.';
+    }
+
+    return 'CEH login error: ${error.runtimeType}: $error';
   }
 
   Future<void> _login() async {
@@ -71,7 +89,9 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       setState(() => _error = _friendlyError(error));
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -160,7 +180,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               controller: _password,
                               obscureText: _obscure,
                               textInputAction: TextInputAction.done,
-                              onFieldSubmitted: (_) => _loading ? null : _login(),
+                              onFieldSubmitted: (_) {
+                                if (!_loading) _login();
+                              },
                               decoration: InputDecoration(
                                 labelText: 'Password',
                                 prefixIcon: const Icon(Icons.lock_outline),
@@ -191,7 +213,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   color: Colors.red.shade50,
                                   borderRadius: BorderRadius.circular(12),
                                 ),
-                                child: Text(
+                                child: SelectableText(
                                   _error!,
                                   style: TextStyle(
                                     color: Colors.red.shade800,
