@@ -1,4 +1,3 @@
-\
 import 'package:ceh/models/session.dart';
 import 'package:flutter_test/flutter_test.dart';
 

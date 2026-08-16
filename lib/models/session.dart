@@ -1,4 +1,3 @@
-\
 class CehUser {
   const CehUser({
     required this.id,
