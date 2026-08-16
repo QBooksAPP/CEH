@@ -1,15 +1,16 @@
-name: qbook
-description: QBook mobile reference generator for Concrete Equipment Hire Limited.
+name: ceh
+description: CEH company operations mobile app for Concrete Equipment Hire Limited.
 publish_to: "none"
-version: 0.1.0+1
+version: 0.2.0+2
 
 environment:
-  sdk: ">=3.3.0 <4.0.0"
+  sdk: ">=3.4.0 <4.0.0"
 
 dependencies:
   flutter:
     sdk: flutter
-  shared_preferences: ^2.5.3
+  http: ^1.6.0
+  flutter_secure_storage: ^10.3.1
 
 dev_dependencies:
   flutter_test:
