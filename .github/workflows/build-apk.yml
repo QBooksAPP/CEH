@@ -1,4 +1,4 @@
-name: Build QBook APK
+name: Build CEH APK
 
 on:
   push:
@@ -27,7 +27,20 @@ jobs:
           cache: true
 
       - name: Generate Android project files
-        run: flutter create --platforms=android --org=com.concreteequipmenthire --project-name=qbook .
+        run: flutter create --platforms=android --org=com.concreteequipmenthire --project-name=ceh .
+
+      - name: Configure Android app
+        shell: bash
+        run: |
+          if [ -f android/app/build.gradle.kts ]; then
+            sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 23/' android/app/build.gradle.kts || true
+          fi
+          if [ -f android/app/build.gradle ]; then
+            sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' android/app/build.gradle || true
+          fi
+          if [ -f android/app/src/main/AndroidManifest.xml ]; then
+            sed -i 's/android:label="ceh"/android:label="CEH"/' android/app/src/main/AndroidManifest.xml || true
+          fi
 
       - name: Get packages
         run: flutter pub get
@@ -35,16 +48,18 @@ jobs:
       - name: Analyze
         run: flutter analyze
 
+      - name: Test
+        run: flutter test
 
       - name: Build release APK
         run: flutter build apk --release
 
       - name: Rename APK
-        run: cp build/app/outputs/flutter-apk/app-release.apk QBook.apk
+        run: cp build/app/outputs/flutter-apk/app-release.apk CEH.apk
 
-      - name: Upload QBook APK
+      - name: Upload CEH APK
         uses: actions/upload-artifact@v4
         with:
-          name: QBook-Android
-          path: QBook.apk
+          name: CEH-Android
+          path: CEH.apk
           retention-days: 30
