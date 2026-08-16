@@ -15,7 +15,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -38,9 +38,30 @@ jobs:
           if [ -f android/app/build.gradle ]; then
             sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' android/app/build.gradle || true
           fi
-          if [ -f android/app/src/main/AndroidManifest.xml ]; then
-            sed -i 's/android:label="ceh"/android:label="CEH"/' android/app/src/main/AndroidManifest.xml || true
-          fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          text = manifest.read_text()
+
+          permissions = [
+              '<uses-permission android:name="android.permission.INTERNET" />',
+              '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />',
+          ]
+
+          insert = ""
+          for permission in permissions:
+              if permission not in text:
+                  insert += f"    {permission}\n"
+
+          if insert:
+              marker = "<application"
+              text = text.replace(marker, insert + "    " + marker, 1)
+
+          text = text.replace('android:label="ceh"', 'android:label="CEH"')
+          manifest.write_text(text)
+          PY
 
       - name: Get packages
         run: flutter pub get
