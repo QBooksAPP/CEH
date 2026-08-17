@@ -1,7 +1,7 @@
 name: ceh
 description: CEH company operations mobile app for Concrete Equipment Hire Limited.
 publish_to: "none"
-version: 0.2.0+2
+version: 0.3.0+1
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -11,6 +11,8 @@ dependencies:
     sdk: flutter
   http: ^1.6.0
   flutter_secure_storage: ^10.3.1
+  package_info_plus: ^8.3.1
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:

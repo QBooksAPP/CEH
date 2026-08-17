@@ -6,6 +6,9 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -32,13 +35,6 @@ jobs:
       - name: Configure Android app
         shell: bash
         run: |
-          if [ -f android/app/build.gradle.kts ]; then
-            sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 23/' android/app/build.gradle.kts || true
-          fi
-          if [ -f android/app/build.gradle ]; then
-            sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' android/app/build.gradle || true
-          fi
-
           python3 - <<'PY'
           from pathlib import Path
 
@@ -56,12 +52,77 @@ jobs:
                   insert += f"    {permission}\n"
 
           if insert:
-              marker = "<application"
-              text = text.replace(marker, insert + "    " + marker, 1)
+              text = text.replace("<application", insert + "    <application", 1)
 
           text = text.replace('android:label="ceh"', 'android:label="CEH"')
           manifest.write_text(text)
+
+          gradle = Path("android/app/build.gradle.kts")
+          g = gradle.read_text()
+
+          if "import java.util.Properties" not in g:
+              g = (
+                  "import java.util.Properties\n"
+                  "import java.io.FileInputStream\n\n"
+                  + g
+              )
+
+          marker = "android {"
+          setup = '''val keystoreProperties = Properties()
+          val keystorePropertiesFile = rootProject.file("key.properties")
+          if (keystorePropertiesFile.exists()) {
+              keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+          }
+
+          '''
+          if "val keystoreProperties = Properties()" not in g:
+              g = g.replace(marker, setup + marker, 1)
+
+          signing = '''    signingConfigs {
+              create("release") {
+                  keyAlias = keystoreProperties["keyAlias"] as String
+                  keyPassword = keystoreProperties["keyPassword"] as String
+                  storeFile = keystoreProperties["storeFile"]?.let { file(it) }
+                  storePassword = keystoreProperties["storePassword"] as String
+              }
+          }
+
+          '''
+          if 'create("release")' not in g:
+              g = g.replace("    buildTypes {", signing + "    buildTypes {", 1)
+
+          g = g.replace(
+              'signingConfig = signingConfigs.getByName("debug")',
+              'signingConfig = signingConfigs.getByName("release")'
+          )
+          g = g.replace(
+              "minSdk = flutter.minSdkVersion",
+              "minSdk = 23"
+          )
+          gradle.write_text(g)
           PY
+
+      - name: Configure permanent CEH signing key
+        shell: bash
+        env:
+          CEH_KEYSTORE_BASE64: ${{ secrets.CEH_KEYSTORE_BASE64 }}
+          CEH_KEYSTORE_PASSWORD: ${{ secrets.CEH_KEYSTORE_PASSWORD }}
+          CEH_KEY_PASSWORD: ${{ secrets.CEH_KEY_PASSWORD }}
+          CEH_KEY_ALIAS: ${{ secrets.CEH_KEY_ALIAS }}
+        run: |
+          if [ -z "$CEH_KEYSTORE_BASE64" ] || [ -z "$CEH_KEYSTORE_PASSWORD" ] || [ -z "$CEH_KEY_PASSWORD" ] || [ -z "$CEH_KEY_ALIAS" ]; then
+            echo "CEH signing secrets are missing."
+            exit 1
+          fi
+
+          echo "$CEH_KEYSTORE_BASE64" | base64 --decode > android/app/ceh-release.jks
+
+          cat > android/key.properties <<EOF
+          storePassword=$CEH_KEYSTORE_PASSWORD
+          keyPassword=$CEH_KEY_PASSWORD
+          keyAlias=$CEH_KEY_ALIAS
+          storeFile=ceh-release.jks
+          EOF
 
       - name: Get packages
         run: flutter pub get
@@ -72,15 +133,32 @@ jobs:
       - name: Test
         run: flutter test
 
-      - name: Build release APK
-        run: flutter build apk --release
+      - name: Build signed release APK
+        run: flutter build apk --release --build-number=${{ github.run_number }}
 
       - name: Rename APK
         run: cp build/app/outputs/flutter-apk/app-release.apk CEH.apk
 
-      - name: Upload CEH APK
+      - name: Upload CEH APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: CEH-Android
           path: CEH.apk
           retention-days: 30
+
+      - name: Publish direct CEH update
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="build-${{ github.run_number }}"
+          TITLE="CEH Build #${{ github.run_number }}"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" CEH.apk --clobber
+          else
+            gh release create "$TAG" CEH.apk \
+              --title "$TITLE" \
+              --notes "Automatic CEH Android build #${{ github.run_number }}." \
+              --latest
+          fi
