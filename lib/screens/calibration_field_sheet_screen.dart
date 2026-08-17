@@ -107,18 +107,34 @@ class _CalibrationFieldSheetScreenState
         .toList();
     if (valid.isEmpty) return {'trials': 0, 'kgpc': 0};
 
-    final aw = valid.map((t) => n(t.weight)).reduce((a, b) => a + b) /
-        valid.length;
-    final ac = valid.map((t) => n(t.counts)).reduce((a, b) => a + b) /
-        valid.length;
-    double net = aw;
-    if (name.startsWith('Stone')) {
-      net = (aw - n(_container)) / (1 + n(_stoneMoisture) / 100);
+    final avgCounts =
+        valid.map((t) => n(t.counts)).reduce((a, b) => a + b) / valid.length;
+
+    final netTrialWeights = valid.map((t) {
+      double net = n(t.weight) - n(_container);
+
+      if (name.startsWith('Stone')) {
+        net = net / (1 + n(_stoneMoisture) / 100);
+      } else if (name.startsWith('Sand')) {
+        net = net / (1 + n(_sandMoisture) / 100);
+      }
+
+      return net;
+    }).toList();
+
+    final avgNetWeight =
+        netTrialWeights.reduce((a, b) => a + b) / netTrialWeights.length;
+
+    double kgPerCount = avgCounts > 0 ? avgNetWeight / avgCounts : 0;
+
+    if (name.startsWith('Cement')) {
+      kgPerCount = kgPerCount * (1 + n(_cementSafety) / 100);
     }
-    if (name.startsWith('Sand')) {
-      net = (aw - n(_container)) / (1 + n(_sandMoisture) / 100);
-    }
-    return {'trials': valid.length.toDouble(), 'kgpc': ac > 0 ? net / ac : 0};
+
+    return {
+      'trials': valid.length.toDouble(),
+      'kgpc': kgPerCount,
+    };
   }
 
   Map<String, dynamic> _draftPayload() {
@@ -195,7 +211,6 @@ class _CalibrationFieldSheetScreenState
       if (mounted) setState(() => _saving = false);
     }
   }
-
 
   Future<void> _submitCalibration() async {
     if (_calibrationId == null) {
