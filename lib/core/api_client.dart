@@ -140,20 +140,20 @@ class CehApiClient {
     return data;
   }
 
-  Future<List<Map<String, dynamic>>> pendingCalibrations(
+  Future<List<Map<String, dynamic>>> adminCalibrations(
     CehSession session,
   ) async {
     final response = await http.get(
-      Uri.parse('$baseUrl/calibration_pending.php'),
+      Uri.parse('$baseUrl/calibration_admin_list.php'),
       headers: authHeaders(session),
-    ).timeout(const Duration(seconds: 20));
+    ).timeout(const Duration(seconds: 25));
 
     final data = _decodeObject(response);
     if (response.statusCode < 200 ||
         response.statusCode >= 300 ||
         data['ok'] != true) {
       throw ApiException(
-        (data['error'] ?? 'CALIBRATION_PENDING_FAILED').toString(),
+        (data['error'] ?? 'CALIBRATION_ADMIN_LIST_FAILED').toString(),
         statusCode: response.statusCode,
       );
     }
@@ -187,6 +187,35 @@ class CehApiClient {
         data['ok'] != true) {
       throw ApiException(
         (data['error'] ?? 'CALIBRATION_REVIEW_FAILED').toString(),
+        statusCode: response.statusCode,
+      );
+    }
+    return data;
+  }
+
+  Future<Map<String, dynamic>> reopenCalibration(
+    CehSession session, {
+    required int calibrationId,
+    String reason = 'Reopened by Admin',
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/calibration_reopen.php'),
+      headers: {
+        ...authHeaders(session),
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: jsonEncode({
+        'calibration_id': calibrationId,
+        'reason': reason,
+      }),
+    ).timeout(const Duration(seconds: 25));
+
+    final data = _decodeObject(response);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        data['ok'] != true) {
+      throw ApiException(
+        (data['error'] ?? 'CALIBRATION_REOPEN_FAILED').toString(),
         statusCode: response.statusCode,
       );
     }
