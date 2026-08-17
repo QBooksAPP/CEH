@@ -294,7 +294,7 @@ class _CalibrationFieldSheetScreenState
               child: Column(children: [
                 if (_mixers.isNotEmpty)
                   DropdownButtonFormField<String>(
-                    value: _mixers.any(
+                    initialValue: _mixers.any(
                             (m) => m['code'].toString() == _mixer.text.trim())
                         ? _mixer.text.trim()
                         : null,
