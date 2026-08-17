@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/session.dart';
 import 'calibration_field_sheet_screen.dart';
+import 'calibration_review_screen.dart';
 import 'module_placeholder_screen.dart';
 
 class ConcreteOperationsScreen extends StatelessWidget {
@@ -20,7 +21,13 @@ class ConcreteOperationsScreen extends StatelessWidget {
           }),
           _tile(context, admin ? 'Calibration Review' : 'Calibration Data',
               admin ? 'Approve or reject submitted calibrations' : 'View submitted calibration data',
-              Icons.analytics_outlined, () => _placeholder(context, admin ? 'Calibration Review' : 'Calibration Data')),
+              Icons.analytics_outlined, () {
+                if (admin) {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => CalibrationReviewScreen(session: session)));
+                } else {
+                  _placeholder(context, 'Calibration Data');
+                }
+              }),
           _tile(context, 'Mix Designs', admin ? 'Create and manage mix designs' : 'View active mix designs',
               Icons.science_outlined, () => _placeholder(context, 'Mix Designs')),
           _tile(context, 'Mix Design Settings', 'Approved production settings', Icons.tune_outlined,

@@ -109,6 +109,90 @@ class CehApiClient {
     return data;
   }
 
+
+  Future<Map<String, dynamic>> submitCalibration(
+    CehSession session,
+    int calibrationId,
+  ) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/calibration_submit.php'),
+      headers: {
+        ...authHeaders(session),
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: jsonEncode({'calibration_id': calibrationId}),
+    ).timeout(const Duration(seconds: 25));
+
+    final data = _decodeObject(response);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        data['ok'] != true) {
+      final missing = (data['missing'] as List?)
+          ?.map((e) => e.toString())
+          .join(', ');
+      throw ApiException(
+        missing == null || missing.isEmpty
+            ? (data['error'] ?? 'CALIBRATION_SUBMIT_FAILED').toString()
+            : '${data['error']}: $missing',
+        statusCode: response.statusCode,
+      );
+    }
+    return data;
+  }
+
+  Future<List<Map<String, dynamic>>> pendingCalibrations(
+    CehSession session,
+  ) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/calibration_pending.php'),
+      headers: authHeaders(session),
+    ).timeout(const Duration(seconds: 20));
+
+    final data = _decodeObject(response);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        data['ok'] != true) {
+      throw ApiException(
+        (data['error'] ?? 'CALIBRATION_PENDING_FAILED').toString(),
+        statusCode: response.statusCode,
+      );
+    }
+    return (data['calibrations'] as List? ?? const [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> reviewCalibration(
+    CehSession session, {
+    required int calibrationId,
+    required String action,
+    String reason = '',
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/calibration_review.php'),
+      headers: {
+        ...authHeaders(session),
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: jsonEncode({
+        'calibration_id': calibrationId,
+        'action': action,
+        'reason': reason,
+      }),
+    ).timeout(const Duration(seconds: 25));
+
+    final data = _decodeObject(response);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        data['ok'] != true) {
+      throw ApiException(
+        (data['error'] ?? 'CALIBRATION_REVIEW_FAILED').toString(),
+        statusCode: response.statusCode,
+      );
+    }
+    return data;
+  }
+
   Map<String, dynamic> _decodeObject(http.Response response) {
     try {
       return Map<String, dynamic>.from(jsonDecode(response.body) as Map);

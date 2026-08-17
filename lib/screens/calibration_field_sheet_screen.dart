@@ -24,6 +24,8 @@ class _CalibrationFieldSheetScreenState
   late DateTime _date;
   int? _calibrationId;
   bool _saving = false;
+  bool _submitting = false;
+  bool _submitted = false;
   bool _loadingMixers = false;
   List<Map<String, dynamic>> _mixers = [];
 
@@ -194,6 +196,58 @@ class _CalibrationFieldSheetScreenState
     }
   }
 
+
+  Future<void> _submitCalibration() async {
+    if (_calibrationId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Save the calibration draft first.')),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Submit calibration?'),
+        content: const Text(
+          'After submission the operator cannot edit this calibration. '
+          'It will be sent to CEH Admin for approval.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Submit'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _submitting = true);
+    try {
+      await _api.submitCalibration(widget.session, _calibrationId!);
+      if (!mounted) return;
+      setState(() => _submitted = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Calibration submitted for Admin approval.'),
+        ),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not submit: ${e.code}')),
+      );
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
   void preview() {
     showModalBottomSheet(
       context: context,
@@ -294,7 +348,7 @@ class _CalibrationFieldSheetScreenState
               child: Column(children: [
                 if (_mixers.isNotEmpty)
                   DropdownButtonFormField<String>(
-                    initialValue: _mixers.any(
+                    value: _mixers.any(
                             (m) => m['code'].toString() == _mixer.text.trim())
                         ? _mixer.text.trim()
                         : null,
@@ -411,7 +465,7 @@ class _CalibrationFieldSheetScreenState
           trialCard('Sand 11 cm'),
           const SizedBox(height: 16),
           OutlinedButton.icon(
-            onPressed: _saving ? null : _saveDraft,
+            onPressed: (_saving || _submitted) ? null : _saveDraft,
             icon: _saving
                 ? const SizedBox(
                     width: 18,
@@ -423,6 +477,25 @@ class _CalibrationFieldSheetScreenState
               child: Text(_calibrationId == null
                   ? 'Save Draft'
                   : 'Save Draft #$_calibrationId'),
+            ),
+          ),
+          const SizedBox(height: 10),
+          FilledButton.icon(
+            onPressed: (_calibrationId == null || _submitting || _submitted)
+                ? null
+                : _submitCalibration,
+            icon: _submitting
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(_submitted ? Icons.lock : Icons.send_outlined),
+            label: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child: Text(
+                _submitted ? 'Submitted — Locked' : 'Submit Calibration',
+              ),
             ),
           ),
           const SizedBox(height: 10),
