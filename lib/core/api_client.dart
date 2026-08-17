@@ -222,6 +222,29 @@ class CehApiClient {
     return data;
   }
 
+  Future<List<Map<String, dynamic>>> approvedCalibrations(
+    CehSession session,
+  ) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/calibration_data.php'),
+      headers: authHeaders(session),
+    ).timeout(const Duration(seconds: 25));
+
+    final data = _decodeObject(response);
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        data['ok'] != true) {
+      throw ApiException(
+        (data['error'] ?? 'CALIBRATION_DATA_FAILED').toString(),
+        statusCode: response.statusCode,
+      );
+    }
+
+    return (data['calibrations'] as List? ?? const [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+  }
+
   Map<String, dynamic> _decodeObject(http.Response response) {
     try {
       return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
