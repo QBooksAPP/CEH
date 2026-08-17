@@ -130,9 +130,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'CEH',
-          style: TextStyle(fontWeight: FontWeight.w900),
+        title: Image.asset(
+          'assets/images/ceh_logo.png',
+          height: 34,
+          fit: BoxFit.contain,
         ),
         actions: [
           IconButton(
