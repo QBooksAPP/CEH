@@ -180,33 +180,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Icon(
-                      Icons.system_update,
-                      size: 34,
-                      color: CehTheme.blue,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'CEH update available',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w900,
-                              fontSize: 16,
-                            ),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(
+                          Icons.system_update,
+                          size: 34,
+                          color: CehTheme.blue,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'CEH update available',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                'Build ${_update!.buildNumber} is ready.',
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 3),
-                          Text('Build ${_update!.buildNumber} is ready.'),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                    FilledButton(
+                    const SizedBox(height: 14),
+                    FilledButton.icon(
                       onPressed: _downloadUpdate,
-                      child: const Text('Update'),
+                      icon: const Icon(Icons.download),
+                      label: const Text('Update now'),
                     ),
                   ],
                 ),
