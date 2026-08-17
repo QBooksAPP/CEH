@@ -128,7 +128,7 @@ class _CalibrationFieldSheetScreenState
     double kgPerCount = avgCounts > 0 ? avgNetWeight / avgCounts : 0;
 
     if (name.startsWith('Cement')) {
-      kgPerCount = kgPerCount * (1 + n(_cementSafety) / 100);
+      kgPerCount = kgPerCount * (1 - n(_cementSafety) / 100);
     }
 
     return {
