@@ -4,10 +4,16 @@ import '../core/api_client.dart';
 import '../core/internal_navigation.dart';
 import '../core/calibration_math.dart';
 import '../models/session.dart';
+import '../models/calibration_record.dart';
 
 class CalibrationFieldSheetScreen extends StatefulWidget {
-  const CalibrationFieldSheetScreen({super.key, required this.session});
+  const CalibrationFieldSheetScreen({
+    super.key,
+    required this.session,
+    this.calibration,
+  });
   final CehSession session;
+  final CalibrationRecord? calibration;
 
   @override
   State<CalibrationFieldSheetScreen> createState() =>
@@ -46,7 +52,45 @@ class _CalibrationFieldSheetScreenState
   void initState() {
     super.initState();
     _date = DateTime.now();
+    _populateCalibration();
     _loadMixers();
+  }
+
+  void _populateCalibration() {
+    final record = widget.calibration;
+    if (record == null) return;
+    _calibrationId = record.id;
+    final mixer = record.mixer;
+    _mixer.text = '${mixer['code'] ?? ''}';
+    _notes.text = record.notes;
+    _container.text = '${record.containerWeightKg}';
+    _stoneMoisture.text = '${record.stoneMoisturePct}';
+    _sandMoisture.text = '${record.sandMoisturePct}';
+    _cementSafety.text = '${record.cementSafetyFactorPct}';
+    _date = DateTime.tryParse(record.calibrationDate) ?? _date;
+
+    for (final trial in record.trials) {
+      final material = '${trial['material']}';
+      final gate = (trial['gate_cm'] as num?)?.round();
+      final group = material == 'CEMENT_FULL'
+          ? 'Cement FULL'
+          : material == 'CEMENT_HALF'
+              ? 'Cement HALF'
+              : material == 'STONE'
+                  ? 'Stone $gate cm'
+                  : material == 'SAND'
+                      ? 'Sand $gate cm'
+                      : null;
+      final index = ((trial['trial_no'] as num?)?.toInt() ?? 0) - 1;
+      if (group == null ||
+          !trials.containsKey(group) ||
+          index < 0 ||
+          index >= 6) {
+        continue;
+      }
+      trials[group]![index].weight.text = '${trial['total_weight_kg'] ?? ''}';
+      trials[group]![index].counts.text = '${trial['counts'] ?? ''}';
+    }
   }
 
   @override
@@ -350,7 +394,10 @@ class _CalibrationFieldSheetScreenState
     return Scaffold(
       appBar: AppBar(
         actions: cehHomeAction(context),
-        title: const Text('Calibration Field Sheet',
+        title: Text(
+            _calibrationId == null
+                ? 'Calibration Field Sheet'
+                : 'Edit Calibration #$_calibrationId',
             style: TextStyle(fontWeight: FontWeight.w900)),
       ),
       body: ListView(

@@ -167,81 +167,117 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
                     label: const Text('Preview Settings')),
                 if (r != null) ...[
                   const SizedBox(height: 16),
-                  Card(
-                      child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(children: [
-                            _line('Mixer',
-                                r.mixer['code'] ?? r.mixer['name'] ?? ''),
-                            _line('Mix Design', r.mixDesign['name'] ?? ''),
-                            _line('Mode', r.mixDesign['design_mode'] ?? ''),
-                            _line('Production rate',
-                                r.productionRate.toStringAsFixed(2), ' m³/min'),
-                            _line('Approx. time per 1.0 m³',
-                                r.minutesPerM3.toStringAsFixed(2), ' min'),
-                            _line('Cement target', r.mix['cement_kg'] ?? 0,
-                                ' kg/m³'),
-                            _line(
-                                'Cement FULL calibration',
-                                r.settings['cement_kg_per_count'] ?? '—',
-                                ' kg/count'),
-                            _line('Required cement counts',
-                                r.settings['counts_per_m3'] ?? '—', '/m³'),
-                            _line(
-                                'Sand target', r.mix['sand_kg'] ?? 0, ' kg/m³'),
-                            _line(
-                                'Sand target/count',
-                                r.settings['sand_target_kg_per_count'] ?? '—',
-                                ' kg/count'),
-                            _line('Sand gate',
-                                r.settings['sand_gate_cm'] ?? '—', ' cm'),
-                            _line('Granite target', r.mix['granite_kg'] ?? 0,
-                                ' kg/m³'),
-                            _line(
-                                'Granite target/count',
-                                r.settings['granite_target_kg_per_count'] ??
-                                    '—',
-                                ' kg/count'),
-                            _line('Granite gate',
-                                r.settings['granite_gate_cm'] ?? '—', ' cm'),
-                            _line(
-                                'Design water', r.mix['water_l'] ?? 0, ' L/m³'),
-                            _line(
-                                'Additional water',
-                                r.settings['additional_water_l'] ?? '—',
-                                ' L/m³'),
-                            _line('Water flow',
-                                r.settings['water_flow_lpm'] ?? '—', ' L/min'),
-                          ]))),
-                  for (final a in r.admixtures)
+                  if (widget.session.user.isAdmin) ...[
                     Card(
                         child: Padding(
                             padding: const EdgeInsets.all(16),
-                            child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('${a['name']}',
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.w900)),
-                                  _line(
-                                      'Dosage',
-                                      a['dosage_l_per_100kg'] ?? '—',
-                                      ' L/100 kg cement'),
-                                  _line('Cement', a['cement_kg_per_m3'] ?? '—',
-                                      ' kg/m³'),
-                                  _line('Admixture requirement',
-                                      a['admixture_l_per_m3'] ?? '—', ' L/m³'),
-                                  _line('Dilution factor',
-                                      a['dilution_factor'] ?? '—'),
-                                  _line('Pure flow', a['pure_flow_lpm'] ?? '—',
-                                      ' L/min'),
-                                  _line(
-                                      'Metered flow',
-                                      a['metered_flow_lpm'] ??
-                                          a['flow_lpm'] ??
-                                          '—',
-                                      ' L/min')
-                                ]))),
+                            child: Column(children: [
+                              _line('Mixer',
+                                  r.mixer['code'] ?? r.mixer['name'] ?? ''),
+                              _line('Mix Design', r.mixDesign['name'] ?? ''),
+                              _line('Mode', r.mixDesign['design_mode'] ?? ''),
+                              _line(
+                                  'Production rate',
+                                  r.productionRate.toStringAsFixed(2),
+                                  ' m³/min'),
+                              _line('Approx. time per 1.0 m³',
+                                  r.minutesPerM3.toStringAsFixed(2), ' min'),
+                              _line('Cement target', r.mix['cement_kg'] ?? 0,
+                                  ' kg/m³'),
+                              _line(
+                                  'Cement FULL calibration',
+                                  r.settings['cement_kg_per_count'] ?? '—',
+                                  ' kg/count'),
+                              _line('Required cement counts',
+                                  r.settings['counts_per_m3'] ?? '—', '/m³'),
+                              _line('Sand target', r.mix['sand_kg'] ?? 0,
+                                  ' kg/m³'),
+                              _line(
+                                  'Sand target/count',
+                                  r.settings['sand_target_kg_per_count'] ?? '—',
+                                  ' kg/count'),
+                              _line('Sand gate',
+                                  r.settings['sand_gate_cm'] ?? '—', ' cm'),
+                              _line('Granite target', r.mix['granite_kg'] ?? 0,
+                                  ' kg/m³'),
+                              _line(
+                                  'Granite target/count',
+                                  r.settings['granite_target_kg_per_count'] ??
+                                      '—',
+                                  ' kg/count'),
+                              _line('Granite gate',
+                                  r.settings['granite_gate_cm'] ?? '—', ' cm'),
+                              _line('Design water', r.mix['water_l'] ?? 0,
+                                  ' L/m³'),
+                              _line(
+                                  'Additional water',
+                                  r.settings['additional_water_l'] ?? '—',
+                                  ' L/m³'),
+                              _line(
+                                  'Water flow',
+                                  r.settings['water_flow_lpm'] ?? '—',
+                                  ' L/min'),
+                            ]))),
+                    for (final a in r.admixtures)
+                      Card(
+                          child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('${a['name']}',
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w900)),
+                                    _line(
+                                        'Dosage',
+                                        a['dosage_l_per_100kg'] ?? '—',
+                                        ' L/100 kg cement'),
+                                    _line('Cement',
+                                        a['cement_kg_per_m3'] ?? '—', ' kg/m³'),
+                                    _line(
+                                        'Admixture requirement',
+                                        a['admixture_l_per_m3'] ?? '—',
+                                        ' L/m³'),
+                                    _line('Dilution factor',
+                                        a['dilution_factor'] ?? '—'),
+                                    _line('Pure flow',
+                                        a['pure_flow_lpm'] ?? '—', ' L/min'),
+                                    _line(
+                                        'Metered flow',
+                                        a['metered_flow_lpm'] ??
+                                            a['flow_lpm'] ??
+                                            '—',
+                                        ' L/min')
+                                  ]))),
+                  ] else ...[
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(children: [
+                          _line('Mixer',
+                              r.mixer['code'] ?? r.mixer['name'] ?? ''),
+                          _line('Mix Design', r.mixDesign['name'] ?? ''),
+                          _line('Production Rate',
+                              r.productionRate.toStringAsFixed(2), ' m³/min'),
+                          _line('Cement Target', r.mix['cement_kg'] ?? 0,
+                              ' kg/m³'),
+                          _line('Counts', r.settings['counts_per_m3'] ?? '—'),
+                          _line('Sand Gate Opening',
+                              r.settings['sand_gate_cm'] ?? '—', ' cm'),
+                          _line('Stone / Granite Gate Opening',
+                              r.settings['granite_gate_cm'] ?? '—', ' cm'),
+                          _line('Water Flow Rate',
+                              r.settings['water_flow_lpm'] ?? '—', ' L/min'),
+                          for (final a in r.admixtures)
+                            _line(
+                              'Admixture Flow Rate — ${a['name']}',
+                              a['metered_flow_lpm'] ?? a['flow_lpm'] ?? '—',
+                              ' L/min',
+                            ),
+                        ]),
+                      ),
+                    ),
+                  ],
                   FilledButton.icon(
                       onPressed:
                           _busy || r.saved ? null : () => _calculate(true),

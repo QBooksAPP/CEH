@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../models/mix_design.dart';
+import '../models/calibration_record.dart';
 import '../models/production_settings.dart';
 import '../models/session.dart';
 
@@ -137,6 +138,23 @@ class CehApiClient {
       );
     }
     return data;
+  }
+
+  Future<List<CalibrationRecord>> calibrationRecords(
+    CehSession session,
+  ) async {
+    final response = await http
+        .get(
+          Uri.parse('$baseUrl/calibration_records.php'),
+          headers: authHeaders(session),
+        )
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'CALIBRATION_RECORDS_FAILED');
+    return (data['calibrations'] as List? ?? const [])
+        .map((e) =>
+            CalibrationRecord.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
   }
 
   Future<List<Map<String, dynamic>>> adminCalibrations(

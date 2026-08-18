@@ -5,6 +5,7 @@ import '../models/session.dart';
 import 'calibration_data_screen.dart';
 import 'calibration_field_sheet_screen.dart';
 import 'calibration_review_screen.dart';
+import 'calibration_records_screen.dart';
 import 'mix_designs_screen.dart';
 import 'mix_design_settings_screen.dart';
 
@@ -39,6 +40,17 @@ class ConcreteOperationsScreen extends StatelessWidget {
                 ),
               );
             },
+          ),
+          _tile(
+            context,
+            'My Calibrations',
+            'View, correct and resubmit your calibration records',
+            Icons.history_outlined,
+            () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) =>
+                        CalibrationRecordsScreen(session: session))),
           ),
           _tile(
             context,

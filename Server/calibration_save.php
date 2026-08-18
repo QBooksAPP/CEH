@@ -79,12 +79,16 @@ try {
              SET mixer_id=?, calibration_date=?, calibration_notes=?,
                  container_weight_kg=?, stone_moisture_pct=?, sand_moisture_pct=?,
                  cement_safety_factor_pct=?, status='DRAFT',
-                 reviewed_by=NULL, reviewed_at=NULL, rejection_reason=NULL
+                 submitted_at=NULL, reviewed_by=NULL, reviewed_at=NULL,
+                 rejection_reason=NULL,
+                 revision_no=revision_no + ?
              WHERE id=?"
         );
         $stmt->execute([
             $mixerId, $date, $notes, $container, $stoneMoisture,
-            $sandMoisture, $cementSafety, $id
+            $sandMoisture, $cementSafety,
+            (string)$existing['status'] === 'REJECTED' ? 1 : 0,
+            $id
         ]);
     } else {
         $stmt = $db->prepare(
