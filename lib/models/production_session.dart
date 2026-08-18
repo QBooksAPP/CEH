@@ -108,8 +108,11 @@ String displayProductionTime(String? value) {
 
 String? validateSignoff(
     {required String representativeName, required bool hasSignature}) {
-  if (representativeName.trim().isEmpty)
+  if (representativeName.trim().isEmpty) {
     return 'Client representative name is required.';
-  if (!hasSignature) return 'Client representative signature is required.';
+  }
+  if (!hasSignature) {
+    return 'Client representative signature is required.';
+  }
   return null;
 }
