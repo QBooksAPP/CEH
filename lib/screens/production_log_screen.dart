@@ -36,11 +36,12 @@ class _ProductionLogScreenState extends State<ProductionLogScreen> {
     try {
       final value = await _api.productionSessions(widget.session,
           status: _status == 'ALL' ? null : _status);
-      if (mounted)
+      if (mounted) {
         setState(() {
           _items = value;
           _busy = false;
         });
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _busy = false);
@@ -180,11 +181,12 @@ class _StartProductionSessionScreenState
   Future<void> _loadMixers() async {
     try {
       final value = await _api.mixers(widget.session);
-      if (mounted)
+      if (mounted) {
         setState(() {
           _mixers = value;
           _busy = false;
         });
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _busy = false);
@@ -309,11 +311,12 @@ class _ProductionSessionScreenState extends State<ProductionSessionScreen> {
   Future<void> _load() async {
     try {
       final v = await _api.productionSession(widget.session, widget.sessionId);
-      if (mounted)
+      if (mounted) {
         setState(() {
           _record = v;
           _busy = false;
         });
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _busy = false);
@@ -354,11 +357,12 @@ class _ProductionSessionScreenState extends State<ProductionSessionScreen> {
       try {
         final v = await _api.saveProductionLoad(widget.session,
             sessionId: widget.sessionId, loadId: load?.id, volumeM3: value);
-        if (mounted)
+        if (mounted) {
           setState(() {
             _record = v;
             _busy = false;
           });
+        }
       } catch (e) {
         if (mounted) {
           setState(() => _busy = false);
@@ -642,8 +646,9 @@ class _SignaturePainter extends CustomPainter {
       ..strokeWidth = 3
       ..strokeCap = StrokeCap.round;
     for (var i = 0; i < points.length - 1; i++) {
-      if (points[i] != null && points[i + 1] != null)
+      if (points[i] != null && points[i + 1] != null) {
         canvas.drawLine(points[i]!, points[i + 1]!, paint);
+      }
     }
   }
 
