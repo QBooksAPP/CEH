@@ -37,7 +37,7 @@ class MixAdmixture {
   const MixAdmixture({
     required this.id,
     required this.name,
-    required this.dosageCcPer100Kg,
+    required this.dosageLitresPer100Kg,
     required this.dilutionFactor,
     required this.sortOrder,
     required this.isActive,
@@ -47,7 +47,7 @@ class MixAdmixture {
   final int id;
   final int? mixDesignId;
   final String name;
-  final double dosageCcPer100Kg;
+  final double dosageLitresPer100Kg;
   final double dilutionFactor;
   final int sortOrder;
   final bool isActive;
@@ -59,7 +59,9 @@ class MixAdmixture {
           ? null
           : _integer(json['mix_design_id']),
       name: (json['name'] ?? '').toString(),
-      dosageCcPer100Kg: _number(json['dosage_cc_per_100kg']),
+      dosageLitresPer100Kg: ccPer100KgToLitres(
+        _number(json['dosage_cc_per_100kg']),
+      ),
       dilutionFactor: _number(json['dilution_factor'], 1),
       sortOrder: _integer(json['sort_order'], 1),
       isActive: _boolean(json['is_active'], true),
@@ -70,7 +72,7 @@ class MixAdmixture {
     int? id,
     int? mixDesignId,
     String? name,
-    double? dosageCcPer100Kg,
+    double? dosageLitresPer100Kg,
     double? dilutionFactor,
     int? sortOrder,
     bool? isActive,
@@ -79,7 +81,7 @@ class MixAdmixture {
       id: id ?? this.id,
       mixDesignId: mixDesignId ?? this.mixDesignId,
       name: name ?? this.name,
-      dosageCcPer100Kg: dosageCcPer100Kg ?? this.dosageCcPer100Kg,
+      dosageLitresPer100Kg: dosageLitresPer100Kg ?? this.dosageLitresPer100Kg,
       dilutionFactor: dilutionFactor ?? this.dilutionFactor,
       sortOrder: sortOrder ?? this.sortOrder,
       isActive: isActive ?? this.isActive,
@@ -91,13 +93,18 @@ class MixAdmixture {
       if (id > 0) 'admixture_id': id,
       if (id <= 0) 'mix_design_id': parentMixDesignId,
       'name': name.trim(),
-      'dosage_cc_per_100kg': dosageCcPer100Kg,
+      'dosage_cc_per_100kg': litresPer100KgToCc(dosageLitresPer100Kg),
       'dilution_factor': dilutionFactor,
       'sort_order': sortOrder,
       if (id > 0) 'is_active': isActive,
     };
   }
 }
+
+double ccPer100KgToLitres(double dosageCcPer100Kg) => dosageCcPer100Kg / 1000;
+
+double litresPer100KgToCc(double dosageLitresPer100Kg) =>
+    dosageLitresPer100Kg * 1000;
 
 class MixDesign {
   const MixDesign({
@@ -147,15 +154,15 @@ class MixDesign {
   final String? updatedAt;
 
   double get absoluteVolumeM3 => calculateAbsoluteVolumeM3(
-    cementKg: cementKg,
-    sandKg: sandKg,
-    graniteKg: graniteKg,
-    waterL: waterL,
-    airFraction: airFraction,
-    cementSg: cementSg,
-    sandSg: sandSg,
-    graniteSg: graniteSg,
-  );
+        cementKg: cementKg,
+        sandKg: sandKg,
+        graniteKg: graniteKg,
+        waterL: waterL,
+        airFraction: airFraction,
+        cementSg: cementSg,
+        sandSg: sandSg,
+        graniteSg: graniteSg,
+      );
 
   factory MixDesign.fromJson(Map<String, dynamic> json) {
     return MixDesign(
@@ -178,8 +185,8 @@ class MixDesign {
       versionNo: _integer(json['version_no'], 1),
       serverCalculatedAbsoluteVolumeM3:
           json['calculated_absolute_volume_m3'] == null
-          ? null
-          : _number(json['calculated_absolute_volume_m3']),
+              ? null
+              : _number(json['calculated_absolute_volume_m3']),
       createdAt: json['created_at']?.toString(),
       updatedAt: json['updated_at']?.toString(),
       admixtures: (json['admixtures'] as List? ?? const [])
@@ -226,8 +233,7 @@ double? calculateBalancedSandKg({
     return null;
   }
 
-  final sandVolume =
-      1 -
+  final sandVolume = 1 -
       cementKg / (cementSg * 1000) -
       graniteKg / (graniteSg * 1000) -
       waterL / 1000 -

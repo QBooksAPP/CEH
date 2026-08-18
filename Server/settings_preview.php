@@ -40,7 +40,13 @@ try {
         $admixtures[] = [
             'id' => (int)$admix['id'],
             'name' => $admix['name'],
-            'flow_lpm' => round((float)$admix['flow_lpm'], 1)
+            'dosage_l_per_100kg' => round((float)$admix['dosage_l_per_100kg'], 4),
+            'cement_kg_per_m3' => round((float)$admix['cement_kg_per_m3'], 2),
+            'admixture_l_per_m3' => round((float)$admix['admixture_l_per_m3'], 4),
+            'dilution_factor' => round((float)$admix['dilution_factor'], 4),
+            'pure_flow_lpm' => round((float)$admix['pure_flow_lpm'], 4),
+            'metered_flow_lpm' => round((float)$admix['metered_flow_lpm'], 4),
+            'flow_lpm' => round((float)$admix['flow_lpm'], 4)
         ];
     }
 
@@ -76,6 +82,15 @@ try {
             'conveyor_speed' => (int)round($settings['conveyor_speed']),
             'production_rate_m3_per_min' => round($settings['m3_per_min'], 2),
             'water_flow_lpm' => round($settings['water_flow_lpm'], 1),
+            'cement_kg_per_count' => round($settings['cement_kg_per_count'], 4),
+            'counts_per_m3' => round($settings['counts_per_m3'], 4),
+            'sand_target_kg_per_count' => round($settings['sand_target_kg_per_count'], 4),
+            'granite_target_kg_per_count' => round($settings['granite_target_kg_per_count'], 4),
+            'sand_moisture_pct' => round($settings['sand_moisture_pct'], 2),
+            'granite_moisture_pct' => round($settings['granite_moisture_pct'], 2),
+            'sand_moisture_l' => round($settings['sand_moisture_l'], 2),
+            'granite_moisture_l' => round($settings['granite_moisture_l'], 2),
+            'additional_water_l' => round($settings['additional_water_l'], 2),
             'admixtures' => $admixtures
         ]
     ]);

@@ -102,6 +102,9 @@ void main() {
       expect(design.isActive, true);
       expect(design.versionNo, 3);
       expect(design.admixtures.single.name, 'Plasticizer');
+      expect(design.admixtures.single.dosageLitresPer100Kg, 0.45);
+      expect(ccPer100KgToLitres(909), 0.909);
+      expect(litresPer100KgToCc(0.909), 909);
     });
   });
 }

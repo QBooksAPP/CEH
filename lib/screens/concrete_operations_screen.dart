@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../core/internal_navigation.dart';
 import '../models/session.dart';
 import 'calibration_data_screen.dart';
 import 'calibration_field_sheet_screen.dart';
 import 'calibration_review_screen.dart';
 import 'mix_designs_screen.dart';
-import 'module_placeholder_screen.dart';
+import 'mix_design_settings_screen.dart';
 
 class ConcreteOperationsScreen extends StatelessWidget {
   const ConcreteOperationsScreen({super.key, required this.session});
@@ -20,6 +21,7 @@ class ConcreteOperationsScreen extends StatelessWidget {
           'Concrete Operations',
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
+        actions: cehHomeAction(context),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -86,7 +88,10 @@ class ConcreteOperationsScreen extends StatelessWidget {
             'Mix Design Settings',
             'Approved production settings',
             Icons.tune_outlined,
-            () => _placeholder(context, 'Mix Design Settings'),
+            () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => MixDesignSettingsScreen(session: session))),
           ),
         ],
       ),
@@ -109,19 +114,6 @@ class ConcreteOperationsScreen extends StatelessWidget {
         subtitle: Text(subtitle),
         trailing: const Icon(Icons.chevron_right),
         onTap: onTap,
-      ),
-    );
-  }
-
-  void _placeholder(BuildContext context, String title) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ModulePlaceholderScreen(
-          title: title,
-          message:
-              '$title will be connected after Calibration Data is confirmed.',
-        ),
       ),
     );
   }

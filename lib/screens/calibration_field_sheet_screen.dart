@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
+import '../core/internal_navigation.dart';
 import '../core/calibration_math.dart';
 import '../models/session.dart';
 
@@ -51,7 +52,12 @@ class _CalibrationFieldSheetScreenState
   @override
   void dispose() {
     for (final c in [
-      _mixer, _notes, _container, _stoneMoisture, _sandMoisture, _cementSafety
+      _mixer,
+      _notes,
+      _container,
+      _stoneMoisture,
+      _sandMoisture,
+      _cementSafety
     ]) {
       c.dispose();
     }
@@ -63,8 +69,7 @@ class _CalibrationFieldSheetScreenState
     super.dispose();
   }
 
-  String get dateText =>
-      '${_date.day.toString().padLeft(2, '0')}/'
+  String get dateText => '${_date.day.toString().padLeft(2, '0')}/'
       '${_date.month.toString().padLeft(2, '0')}/'
       '${_date.year}';
 
@@ -163,8 +168,7 @@ class _CalibrationFieldSheetScreenState
     return {
       if (_calibrationId != null) 'calibration_id': _calibrationId,
       'mixer_code': _mixer.text.trim(),
-      'calibration_date':
-          '${_date.year.toString().padLeft(4, '0')}-'
+      'calibration_date': '${_date.year.toString().padLeft(4, '0')}-'
           '${_date.month.toString().padLeft(2, '0')}-'
           '${_date.day.toString().padLeft(2, '0')}',
       'calibration_notes': _notes.text.trim(),
@@ -314,8 +318,8 @@ class _CalibrationFieldSheetScreenState
   Widget trialCard(String name) => Card(
         margin: const EdgeInsets.only(bottom: 10),
         child: ExpansionTile(
-          title: Text(name,
-              style: const TextStyle(fontWeight: FontWeight.w800)),
+          title:
+              Text(name, style: const TextStyle(fontWeight: FontWeight.w800)),
           subtitle: Text(name == 'Cement HALF'
               ? 'Optional • up to 6 trials'
               : 'Up to 6 trials'),
@@ -333,8 +337,7 @@ class _CalibrationFieldSheetScreenState
                       child: numField(trials[name]![i].weight, 'Total weight',
                           suffix: 'kg')),
                   const SizedBox(width: 8),
-                  Expanded(
-                      child: numField(trials[name]![i].counts, 'Counts')),
+                  Expanded(child: numField(trials[name]![i].counts, 'Counts')),
                 ]),
               )
           ],
@@ -346,6 +349,7 @@ class _CalibrationFieldSheetScreenState
     final canEditSafetyFactor = widget.session.user.isAdmin;
     return Scaffold(
       appBar: AppBar(
+        actions: cehHomeAction(context),
         title: const Text('Calibration Field Sheet',
             style: TextStyle(fontWeight: FontWeight.w900)),
       ),
@@ -385,8 +389,8 @@ class _CalibrationFieldSheetScreenState
                               child: SizedBox(
                                   width: 18,
                                   height: 18,
-                                  child:
-                                      CircularProgressIndicator(strokeWidth: 2)))
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2)))
                           : IconButton(
                               onPressed: _loadMixers,
                               icon: const Icon(Icons.refresh)),

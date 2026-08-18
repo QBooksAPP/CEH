@@ -306,28 +306,26 @@ function qbook_calculate_settings(
 
     foreach ($admixtures as $admix) {
 
-        $dosage =
-            (float)$admix['dosage_cc_per_100kg'];
+        $dosageCcPer100Kg = (float)$admix['dosage_cc_per_100kg'];
+        $dosageLitresPer100Kg = $dosageCcPer100Kg / 1000;
 
         $dilution =
             (float)$admix['dilution_factor'];
 
-        /*
-         * Workbook relationship.
-         * Fly ash intentionally excluded from QBook Nigeria.
-         */
-        $flowLpm =
-            $dosage
-            * $conveyorSpeed
-            * $cementKgPerCount
-            / 6250
-            * $dilution;
+        $admixtureLPerM3 = ($cementKg / 100) * $dosageLitresPer100Kg;
+        $pureFlowLpm = $admixtureLPerM3 * $m3PerMin;
+        $flowLpm = $pureFlowLpm * $dilution;
 
         $admixtureResults[] = [
             'id' => (int)$admix['id'],
             'name' => $admix['name'],
-            'dosage_cc_per_100kg' => $dosage,
+            'dosage_cc_per_100kg' => $dosageCcPer100Kg,
+            'dosage_l_per_100kg' => $dosageLitresPer100Kg,
+            'cement_kg_per_m3' => $cementKg,
+            'admixture_l_per_m3' => $admixtureLPerM3,
             'dilution_factor' => $dilution,
+            'pure_flow_lpm' => $pureFlowLpm,
+            'metered_flow_lpm' => $flowLpm,
             'flow_lpm' => $flowLpm
         ];
     }
@@ -346,7 +344,8 @@ function qbook_calculate_settings(
             'name' => $mix['name'],
             'client_name' => $mix['client_name'],
             'project_name' => $mix['project_name'],
-            'version_no' => (int)$mix['version_no']
+            'version_no' => (int)$mix['version_no'],
+            'design_mode' => $mix['design_mode']
         ],
 
         'batch_volume_m3' => 1.0,
@@ -376,6 +375,8 @@ function qbook_calculate_settings(
 
         'additional_water_l' => $additionalWaterL,
         'water_flow_lpm' => $waterFlowLpm,
+        'sand_moisture_pct' => (float)$calibration['sand_moisture_pct'],
+        'granite_moisture_pct' => (float)$calibration['stone_moisture_pct'],
 
         'admixtures' => $admixtureResults
     ];

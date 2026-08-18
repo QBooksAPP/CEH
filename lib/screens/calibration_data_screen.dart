@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
+import '../core/internal_navigation.dart';
 import '../models/session.dart';
 
 class CalibrationDataScreen extends StatefulWidget {
@@ -160,6 +161,7 @@ class _CalibrationDataScreenState extends State<CalibrationDataScreen> {
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
         actions: [
+          ...cehHomeAction(context),
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
         ],
       ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
+import '../core/internal_navigation.dart';
 import '../models/session.dart';
 
 class CalibrationReviewScreen extends StatefulWidget {
@@ -54,10 +55,9 @@ class _CalibrationReviewScreenState extends State<CalibrationReviewScreen> {
     return '$label ${_number(r['gate_cm'], decimals: 0)} cm';
   }
 
-  List<Map<String, dynamic>> _maps(dynamic raw) =>
-      (raw as List? ?? const [])
-          .map((e) => Map<String, dynamic>.from(e as Map))
-          .toList();
+  List<Map<String, dynamic>> _maps(dynamic raw) => (raw as List? ?? const [])
+      .map((e) => Map<String, dynamic>.from(e as Map))
+      .toList();
 
   Future<void> _review(Map<String, dynamic> item, String action) async {
     var reason = '';
@@ -248,8 +248,9 @@ class _CalibrationReviewScreenState extends State<CalibrationReviewScreen> {
       if (gate == null || tg == null) return false;
       return (gate - tg).abs() < 0.01;
     }).toList()
-      ..sort((a, b) =>
-          (a['trial_no'] as num).toInt().compareTo((b['trial_no'] as num).toInt()));
+      ..sort((a, b) => (a['trial_no'] as num)
+          .toInt()
+          .compareTo((b['trial_no'] as num).toInt()));
 
     return Card(
       margin: const EdgeInsets.only(top: 8),
@@ -406,6 +407,7 @@ class _CalibrationReviewScreenState extends State<CalibrationReviewScreen> {
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
         actions: [
+          ...cehHomeAction(context),
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
         ],
       ),

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../models/mix_design.dart';
+import '../models/production_settings.dart';
 import '../models/session.dart';
 
 class ApiException implements Exception {
@@ -126,9 +127,8 @@ class CehApiClient {
     if (response.statusCode < 200 ||
         response.statusCode >= 300 ||
         data['ok'] != true) {
-      final missing = (data['missing'] as List?)
-          ?.map((e) => e.toString())
-          .join(', ');
+      final missing =
+          (data['missing'] as List?)?.map((e) => e.toString()).join(', ');
       throw ApiException(
         missing == null || missing.isEmpty
             ? (data['error'] ?? 'CALIBRATION_SUBMIT_FAILED').toString()
@@ -339,6 +339,51 @@ class CehApiClient {
     return MixAdmixture.fromJson(
       Map<String, dynamic>.from(data['admixture'] as Map),
     );
+  }
+
+  Future<ProductionSettingsResult> previewSettings(CehSession session,
+      {required int mixerId,
+      required int mixDesignId,
+      required double conveyorSpeed}) async {
+    final data = await _postJson(
+        session,
+        'settings_preview.php',
+        {
+          'mixer_id': mixerId,
+          'mix_design_id': mixDesignId,
+          'conveyor_speed': conveyorSpeed
+        },
+        'SETTINGS_PREVIEW_FAILED');
+    return ProductionSettingsResult(data: data);
+  }
+
+  Future<ProductionSettingsResult> applySettings(CehSession session,
+      {required int mixerId,
+      required int mixDesignId,
+      required double conveyorSpeed}) async {
+    final data = await _postJson(
+        session,
+        'settings_apply.php',
+        {
+          'mixer_id': mixerId,
+          'mix_design_id': mixDesignId,
+          'conveyor_speed': conveyorSpeed
+        },
+        'SETTINGS_APPLY_FAILED');
+    return ProductionSettingsResult(data: data);
+  }
+
+  Future<List<Map<String, dynamic>>> productionSettingsHistory(
+      CehSession session) async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/production_settings_history.php'),
+            headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'SETTINGS_HISTORY_FAILED');
+    return (data['history'] as List? ?? const [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
   }
 
   Future<Map<String, dynamic>> _postJson(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
+import '../core/internal_navigation.dart';
 import '../core/ceh_theme.dart';
 import '../models/mix_design.dart';
 import '../models/session.dart';
@@ -94,9 +95,8 @@ class _MixDesignsScreenState extends State<MixDesignsScreen> {
       design.clientName,
       design.projectName,
     ].where((value) => value.trim().isNotEmpty).join(' • ');
-    final activeAdmixtures = design.admixtures
-        .where((item) => item.isActive)
-        .toList();
+    final activeAdmixtures =
+        design.admixtures.where((item) => item.isActive).toList();
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -171,7 +171,7 @@ class _MixDesignsScreenState extends State<MixDesignsScreen> {
                 alignment: Alignment.centerLeft,
                 child: Text(
                   '${admixture.name}: '
-                  '${admixture.dosageCcPer100Kg.toStringAsFixed(2)} cc/100 kg '
+                  '${admixture.dosageLitresPer100Kg.toStringAsFixed(3)} L/100 kg cement '
                   '× ${admixture.dilutionFactor.toStringAsFixed(2)}',
                 ),
               ),
@@ -201,6 +201,7 @@ class _MixDesignsScreenState extends State<MixDesignsScreen> {
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
         actions: [
+          ...cehHomeAction(context),
           IconButton(
             tooltip: 'Refresh',
             onPressed: _loading ? null : _load,
@@ -218,60 +219,60 @@ class _MixDesignsScreenState extends State<MixDesignsScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('Could not load Mix Designs: $_error'),
-                    const SizedBox(height: 12),
-                    FilledButton(
-                      onPressed: _load,
-                      child: const Text('Try again'),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: CehTheme.paleBlue,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Text(
-                      _isAdmin
-                          ? 'All Mix Designs. Open a design to edit its '
-                                'materials, status and admixtures.'
-                          : 'Active CEH Mix Designs. These values are '
-                                'read-only.',
-                      style: const TextStyle(fontWeight: FontWeight.w700),
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('Could not load Mix Designs: $_error'),
+                        const SizedBox(height: 12),
+                        FilledButton(
+                          onPressed: _load,
+                          child: const Text('Try again'),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 14),
-                  if (_designs.isEmpty)
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(22),
+                )
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: CehTheme.paleBlue,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
                         child: Text(
                           _isAdmin
-                              ? 'No Mix Designs yet. Use Add Mix Design.'
-                              : 'No active Mix Designs are available.',
-                          textAlign: TextAlign.center,
+                              ? 'All Mix Designs. Open a design to edit its '
+                                  'materials, status and admixtures.'
+                              : 'Active CEH Mix Designs. These values are '
+                                  'read-only.',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                       ),
-                    )
-                  else
-                    for (final design in _designs) _designCard(design),
-                ],
-              ),
-            ),
+                      const SizedBox(height: 14),
+                      if (_designs.isEmpty)
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(22),
+                            child: Text(
+                              _isAdmin
+                                  ? 'No Mix Designs yet. Use Add Mix Design.'
+                                  : 'No active Mix Designs are available.',
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        )
+                      else
+                        for (final design in _designs) _designCard(design),
+                    ],
+                  ),
+                ),
     );
   }
 }
