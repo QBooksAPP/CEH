@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import '../models/mix_design.dart';
 import '../models/calibration_record.dart';
 import '../models/calibration_source.dart';
+import '../models/client.dart';
 import '../models/production_settings.dart';
 import '../models/production_session.dart';
 import '../models/session.dart';
@@ -433,6 +434,39 @@ class CehApiClient {
         .map((e) =>
             ProductionSession.fromJson(Map<String, dynamic>.from(e as Map)))
         .toList();
+  }
+
+  Future<List<CehClient>> clients(CehSession session,
+      {bool activeOnly = true}) async {
+    final uri = Uri.parse('$baseUrl/clients.php').replace(
+      queryParameters: activeOnly ? {'active_only': '1'} : null,
+    );
+    final response = await http
+        .get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'CLIENTS_FAILED');
+    return (data['clients'] as List? ?? const [])
+        .map((e) => CehClient.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  Future<CehClient> createClient(CehSession session, String name) async {
+    final data = await _postJson(
+        session, 'client_create.php', {'name': name}, 'CLIENT_CREATE_FAILED');
+    return CehClient.fromJson(Map<String, dynamic>.from(data['client'] as Map));
+  }
+
+  Future<CehClient> updateClient(CehSession session,
+      {required int clientId,
+      required String name,
+      required bool isActive}) async {
+    final data = await _postJson(
+        session,
+        'client_update.php',
+        {'client_id': clientId, 'name': name, 'is_active': isActive},
+        'CLIENT_UPDATE_FAILED');
+    return CehClient.fromJson(Map<String, dynamic>.from(data['client'] as Map));
   }
 
   Future<ProductionSession> productionSession(

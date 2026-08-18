@@ -39,13 +39,20 @@ void main() {
     expect(find.text('Mix Design Settings'), findsNothing);
     expect(find.text('Mix Designs'), findsNothing);
     expect(find.text('Settings History'), findsNothing);
+    expect(find.text('Clients'), findsNothing);
+    expect(find.text('Calibration Data'), findsNothing);
+    expect(find.text('Calibration Review'), findsNothing);
     expect(find.text('Production Log'), findsOneWidget);
   });
 
   testWidgets('admin retains engineering navigation', (tester) async {
     await tester.pumpWidget(app(admin));
+    expect(find.text('Calibration Data'), findsOneWidget);
+    expect(find.text('Calibration Review'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('Settings History'), 200);
     expect(find.text('Mix Design Settings'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Clients'), 200);
+    expect(find.text('Clients'), findsOneWidget);
     expect(find.text('Mix Designs'), findsOneWidget);
     expect(find.text('Settings History'), findsOneWidget);
   });
@@ -56,5 +63,8 @@ void main() {
     expect(find.text('Mixer Settings'), findsOneWidget);
     expect(find.text('Mix Design Settings'), findsNothing);
     expect(find.text('Mix Designs'), findsNothing);
+    expect(find.text('Clients'), findsNothing);
+    expect(find.text('Calibration Data'), findsNothing);
+    expect(find.text('Calibration Review'), findsNothing);
   });
 }

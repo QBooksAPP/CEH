@@ -9,6 +9,7 @@ import '../core/api_client.dart';
 import '../core/ceh_theme.dart';
 import '../core/internal_navigation.dart';
 import '../core/view_mode.dart';
+import '../models/client.dart';
 import '../models/production_session.dart';
 import '../models/session.dart';
 
@@ -164,26 +165,28 @@ class _StartProductionSessionScreenState
     extends State<StartProductionSessionScreen> {
   final _api = const CehApiClient();
   final _form = GlobalKey<FormState>();
-  final _client = TextEditingController(),
-      _project = TextEditingController(),
-      _loading = TextEditingController(),
-      _discharge = TextEditingController(),
-      _notes = TextEditingController();
+  final _project = TextEditingController(), _notes = TextEditingController();
+  List<CehClient> _clients = [];
   List<Map<String, dynamic>> _mixers = [];
+  int? _clientId;
   int? _mixerId;
   bool _busy = true;
   @override
   void initState() {
     super.initState();
-    _loadMixers();
+    _loadOptions();
   }
 
-  Future<void> _loadMixers() async {
+  Future<void> _loadOptions() async {
     try {
-      final value = await _api.mixers(widget.session);
+      final values = await Future.wait([
+        _api.clients(widget.session),
+        _api.mixers(widget.session),
+      ]);
       if (mounted) {
         setState(() {
-          _mixers = value;
+          _clients = values[0] as List<CehClient>;
+          _mixers = values[1] as List<Map<String, dynamic>>;
           _busy = false;
         });
       }
@@ -198,7 +201,7 @@ class _StartProductionSessionScreenState
 
   @override
   void dispose() {
-    for (final c in [_client, _project, _loading, _discharge, _notes]) {
+    for (final c in [_project, _notes]) {
       c.dispose();
     }
     super.dispose();
@@ -207,7 +210,11 @@ class _StartProductionSessionScreenState
   String? _required(String? v) =>
       v == null || v.trim().isEmpty ? 'Required' : null;
   Future<void> _save() async {
-    if (!_form.currentState!.validate() || _mixerId == null) return;
+    if (!_form.currentState!.validate() ||
+        _clientId == null ||
+        _mixerId == null) {
+      return;
+    }
     setState(() => _busy = true);
     try {
       final now = DateTime.now();
@@ -215,11 +222,9 @@ class _StartProductionSessionScreenState
           '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
       final created = await _api.createProductionSession(widget.session, {
         'production_date': date,
-        'client_name': _client.text,
+        'client_id': _clientId,
         'project_site': _project.text,
         'mixer_id': _mixerId,
-        'loading_point': _loading.text,
-        'discharge_point': _discharge.text,
         'notes': _notes.text
       });
       if (mounted) Navigator.pop(context, created);
@@ -237,15 +242,20 @@ class _StartProductionSessionScreenState
       appBar: AppBar(
           title: const Text('Start Production Session'),
           actions: cehHomeAction(context)),
-      body: _busy && _mixers.isEmpty
+      body: _busy && (_clients.isEmpty || _mixers.isEmpty)
           ? const Center(child: CircularProgressIndicator())
           : Form(
               key: _form,
               child: ListView(padding: const EdgeInsets.all(16), children: [
-                TextFormField(
-                    controller: _client,
+                DropdownButtonFormField<int>(
                     decoration: const InputDecoration(labelText: 'Client'),
-                    validator: _required),
+                    items: _clients
+                        .where((client) => client.isActive)
+                        .map((client) => DropdownMenuItem(
+                            value: client.id, child: Text(client.name)))
+                        .toList(),
+                    onChanged: (value) => _clientId = value,
+                    validator: (value) => value == null ? 'Required' : null),
                 const SizedBox(height: 12),
                 TextFormField(
                     controller: _project,
@@ -262,18 +272,6 @@ class _StartProductionSessionScreenState
                         .toList(),
                     onChanged: (v) => _mixerId = v,
                     validator: (v) => v == null ? 'Required' : null),
-                const SizedBox(height: 12),
-                TextFormField(
-                    controller: _loading,
-                    decoration:
-                        const InputDecoration(labelText: 'Loading Point'),
-                    validator: _required),
-                const SizedBox(height: 12),
-                TextFormField(
-                    controller: _discharge,
-                    decoration:
-                        const InputDecoration(labelText: 'Discharge Point'),
-                    validator: _required),
                 const SizedBox(height: 12),
                 TextFormField(
                     controller: _notes,
@@ -481,8 +479,6 @@ class _ProductionSessionScreenState extends State<ProductionSessionScreen> {
                 style:
                     const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
             Text('${r.productionDate} • ${r.status}'),
-            Text('Loading: ${r.loadingPoint}'),
-            Text('Discharge: ${r.dischargePoint}'),
             Text('Operator: ${r.operator['name']}'),
             if (r.notes.isNotEmpty) Text('Notes: ${r.notes}')
           ])));
@@ -580,8 +576,6 @@ class _ProductionSignoffScreenState extends State<ProductionSignoffScreen> {
             textAlign: TextAlign.center,
             style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
         Text('${r.productionDate} • Mixer ${r.mixer['code']}',
-            textAlign: TextAlign.center),
-        Text('${r.loadingPoint} → ${r.dischargePoint}',
             textAlign: TextAlign.center),
         Text('Operator: ${r.operator['name']}', textAlign: TextAlign.center),
         const SizedBox(height: 14),

@@ -7,6 +7,7 @@ import 'calibration_data_screen.dart';
 import 'calibration_field_sheet_screen.dart';
 import 'calibration_review_screen.dart';
 import 'calibration_records_screen.dart';
+import 'client_management_screen.dart';
 import 'mix_designs_screen.dart';
 import 'mix_design_settings_screen.dart';
 import 'production_log_screen.dart';
@@ -57,20 +58,21 @@ class ConcreteOperationsScreen extends StatelessWidget {
                     builder: (_) =>
                         CalibrationRecordsScreen(session: session))),
           ),
-          _tile(
-            context,
-            'Calibration Data',
-            'View approved calibration values by mixer',
-            Icons.analytics_outlined,
-            () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => CalibrationDataScreen(session: session),
-                ),
-              );
-            },
-          ),
+          if (admin)
+            _tile(
+              context,
+              'Calibration Data',
+              'View approved calibration values by mixer',
+              Icons.analytics_outlined,
+              () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CalibrationDataScreen(session: session),
+                  ),
+                );
+              },
+            ),
           if (admin)
             _tile(
               context,
@@ -112,6 +114,16 @@ class ConcreteOperationsScreen extends StatelessWidget {
                   MaterialPageRoute(
                       builder: (_) => ProductionLogScreen(session: session)))),
           if (admin) ...[
+            _tile(
+                context,
+                'Clients',
+                'Add, edit and activate production clients',
+                Icons.business_outlined,
+                () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) =>
+                            ClientManagementScreen(session: session)))),
             _tile(
                 context,
                 'Mix Designs',

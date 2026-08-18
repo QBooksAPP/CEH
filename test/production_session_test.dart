@@ -16,13 +16,27 @@ ProductionSession record(
       projectSite: 'Point B',
       mixer: const {'id': 3, 'code': '307'},
       operator: const {'id': 7, 'name': 'Operator'},
-      loadingPoint: 'Point A',
-      dischargePoint: 'Point B',
       status: status,
       loads: loads,
     );
 
 void main() {
+  test('production session preserves client master id and name snapshot', () {
+    final session = ProductionSession.fromJson({
+      'id': 10,
+      'production_date': '2026-08-18',
+      'client_id': 24,
+      'client_name': 'ABC Construction Ltd',
+      'project_site': 'Lagos site',
+      'mixer': {'id': 3, 'code': '307'},
+      'operator': {'id': 7, 'name': 'Operator'},
+      'status': 'OPEN',
+    });
+
+    expect(session.clientId, 24);
+    expect(session.clientName, 'ABC Construction Ltd');
+  });
+
   test('load numbering follows the highest existing sequential number', () {
     expect(nextLoadNumber([load(1, 1, 7.2), load(2, 2, 7.8)]), 3);
   });

@@ -21,12 +21,11 @@ class ProductionSession {
   const ProductionSession({
     required this.id,
     required this.productionDate,
+    this.clientId,
     required this.clientName,
     required this.projectSite,
     required this.mixer,
     required this.operator,
-    required this.loadingPoint,
-    required this.dischargePoint,
     required this.status,
     this.notes = '',
     this.loads = const [],
@@ -34,12 +33,11 @@ class ProductionSession {
   });
   final int id;
   final String productionDate;
+  final int? clientId;
   final String clientName;
   final String projectSite;
   final Map<String, dynamic> mixer;
   final Map<String, dynamic> operator;
-  final String loadingPoint;
-  final String dischargePoint;
   final String status;
   final String notes;
   final List<ProductionLoad> loads;
@@ -53,12 +51,11 @@ class ProductionSession {
       ProductionSession(
         id: (json['id'] as num).toInt(),
         productionDate: (json['production_date'] ?? '').toString(),
+        clientId: (json['client_id'] as num?)?.toInt(),
         clientName: (json['client_name'] ?? '').toString(),
         projectSite: (json['project_site'] ?? '').toString(),
         mixer: Map<String, dynamic>.from(json['mixer'] as Map? ?? {}),
         operator: Map<String, dynamic>.from(json['operator'] as Map? ?? {}),
-        loadingPoint: (json['loading_point'] ?? '').toString(),
-        dischargePoint: (json['discharge_point'] ?? '').toString(),
         status: (json['status'] ?? '').toString().toUpperCase(),
         notes: (json['notes'] ?? '').toString(),
         loads: (json['loads'] as List? ?? const [])

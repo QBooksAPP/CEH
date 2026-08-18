@@ -4,6 +4,53 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 
 /*
+ * Production Log endpoints must always return JSON, including when a hosting
+ * environment is missing an optional extension or an unexpected PHP/database
+ * error occurs. Suppress PHP's HTML error output and replace it with the same
+ * non-sensitive response used by the rest of the CEH API.
+ */
+ini_set('display_errors', '0');
+ob_start();
+
+function production_discard_output(): void {
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+}
+
+set_exception_handler(static function (Throwable $exception): void {
+    error_log(sprintf(
+        'CEH Production Log unhandled %s in %s:%d',
+        get_class($exception),
+        basename($exception->getFile()),
+        $exception->getLine()
+    ));
+    production_discard_output();
+    qbook_json(['ok' => false, 'error' => 'SERVER_ERROR'], 500);
+});
+
+register_shutdown_function(static function (): void {
+    $error = error_get_last();
+    if ($error === null || !in_array($error['type'], [
+        E_ERROR,
+        E_PARSE,
+        E_CORE_ERROR,
+        E_COMPILE_ERROR,
+        E_USER_ERROR,
+    ], true)) {
+        return;
+    }
+
+    error_log(sprintf(
+        'CEH Production Log fatal error in %s:%d',
+        basename((string)$error['file']),
+        (int)$error['line']
+    ));
+    production_discard_output();
+    qbook_json(['ok' => false, 'error' => 'SERVER_ERROR'], 500);
+});
+
+/*
  * Production evidence timestamps are stored as UTC. This scopes the timezone
  * change to Production Log requests and avoids changing unrelated legacy API
  * timestamp behaviour on a server whose SYSTEM timezone is not UTC.
@@ -72,9 +119,9 @@ function production_payload(PDO $db, array $row, bool $includeSignature = false)
     }
     return [
         'id' => (int)$row['id'], 'production_date' => $row['production_date'],
+        'client_id' => $row['client_id'] !== null ? (int)$row['client_id'] : null,
         'client_name' => $row['client_name'], 'project_site' => $row['project_site'],
         'mixer' => ['id' => (int)$row['mixer_id'], 'code' => $row['mixer_code_snapshot'], 'name' => $row['mixer_name_snapshot']],
-        'loading_point' => $row['loading_point'], 'discharge_point' => $row['discharge_point'],
         'operator' => ['id' => (int)$row['operator_id'], 'name' => $row['operator_name_snapshot']],
         'notes' => $row['notes'], 'status' => $row['status'], 'created_at' => $row['created_at'],
         'signed_at' => $row['signed_at'], 'loads' => $loads, 'load_count' => count($loads),
@@ -84,6 +131,9 @@ function production_payload(PDO $db, array $row, bool $includeSignature = false)
 
 function production_clean_text(mixed $value, int $max, string $error, bool $required = true): string {
     $value = trim((string)$value);
-    if (($required && $value === '') || mb_strlen($value) > $max) qbook_json(['ok' => false, 'error' => $error], 422);
+    $length = function_exists('mb_strlen')
+        ? mb_strlen($value, 'UTF-8')
+        : strlen($value);
+    if (($required && $value === '') || $length > $max) qbook_json(['ok' => false, 'error' => $error], 422);
     return $value;
 }
