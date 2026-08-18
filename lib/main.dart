@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'core/ceh_theme.dart';
 import 'core/session_store.dart';
+import 'core/view_mode.dart';
 import 'models/session.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/login_screen.dart';
@@ -20,6 +21,7 @@ class CehApp extends StatefulWidget {
 
 class _CehAppState extends State<CehApp> {
   final SessionStore _sessionStore = SessionStore();
+  final CehViewModeController _viewMode = CehViewModeController();
 
   CehSession? _session;
   bool _loading = true;
@@ -48,6 +50,7 @@ class _CehAppState extends State<CehApp> {
   }
 
   Future<void> _onLoggedIn(CehSession session) async {
+    _viewMode.returnToAdmin();
     if (mounted) {
       setState(() => _session = session);
     }
@@ -60,6 +63,7 @@ class _CehAppState extends State<CehApp> {
   }
 
   Future<void> _logout() async {
+    _viewMode.returnToAdmin();
     try {
       await _sessionStore.clear();
     } catch (_) {}
@@ -74,6 +78,36 @@ class _CehAppState extends State<CehApp> {
       debugShowCheckedModeBanner: false,
       title: 'CEH',
       theme: CehTheme.light(),
+      builder: (context, child) => CehViewModeScope(
+        controller: _viewMode,
+        child: AnimatedBuilder(
+          animation: _viewMode,
+          builder: (context, _) => Column(
+            children: [
+              if (_viewMode.viewAsOperator)
+                Material(
+                  color: Colors.amber.shade200,
+                  child: SafeArea(
+                    bottom: false,
+                    child: ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.visibility_outlined),
+                      title: const Text(
+                        'Viewing as Operator',
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      trailing: TextButton(
+                        onPressed: _viewMode.returnToAdmin,
+                        child: const Text('Return to Admin'),
+                      ),
+                    ),
+                  ),
+                ),
+              Expanded(child: child ?? const SizedBox.shrink()),
+            ],
+          ),
+        ),
+      ),
       home: _loading
           ? const _StartupScreen()
           : _session == null

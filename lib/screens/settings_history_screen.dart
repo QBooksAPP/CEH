@@ -65,7 +65,7 @@ class _SettingsHistoryScreenState extends State<SettingsHistoryScreen> {
                                 style: const TextStyle(
                                     fontWeight: FontWeight.w800)),
                             subtitle: Text(
-                                '${item['applied_at']}\n${settings['production_rate_m3_per_min']} m³/min • Sand ${settings['sand_gate_cm']} cm • Granite ${settings['granite_gate_cm']} cm'),
+                                '${item['applied_at']} • Calibration #${item['calibration_id']} Rev ${item['calibration_revision_no']}\n${settings['production_rate_m3_per_min']} m³/min • Sand ${settings['sand_gate_cm']} cm • Granite ${settings['granite_gate_cm']} cm'),
                             isThreeLine: true));
                   }));
 }

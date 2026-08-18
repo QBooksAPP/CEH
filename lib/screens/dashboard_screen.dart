@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../core/ceh_theme.dart';
 import '../core/update_service.dart';
+import '../core/view_mode.dart';
 import '../models/session.dart';
 import 'concrete_operations_screen.dart';
 import 'module_placeholder_screen.dart';
@@ -98,6 +99,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final user = session.user;
+    final admin = isUiAdmin(context, session);
     final modules = <Map<String, dynamic>>[
       {
         't': 'Concrete Operations',
@@ -105,21 +107,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
         'i': Icons.precision_manufacturing_outlined,
         'e': true,
       },
-      if (user.isAdmin)
+      if (admin)
         {
           't': 'Accounts',
           's': 'Expenses, income, petty cash and reports',
           'i': Icons.account_balance_wallet_outlined,
           'e': false,
         },
-      if (user.isAdmin)
+      if (admin)
         {
           't': 'Fleet & Equipment',
           's': 'Mixers, pumps, trucks and workshop equipment',
           'i': Icons.local_shipping_outlined,
           'e': false,
         },
-      if (user.isAdmin)
+      if (admin)
         {
           't': 'Administration',
           's': 'Users, history, approvals and audit trail',
@@ -136,11 +138,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
           fit: BoxFit.contain,
         ),
         actions: [
+          if (user.isAdmin && admin)
+            IconButton(
+              tooltip: 'View as Operator',
+              onPressed: CehViewModeScope.of(context).enableOperatorView,
+              icon: const Icon(Icons.visibility_outlined),
+            ),
           IconButton(
             tooltip: 'Check for updates',
-            onPressed: _checkingUpdate
-                ? null
-                : () => _checkForUpdate(silent: false),
+            onPressed:
+                _checkingUpdate ? null : () => _checkForUpdate(silent: false),
             icon: _checkingUpdate
                 ? const SizedBox(
                     width: 20,

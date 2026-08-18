@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
 import '../core/internal_navigation.dart';
+import '../core/view_mode.dart';
 import '../core/ceh_theme.dart';
 import '../models/mix_design.dart';
 import '../models/session.dart';
@@ -515,7 +516,7 @@ class _MixDesignEditorScreenState extends State<MixDesignEditorScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (!widget.session.user.isAdmin) {
+    if (!isUiAdmin(context, widget.session)) {
       return const Scaffold(
         body: Center(child: Text('Admin access required.')),
       );

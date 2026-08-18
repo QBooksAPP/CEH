@@ -55,6 +55,7 @@ $sql = "
         m.model AS mixer_model,
 
         ps.calibration_id,
+        ps.calibration_revision_no,
 
         ps.mix_design_id,
         ps.mix_version_no,
@@ -179,6 +180,9 @@ foreach ($rows as $row) {
 
         'calibration_id' =>
             (int)$row['calibration_id'],
+
+        'calibration_revision_no' =>
+            (int)$row['calibration_revision_no'],
 
         'mix_design' => [
             'id' =>

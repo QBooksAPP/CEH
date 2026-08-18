@@ -19,3 +19,15 @@ type and database version, the intended outcome is:
 Do not apply that change directly to production. Create, review and test the
 complete migration against a disposable database first, including an audit of
 existing rows that would violate the constraint.
+# Build 41: exact calibration revision snapshots (not applied)
+
+`Server/migration_v1_2_settings_calibration_revision.sql` adds
+`qbook_production_settings.calibration_revision_no`. The existing
+`calibration_id` remains the selected calibration reference. The revision
+column is required because an approved calibration can later be reopened and
+revised under the same ID; without a snapshot column, old Settings History
+cannot prove which revision was used.
+
+Existing snapshots are backfilled from their currently referenced calibration
+as the best available historical value. Deploy the migration before or
+together with the Build 41 PHP files; do not deploy `settings_apply.php` first.

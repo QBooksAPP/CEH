@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/mix_design.dart';
 import '../models/calibration_record.dart';
+import '../models/calibration_source.dart';
 import '../models/production_settings.dart';
 import '../models/session.dart';
 
@@ -267,6 +268,13 @@ class CehApiClient {
         .toList();
   }
 
+  Future<List<CalibrationSource>> approvedCalibrationSources(
+    CehSession session,
+  ) async =>
+      (await approvedCalibrations(session))
+          .map(CalibrationSource.fromJson)
+          .toList();
+
   Future<List<MixDesign>> mixDesigns(CehSession session) async {
     final response = await http
         .get(
@@ -362,14 +370,17 @@ class CehApiClient {
   Future<ProductionSettingsResult> previewSettings(CehSession session,
       {required int mixerId,
       required int mixDesignId,
-      required double conveyorSpeed}) async {
+      required double conveyorSpeed,
+      int? calibrationId}) async {
+    calibrationId = validateCalibrationOverride(session, calibrationId);
     final data = await _postJson(
         session,
         'settings_preview.php',
         {
           'mixer_id': mixerId,
           'mix_design_id': mixDesignId,
-          'conveyor_speed': conveyorSpeed
+          'conveyor_speed': conveyorSpeed,
+          if (calibrationId != null) 'calibration_id': calibrationId
         },
         'SETTINGS_PREVIEW_FAILED');
     return ProductionSettingsResult(data: data);
@@ -378,14 +389,17 @@ class CehApiClient {
   Future<ProductionSettingsResult> applySettings(CehSession session,
       {required int mixerId,
       required int mixDesignId,
-      required double conveyorSpeed}) async {
+      required double conveyorSpeed,
+      int? calibrationId}) async {
+    calibrationId = validateCalibrationOverride(session, calibrationId);
     final data = await _postJson(
         session,
         'settings_apply.php',
         {
           'mixer_id': mixerId,
           'mix_design_id': mixDesignId,
-          'conveyor_speed': conveyorSpeed
+          'conveyor_speed': conveyorSpeed,
+          if (calibrationId != null) 'calibration_id': calibrationId
         },
         'SETTINGS_APPLY_FAILED');
     return ProductionSettingsResult(data: data);
@@ -458,4 +472,12 @@ class CehApiClient {
       'Accept': 'application/json',
     };
   }
+}
+
+int? validateCalibrationOverride(CehSession session, int? calibrationId) {
+  if (calibrationId == null || calibrationId <= 0) return null;
+  if (!session.user.isAdmin) {
+    throw const ApiException('CALIBRATION_OVERRIDE_FORBIDDEN');
+  }
+  return calibrationId;
 }

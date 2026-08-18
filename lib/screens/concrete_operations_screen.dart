@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/internal_navigation.dart';
+import '../core/view_mode.dart';
 import '../models/session.dart';
 import 'calibration_data_screen.dart';
 import 'calibration_field_sheet_screen.dart';
@@ -15,7 +16,7 @@ class ConcreteOperationsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final admin = session.user.isAdmin;
+    final admin = isUiAdmin(context, session);
     return Scaffold(
       appBar: AppBar(
         title: const Text(

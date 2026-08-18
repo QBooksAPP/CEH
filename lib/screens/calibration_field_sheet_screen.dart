@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
 import '../core/internal_navigation.dart';
+import '../core/view_mode.dart';
 import '../core/calibration_math.dart';
 import '../models/session.dart';
 import '../models/calibration_record.dart';
@@ -390,7 +391,7 @@ class _CalibrationFieldSheetScreenState
 
   @override
   Widget build(BuildContext context) {
-    final canEditSafetyFactor = widget.session.user.isAdmin;
+    final canEditSafetyFactor = isUiAdmin(context, widget.session);
     return Scaffold(
       appBar: AppBar(
         actions: cehHomeAction(context),

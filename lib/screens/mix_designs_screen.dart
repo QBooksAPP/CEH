@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
 import '../core/internal_navigation.dart';
+import '../core/view_mode.dart';
 import '../core/ceh_theme.dart';
 import '../models/mix_design.dart';
 import '../models/session.dart';
@@ -22,7 +23,10 @@ class _MixDesignsScreenState extends State<MixDesignsScreen> {
   String? _error;
   List<MixDesign> _designs = [];
 
-  bool get _isAdmin => widget.session.user.isAdmin;
+  bool get _isAdmin => isUiAdmin(context, widget.session);
+  List<MixDesign> get _visibleDesigns => _isAdmin
+      ? _designs
+      : _designs.where((design) => design.isActive).toList();
 
   @override
   void initState() {
@@ -256,7 +260,7 @@ class _MixDesignsScreenState extends State<MixDesignsScreen> {
                         ),
                       ),
                       const SizedBox(height: 14),
-                      if (_designs.isEmpty)
+                      if (_visibleDesigns.isEmpty)
                         Card(
                           child: Padding(
                             padding: const EdgeInsets.all(22),
@@ -269,7 +273,8 @@ class _MixDesignsScreenState extends State<MixDesignsScreen> {
                           ),
                         )
                       else
-                        for (final design in _designs) _designCard(design),
+                        for (final design in _visibleDesigns)
+                          _designCard(design),
                     ],
                   ),
                 ),

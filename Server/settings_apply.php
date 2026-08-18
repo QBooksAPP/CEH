@@ -25,6 +25,11 @@ if (!is_array($input)) {
 $mixerId = (int)($input['mixer_id'] ?? 0);
 $mixDesignId = (int)($input['mix_design_id'] ?? 0);
 $conveyorSpeed = (float)($input['conveyor_speed'] ?? 0);
+$calibrationId = (int)($input['calibration_id'] ?? 0);
+
+if ($calibrationId > 0 && $user['role'] !== 'ADMIN') {
+    qbook_json(['ok' => false, 'error' => 'CALIBRATION_OVERRIDE_FORBIDDEN'], 403);
+}
 
 try {
 
@@ -37,7 +42,8 @@ try {
     $settings = qbook_calculate_settings(
         $mixerId,
         $mixDesignId,
-        $conveyorSpeed
+        $conveyorSpeed,
+        $calibrationId
     );
 
     $db = qbook_db();
@@ -60,6 +66,7 @@ try {
         (
             mixer_id,
             calibration_id,
+            calibration_revision_no,
             mix_design_id,
             mix_version_no,
 
@@ -93,7 +100,7 @@ try {
         )
         VALUES
         (
-            ?, ?, ?, ?,
+            ?, ?, ?, ?, ?,
             ?, ?, ?,
             ?, ?, ?, ?,
             ?, ?,
@@ -108,6 +115,7 @@ try {
     $stmt->execute([
         (int)$settings['mixer']['id'],
         (int)$settings['calibration']['id'],
+        (int)$settings['calibration']['revision_no'],
         (int)$settings['mix_design']['id'],
         (int)$settings['mix_design']['version_no'],
 
@@ -194,6 +202,9 @@ try {
 
             'calibration_id' =>
                 (int)$settings['calibration']['id'],
+
+            'calibration_revision_no' =>
+                (int)$settings['calibration']['revision_no'],
 
             'mix_design_id' =>
                 (int)$settings['mix_design']['id'],

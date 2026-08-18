@@ -25,13 +25,19 @@ if (!is_array($input)) {
 $mixerId = (int)($input['mixer_id'] ?? 0);
 $mixDesignId = (int)($input['mix_design_id'] ?? 0);
 $conveyorSpeed = (float)($input['conveyor_speed'] ?? 0);
+$calibrationId = (int)($input['calibration_id'] ?? 0);
+
+if ($calibrationId > 0 && $user['role'] !== 'ADMIN') {
+    qbook_json(['ok' => false, 'error' => 'CALIBRATION_OVERRIDE_FORBIDDEN'], 403);
+}
 
 try {
 
     $settings = qbook_calculate_settings(
         $mixerId,
         $mixDesignId,
-        $conveyorSpeed
+        $conveyorSpeed,
+        $calibrationId
     );
 
     $admixtures = [];

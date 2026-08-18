@@ -59,7 +59,8 @@ function qbook_settings_trend_gate(array $points, float $target): float
 function qbook_calculate_settings(
     int $mixerId,
     int $mixDesignId,
-    float $conveyorSpeed
+    float $conveyorSpeed,
+    int $calibrationId = 0
 ): array {
 
     if ($mixerId <= 0) {
@@ -141,26 +142,37 @@ function qbook_calculate_settings(
     /*
      * Latest approved calibration for the selected mixer.
      */
-    $stmt = $db->prepare(
+    $calibrationSql =
         "SELECT
             id,
             mixer_id,
             calibration_date,
+            calibration_notes,
+            revision_no,
             stone_moisture_pct,
             sand_moisture_pct,
             reviewed_at
          FROM qbook_calibrations
          WHERE mixer_id = ?
-           AND status = 'APPROVED'
-         ORDER BY reviewed_at DESC, id DESC
-         LIMIT 1"
-    );
+           AND status = 'APPROVED'";
 
-    $stmt->execute([$mixerId]);
+    $calibrationParams = [$mixerId];
+    if ($calibrationId > 0) {
+        $calibrationSql .= " AND id = ?";
+        $calibrationParams[] = $calibrationId;
+    }
+    $calibrationSql .= " ORDER BY reviewed_at DESC, id DESC LIMIT 1";
+
+    $stmt = $db->prepare($calibrationSql);
+    $stmt->execute($calibrationParams);
     $calibration = $stmt->fetch();
 
     if (!$calibration) {
-        throw new RuntimeException('NO_APPROVED_CALIBRATION');
+        throw new RuntimeException(
+            $calibrationId > 0
+                ? 'INVALID_CALIBRATION_SOURCE'
+                : 'NO_APPROVED_CALIBRATION'
+        );
     }
 
     /*
@@ -336,6 +348,8 @@ function qbook_calculate_settings(
         'calibration' => [
             'id' => (int)$calibration['id'],
             'date' => $calibration['calibration_date'],
+            'notes' => $calibration['calibration_notes'],
+            'revision_no' => (int)$calibration['revision_no'],
             'reviewed_at' => $calibration['reviewed_at']
         ],
 

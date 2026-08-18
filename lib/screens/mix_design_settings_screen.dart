@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
 import '../core/internal_navigation.dart';
+import '../core/view_mode.dart';
 import '../models/mix_design.dart';
+import '../models/calibration_source.dart';
 import '../models/production_settings.dart';
 import '../models/session.dart';
 import 'settings_history_screen.dart';
@@ -20,8 +22,10 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
   final _speed = TextEditingController();
   List<Map<String, dynamic>> _mixers = [];
   List<MixDesign> _designs = [];
+  List<CalibrationSource> _calibrations = [];
   int? _mixerId;
   int? _designId;
+  int _calibrationId = 0;
   bool _busy = true;
   ProductionSettingsResult? _result;
 
@@ -39,13 +43,17 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
 
   Future<void> _load() async {
     try {
-      final values = await Future.wait(
-          [_api.mixers(widget.session), _api.mixDesigns(widget.session)]);
+      final values = await Future.wait([
+        _api.mixers(widget.session),
+        _api.mixDesigns(widget.session),
+        _api.approvedCalibrationSources(widget.session),
+      ]);
       if (!mounted) return;
       setState(() {
         _mixers = values[0] as List<Map<String, dynamic>>;
         _designs =
             (values[1] as List<MixDesign>).where((d) => d.isActive).toList();
+        _calibrations = values[2] as List<CalibrationSource>;
         _busy = false;
       });
     } catch (e) {
@@ -61,14 +69,21 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
       return;
     }
     setState(() => _busy = true);
+    final overrideId = isUiAdmin(context, widget.session) && _calibrationId > 0
+        ? _calibrationId
+        : null;
     try {
       final value = apply
           ? await _api.applySettings(widget.session,
-              mixerId: _mixerId!, mixDesignId: _designId!, conveyorSpeed: speed)
+              mixerId: _mixerId!,
+              mixDesignId: _designId!,
+              conveyorSpeed: speed,
+              calibrationId: overrideId)
           : await _api.previewSettings(widget.session,
               mixerId: _mixerId!,
               mixDesignId: _designId!,
-              conveyorSpeed: speed);
+              conveyorSpeed: speed,
+              calibrationId: overrideId);
       if (!mounted) return;
       setState(() {
         _result = value;
@@ -101,12 +116,16 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
         ]),
       );
 
+  List<CalibrationSource> get _mixerCalibrations => _calibrations
+      .where((calibration) => calibration.mixerId == _mixerId)
+      .toList();
+
   @override
   Widget build(BuildContext context) {
     final r = _result;
     return Scaffold(
       appBar: AppBar(title: const Text('Mix Design Settings'), actions: [
-        if (widget.session.user.isAdmin)
+        if (isUiAdmin(context, widget.session))
           IconButton(
               tooltip: 'Settings History',
               onPressed: () => Navigator.push(
@@ -132,8 +151,37 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
                         .toList(),
                     onChanged: (v) => setState(() {
                           _mixerId = v;
+                          _calibrationId = 0;
                           _result = null;
                         })),
+                if (isUiAdmin(context, widget.session)) ...[
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<int>(
+                    key: ValueKey('calibration-$_mixerId-$_calibrationId'),
+                    initialValue: _calibrationId,
+                    decoration:
+                        const InputDecoration(labelText: 'Calibration Source'),
+                    items: [
+                      const DropdownMenuItem(
+                        value: 0,
+                        child: Text('Latest Approved'),
+                      ),
+                      for (var i = 0; i < _mixerCalibrations.length; i++)
+                        DropdownMenuItem(
+                          value: _mixerCalibrations[i].id,
+                          child: Text(
+                            '${_mixerCalibrations[i].optionLabel}'
+                            '${i == 0 ? ' • Latest' : ''}',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                    onChanged: (value) => setState(() {
+                      _calibrationId = value ?? 0;
+                      _result = null;
+                    }),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 DropdownButtonFormField<int>(
                     initialValue: _designId,
@@ -167,7 +215,7 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
                     label: const Text('Preview Settings')),
                 if (r != null) ...[
                   const SizedBox(height: 16),
-                  if (widget.session.user.isAdmin) ...[
+                  if (isUiAdmin(context, widget.session)) ...[
                     Card(
                         child: Padding(
                             padding: const EdgeInsets.all(16),
@@ -175,6 +223,10 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
                               _line('Mixer',
                                   r.mixer['code'] ?? r.mixer['name'] ?? ''),
                               _line('Mix Design', r.mixDesign['name'] ?? ''),
+                              _line(
+                                  'Calibration Source',
+                                  '#${r.calibration['id']} • Rev '
+                                      '${r.calibration['revision_no']}'),
                               _line('Mode', r.mixDesign['design_mode'] ?? ''),
                               _line(
                                   'Production rate',
