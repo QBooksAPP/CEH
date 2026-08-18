@@ -9,6 +9,8 @@ import 'calibration_review_screen.dart';
 import 'calibration_records_screen.dart';
 import 'mix_designs_screen.dart';
 import 'mix_design_settings_screen.dart';
+import 'production_log_screen.dart';
+import 'settings_history_screen.dart';
 
 class ConcreteOperationsScreen extends StatelessWidget {
   const ConcreteOperationsScreen({super.key, required this.session});
@@ -28,9 +30,11 @@ class ConcreteOperationsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          const _SectionHeader(
+              title: 'CALIBRATION', icon: Icons.fact_check_outlined),
           _tile(
             context,
-            'Calibration Field Sheet',
+            'New Calibration',
             'Enter mixer calibration trials',
             Icons.fact_check_outlined,
             () {
@@ -82,30 +86,52 @@ class ConcreteOperationsScreen extends StatelessWidget {
                 );
               },
             ),
+          const SizedBox(height: 16),
+          const _SectionHeader(
+              title: 'PRODUCTION',
+              icon: Icons.precision_manufacturing_outlined),
           _tile(
             context,
-            'Mix Designs',
-            admin ? 'Create and manage mix designs' : 'View active mix designs',
-            Icons.science_outlined,
-            () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => MixDesignsScreen(session: session),
-                ),
-              );
-            },
-          ),
-          _tile(
-            context,
-            'Mix Design Settings',
-            'Approved production settings',
+            admin ? 'Mix Design Settings' : 'Mixer Settings',
+            admin
+                ? 'Detailed production calculations and calibration source'
+                : 'Get operational machine settings',
             Icons.tune_outlined,
             () => Navigator.push(
                 context,
                 MaterialPageRoute(
                     builder: (_) => MixDesignSettingsScreen(session: session))),
           ),
+          _tile(
+              context,
+              'Production Log',
+              'Daily loads and client sign-off',
+              Icons.receipt_long_outlined,
+              () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => ProductionLogScreen(session: session)))),
+          if (admin) ...[
+            _tile(
+                context,
+                'Mix Designs',
+                'Create and manage mix designs',
+                Icons.science_outlined,
+                () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => MixDesignsScreen(session: session)))),
+            _tile(
+                context,
+                'Settings History',
+                'Review applied production settings',
+                Icons.history_outlined,
+                () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) =>
+                            SettingsHistoryScreen(session: session)))),
+          ],
         ],
       ),
     );
@@ -130,4 +156,23 @@ class ConcreteOperationsScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.title, required this.icon});
+  final String title;
+  final IconData icon;
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(4, 8, 4, 10),
+        child: Row(children: [
+          Icon(icon),
+          const SizedBox(width: 8),
+          Text(title,
+              style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.2))
+        ]),
+      );
 }

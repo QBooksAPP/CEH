@@ -1,8 +1,8 @@
 # Database Migration Work
 
-The repository currently contains only `Server/migration_v1_1.sql`, which
-creates the authentication-token table. It is not a complete schema and must
-not be presented as sufficient to reproduce production.
+The repository contains incremental migrations, but not the original complete
+production schema. They must not be presented as sufficient to reproduce
+production from an empty database.
 
 A future migration project should begin from a reviewed production schema
 export with data removed. It should define the existing tables, foreign keys,
@@ -31,3 +31,6 @@ cannot prove which revision was used.
 Existing snapshots are backfilled from their currently referenced calibration
 as the best available historical value. Deploy the migration before or
 together with the Build 41 PHP files; do not deploy `settings_apply.php` first.
+# Build #42
+
+`Server/migration_v1_3_production_log.sql` is proposed and has not been applied. It must be reviewed, backed up, and applied after v1.2 before the Build #42 production-log PHP endpoints are deployed. It adds session/load/sign-off records plus non-destructive load revision history. It does not alter existing production rows.

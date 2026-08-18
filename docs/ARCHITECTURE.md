@@ -82,3 +82,15 @@ php -l Server/<file>.php
 
 PHP integration tests require a disposable database with reviewed migrations;
 never run them against production.
+# Build #42 production log
+
+Concrete Operations is divided into Calibration and Production. Operators use the operational **Mixer Settings** view; Admin retains the detailed **Mix Design Settings** view and calibration-source override. `settings_engine.php`, `settings_preview.php`, and `settings_apply.php` remain the canonical calculation path and their formulas are unchanged.
+
+Production Log uses `production_sessions.php`, `production_session_create.php`, `production_session_get.php`, `production_load_save.php`, and `production_session_sign.php`. Session identity fields are snapshots because no suitable Client/Project master tables currently exist. Operator ownership and OPEN/SIGNED state are enforced by PHP. Sign-off locks the session and calculates authoritative load count/total inside a database transaction.
+
+Signatures are PNG binaries stored in `qbook_production_signoffs.signature_data` with a SHA-256 digest. For the current application size this avoids publicly addressable signature files and hosting-path assumptions. The trade-off is database growth; protected object/file storage can replace it later behind the same authenticated endpoint if volume warrants it.
+
+Production Log endpoints set their PDO session to `+00:00` before reading or
+writing log records. This makes MySQL defaults and automatic update timestamps
+UTC without changing unrelated legacy endpoint behaviour. Flutter treats these
+backend date-times as UTC and renders them in the device's local timezone.

@@ -6,6 +6,7 @@ import '../models/mix_design.dart';
 import '../models/calibration_record.dart';
 import '../models/calibration_source.dart';
 import '../models/production_settings.dart';
+import '../models/production_session.dart';
 import '../models/session.dart';
 
 class ApiException implements Exception {
@@ -416,6 +417,76 @@ class CehApiClient {
     return (data['history'] as List? ?? const [])
         .map((e) => Map<String, dynamic>.from(e as Map))
         .toList();
+  }
+
+  Future<List<ProductionSession>> productionSessions(CehSession session,
+      {String? status}) async {
+    final uri = Uri.parse('$baseUrl/production_sessions.php').replace(
+      queryParameters: status == null ? null : {'status': status},
+    );
+    final response = await http
+        .get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'PRODUCTION_SESSIONS_FAILED');
+    return (data['sessions'] as List? ?? const [])
+        .map((e) =>
+            ProductionSession.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  Future<ProductionSession> productionSession(
+      CehSession session, int id) async {
+    final uri = Uri.parse('$baseUrl/production_session_get.php')
+        .replace(queryParameters: {'session_id': '$id'});
+    final response = await http
+        .get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'PRODUCTION_SESSION_FAILED');
+    return ProductionSession.fromJson(
+        Map<String, dynamic>.from(data['session'] as Map));
+  }
+
+  Future<ProductionSession> createProductionSession(
+      CehSession session, Map<String, dynamic> payload) async {
+    final data = await _postJson(session, 'production_session_create.php',
+        payload, 'PRODUCTION_SESSION_CREATE_FAILED');
+    return ProductionSession.fromJson(
+        Map<String, dynamic>.from(data['session'] as Map));
+  }
+
+  Future<ProductionSession> saveProductionLoad(CehSession session,
+      {required int sessionId, int? loadId, required double volumeM3}) async {
+    final data = await _postJson(
+        session,
+        'production_load_save.php',
+        {
+          'session_id': sessionId,
+          if (loadId != null) 'load_id': loadId,
+          'volume_m3': volumeM3,
+        },
+        'PRODUCTION_LOAD_SAVE_FAILED');
+    return ProductionSession.fromJson(
+        Map<String, dynamic>.from(data['session'] as Map));
+  }
+
+  Future<ProductionSession> signProductionSession(CehSession session,
+      {required int sessionId,
+      required String representativeName,
+      required String signatureBase64}) async {
+    final data = await _postJson(
+        session,
+        'production_session_sign.php',
+        {
+          'session_id': sessionId,
+          'representative_name': representativeName,
+          'signature_mime': 'image/png',
+          'signature_base64': signatureBase64,
+        },
+        'PRODUCTION_SIGNOFF_FAILED');
+    return ProductionSession.fromJson(
+        Map<String, dynamic>.from(data['session'] as Map));
   }
 
   Future<Map<String, dynamic>> _postJson(

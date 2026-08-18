@@ -2,6 +2,18 @@ double settingNumber(dynamic value) => value is num
     ? value.toDouble()
     : double.tryParse(value?.toString() ?? '') ?? 0;
 
+const operatorMixerSettingLabels = <String>[
+  'Mixer',
+  'Mix Design',
+  'Production Rate',
+  'Cement Target',
+  'Counts',
+  'Sand Gate Opening',
+  'Stone / Granite Gate Opening',
+  'Water Flow Rate',
+  'Admixture Flow Rate',
+];
+
 class ProductionSettingsResult {
   const ProductionSettingsResult({required this.data});
   final Map<String, dynamic> data;

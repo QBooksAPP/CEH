@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
+import '../core/ceh_theme.dart';
 import '../core/internal_navigation.dart';
 import '../core/view_mode.dart';
 import '../models/mix_design.dart';
@@ -123,19 +124,22 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final r = _result;
+    final admin = isUiAdmin(context, widget.session);
     return Scaffold(
-      appBar: AppBar(title: const Text('Mix Design Settings'), actions: [
-        if (isUiAdmin(context, widget.session))
-          IconButton(
-              tooltip: 'Settings History',
-              onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) =>
-                          SettingsHistoryScreen(session: widget.session))),
-              icon: const Icon(Icons.history)),
-        ...cehHomeAction(context),
-      ]),
+      appBar: AppBar(
+          title: Text(admin ? 'Mix Design Settings' : 'Mixer Settings'),
+          actions: [
+            if (admin)
+              IconButton(
+                  tooltip: 'Settings History',
+                  onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) =>
+                              SettingsHistoryScreen(session: widget.session))),
+                  icon: const Icon(Icons.history)),
+            ...cehHomeAction(context),
+          ]),
       body: _busy && r == null
           ? const Center(child: CircularProgressIndicator())
           : ListView(
@@ -154,7 +158,7 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
                           _calibrationId = 0;
                           _result = null;
                         })),
-                if (isUiAdmin(context, widget.session)) ...[
+                if (admin) ...[
                   const SizedBox(height: 12),
                   DropdownButtonFormField<int>(
                     key: ValueKey('calibration-$_mixerId-$_calibrationId'),
@@ -204,18 +208,19 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
                     decoration:
                         const InputDecoration(labelText: 'Conveyor speed')),
                 const SizedBox(height: 12),
-                const ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text('Batch volume'),
-                    trailing: Text('1.000 m³',
-                        style: TextStyle(fontWeight: FontWeight.w900))),
+                if (admin)
+                  const ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text('Batch volume'),
+                      trailing: Text('1.000 m³',
+                          style: TextStyle(fontWeight: FontWeight.w900))),
                 FilledButton.icon(
                     onPressed: _busy ? null : () => _calculate(false),
                     icon: const Icon(Icons.calculate_outlined),
-                    label: const Text('Preview Settings')),
+                    label: Text(admin ? 'Preview Settings' : 'Get Settings')),
                 if (r != null) ...[
                   const SizedBox(height: 16),
-                  if (isUiAdmin(context, widget.session)) ...[
+                  if (admin) ...[
                     Card(
                         child: Padding(
                             padding: const EdgeInsets.all(16),
@@ -302,33 +307,7 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
                                         ' L/min')
                                   ]))),
                   ] else ...[
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(children: [
-                          _line('Mixer',
-                              r.mixer['code'] ?? r.mixer['name'] ?? ''),
-                          _line('Mix Design', r.mixDesign['name'] ?? ''),
-                          _line('Production Rate',
-                              r.productionRate.toStringAsFixed(2), ' m³/min'),
-                          _line('Cement Target', r.mix['cement_kg'] ?? 0,
-                              ' kg/m³'),
-                          _line('Counts', r.settings['counts_per_m3'] ?? '—'),
-                          _line('Sand Gate Opening',
-                              r.settings['sand_gate_cm'] ?? '—', ' cm'),
-                          _line('Stone / Granite Gate Opening',
-                              r.settings['granite_gate_cm'] ?? '—', ' cm'),
-                          _line('Water Flow Rate',
-                              r.settings['water_flow_lpm'] ?? '—', ' L/min'),
-                          for (final a in r.admixtures)
-                            _line(
-                              'Admixture Flow Rate — ${a['name']}',
-                              a['metered_flow_lpm'] ?? a['flow_lpm'] ?? '—',
-                              ' L/min',
-                            ),
-                        ]),
-                      ),
-                    ),
+                    _OperatorSettingsResult(result: r),
                   ],
                   FilledButton.icon(
                       onPressed:
@@ -341,4 +320,67 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
             ),
     );
   }
+}
+
+class _OperatorSettingsResult extends StatelessWidget {
+  const _OperatorSettingsResult({required this.result});
+  final ProductionSettingsResult result;
+  @override
+  Widget build(BuildContext context) => Container(
+        key: const Key('operator-mixer-settings-result'),
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+            color: CehTheme.navy, borderRadius: BorderRadius.circular(22)),
+        child:
+            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text('MIXER ${result.mixer['code'] ?? result.mixer['name'] ?? ''}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 30,
+                  fontWeight: FontWeight.w900)),
+          Text('${result.mixDesign['name'] ?? ''}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 28,
+                  fontWeight: FontWeight.w900)),
+          const SizedBox(height: 18),
+          _value('PRODUCTION RATE', result.productionRate.toStringAsFixed(2),
+              'm³/min'),
+          _value('CEMENT TARGET', '${result.mix['cement_kg'] ?? 0}', 'kg/m³'),
+          _value('COUNTS', '${result.settings['counts_per_m3'] ?? '—'}', ''),
+          _value('SAND GATE OPENING',
+              '${result.settings['sand_gate_cm'] ?? '—'}', 'cm'),
+          _value('STONE / GRANITE GATE OPENING',
+              '${result.settings['granite_gate_cm'] ?? '—'}', 'cm'),
+          _value('WATER FLOW RATE',
+              '${result.settings['water_flow_lpm'] ?? '—'}', 'L/min'),
+          for (final a in result.admixtures)
+            _value('${a['name']}',
+                '${a['metered_flow_lpm'] ?? a['flow_lpm'] ?? '—'}', 'L/min'),
+        ]),
+      );
+  Widget _value(String label, String value, String unit) => Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+            color: Colors.white, borderRadius: BorderRadius.circular(14)),
+        child: Column(children: [
+          Text(label,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  color: CehTheme.blue,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: .7)),
+          const SizedBox(height: 3),
+          Text('$value${unit.isEmpty ? '' : ' $unit'}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  color: CehTheme.text,
+                  fontSize: 27,
+                  fontWeight: FontWeight.w900))
+        ]),
+      );
 }
