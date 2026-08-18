@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
+import '../core/calibration_math.dart';
 import '../models/session.dart';
 
 class CalibrationFieldSheetScreen extends StatefulWidget {
@@ -105,35 +106,29 @@ class _CalibrationFieldSheetScreenState
             t.counts.text.isNotEmpty &&
             n(t.counts) > 0)
         .toList();
-    if (valid.isEmpty) return {'trials': 0, 'kgpc': 0};
-
-    final avgCounts =
-        valid.map((t) => n(t.counts)).reduce((a, b) => a + b) / valid.length;
-
-    final netTrialWeights = valid.map((t) {
-      double net = n(t.weight) - n(_container);
-
-      if (name.startsWith('Stone')) {
-        net = net / (1 + n(_stoneMoisture) / 100);
-      } else if (name.startsWith('Sand')) {
-        net = net / (1 + n(_sandMoisture) / 100);
-      }
-
-      return net;
-    }).toList();
-
-    final avgNetWeight =
-        netTrialWeights.reduce((a, b) => a + b) / netTrialWeights.length;
-
-    double kgPerCount = avgCounts > 0 ? avgNetWeight / avgCounts : 0;
-
-    if (name.startsWith('Cement')) {
-      kgPerCount = kgPerCount * (1 - n(_cementSafety) / 100);
-    }
+    final isStone = name.startsWith('Stone');
+    final isSand = name.startsWith('Sand');
+    final result = calculateCalibrationResult(
+      trials: valid.map(
+        (trial) => CalibrationTrialValue(
+          totalWeightKg: n(trial.weight),
+          counts: n(trial.counts),
+        ),
+      ),
+      containerWeightKg: n(_container),
+      moisturePct: isStone
+          ? n(_stoneMoisture)
+          : isSand
+              ? n(_sandMoisture)
+              : 0,
+      cementSafetyFactorPct: n(_cementSafety),
+      applyMoistureCorrection: isStone || isSand,
+      applyCementSafetyFactor: name.startsWith('Cement'),
+    );
 
     return {
-      'trials': valid.length.toDouble(),
-      'kgpc': kgPerCount,
+      'trials': result.validTrials.toDouble(),
+      'kgpc': result.kgPerCount,
     };
   }
 

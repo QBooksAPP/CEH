@@ -1,0 +1,104 @@
+<?php
+declare(strict_types=1);
+
+require_once __DIR__ . '/settings_engine.php';
+
+$user = qbook_require_user();
+qbook_require_role($user, ['ADMIN', 'SUPERVISOR', 'OPERATOR']);
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    qbook_json([
+        'ok' => false,
+        'error' => 'METHOD_NOT_ALLOWED'
+    ], 405);
+}
+
+$input = json_decode(file_get_contents('php://input'), true);
+
+if (!is_array($input)) {
+    qbook_json([
+        'ok' => false,
+        'error' => 'INVALID_JSON'
+    ], 400);
+}
+
+$mixerId = (int)($input['mixer_id'] ?? 0);
+$mixDesignId = (int)($input['mix_design_id'] ?? 0);
+$conveyorSpeed = (float)($input['conveyor_speed'] ?? 0);
+
+try {
+
+    $settings = qbook_calculate_settings(
+        $mixerId,
+        $mixDesignId,
+        $conveyorSpeed
+    );
+
+    $admixtures = [];
+
+    foreach ($settings['admixtures'] as $admix) {
+        $admixtures[] = [
+            'id' => (int)$admix['id'],
+            'name' => $admix['name'],
+            'flow_lpm' => round((float)$admix['flow_lpm'], 1)
+        ];
+    }
+
+    qbook_json([
+        'ok' => true,
+        'mode' => 'PREVIEW',
+        'saved' => false,
+
+        'mixer' => [
+            'id' => (int)$settings['mixer']['id'],
+            'code' => $settings['mixer']['code'],
+            'name' => $settings['mixer']['name'],
+            'model' => $settings['mixer']['model'],
+            'truck_number' => $settings['mixer']['truck_number']
+        ],
+
+        'calibration' => $settings['calibration'],
+
+        'mix_design' => $settings['mix_design'],
+
+        'batch_volume_m3' => 1.00,
+
+        'mix' => [
+            'cement_kg' => (int)round($settings['cement_kg']),
+            'sand_kg' => (int)round($settings['sand_kg']),
+            'granite_kg' => (int)round($settings['granite_kg']),
+            'water_l' => (int)round($settings['design_water_l'])
+        ],
+
+        'settings' => [
+            'sand_gate_cm' => round($settings['sand_gate_cm'], 1),
+            'granite_gate_cm' => round($settings['granite_gate_cm'], 1),
+            'conveyor_speed' => (int)round($settings['conveyor_speed']),
+            'production_rate_m3_per_min' => round($settings['m3_per_min'], 2),
+            'water_flow_lpm' => round($settings['water_flow_lpm'], 1),
+            'admixtures' => $admixtures
+        ]
+    ]);
+
+} catch (RuntimeException $e) {
+
+    $error = $e->getMessage();
+
+    $status = in_array($error, [
+        'MIXER_REQUIRED',
+        'MIX_DESIGN_REQUIRED',
+        'INVALID_CONVEYOR_SPEED'
+    ], true) ? 400 : 409;
+
+    qbook_json([
+        'ok' => false,
+        'error' => $error
+    ], $status);
+
+} catch (Throwable $e) {
+
+    qbook_json([
+        'ok' => false,
+        'error' => 'SERVER_ERROR'
+    ], 500);
+}

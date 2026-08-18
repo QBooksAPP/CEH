@@ -1,0 +1,58 @@
+# Flutter and Dart generated files
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+coverage/
+
+# IDE and OS files
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Runtime environment and credentials
+.env
+.env.*
+Server/config.php
+Server/development/
+**/credentials.*
+**/*credential*.json
+**/*credentials*.json
+**/*secret*.json
+**/secrets.*
+
+# Private keys, certificates, keystores, and signing material
+*.key
+*.pem
+*.p12
+*.pfx
+*.der
+*.crt
+*.cer
+*.jks
+*.keystore
+*.mobileprovision
+key.properties
+
+# Database exports and backups
+*.sql.gz
+*.sql.zip
+*.dump.sql
+*_dump.sql
+*-dump.sql
+*.dump
+*.dump.gz
+*.bak
+*.backup
+*.sqlite
+*.sqlite3
+
+# Logs and temporary runtime files
+*.log
+logs/
+Server/logs/
+*.tmp
+*.temp
