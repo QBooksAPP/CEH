@@ -21,7 +21,7 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _email = TextEditingController();
+  final _identifier = TextEditingController();
   final _password = TextEditingController();
   final _api = const CehApiClient();
 
@@ -31,7 +31,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
-    _email.dispose();
+    _identifier.dispose();
     _password.dispose();
     super.dispose();
   }
@@ -40,9 +40,10 @@ class _LoginScreenState extends State<LoginScreen> {
     if (error is ApiException) {
       switch (error.code) {
         case 'INVALID_CREDENTIALS':
-          return 'Email or password is incorrect.';
+          return 'Username/email or password is incorrect.';
+        case 'LOGIN_AND_PASSWORD_REQUIRED':
         case 'EMAIL_AND_PASSWORD_REQUIRED':
-          return 'Enter your email and password.';
+          return 'Enter your username or email and password.';
         case 'UNAUTHORIZED':
           return 'Your session is not authorised.';
         case 'INVALID_SERVER_RESPONSE':
@@ -81,7 +82,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       final session = await _api.login(
-        email: _email.text,
+        login: _identifier.text,
         password: _password.text,
       );
       await widget.onLoggedIn(session);
@@ -159,18 +160,17 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             const SizedBox(height: 18),
                             TextFormField(
-                              controller: _email,
-                              keyboardType: TextInputType.emailAddress,
+                              controller: _identifier,
                               textInputAction: TextInputAction.next,
                               autocorrect: false,
                               decoration: const InputDecoration(
-                                labelText: 'Email',
-                                prefixIcon: Icon(Icons.email_outlined),
+                                labelText: 'Username or Email',
+                                prefixIcon: Icon(Icons.person_outline),
                               ),
                               validator: (value) {
                                 final v = value?.trim() ?? '';
-                                if (v.isEmpty || !v.contains('@')) {
-                                  return 'Enter a valid email address.';
+                                if (v.isEmpty) {
+                                  return 'Enter your username or email.';
                                 }
                                 return null;
                               },
@@ -187,8 +187,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                 labelText: 'Password',
                                 prefixIcon: const Icon(Icons.lock_outline),
                                 suffixIcon: IconButton(
-                                  tooltip:
-                                      _obscure ? 'Show password' : 'Hide password',
+                                  tooltip: _obscure
+                                      ? 'Show password'
+                                      : 'Hide password',
                                   onPressed: () =>
                                       setState(() => _obscure = !_obscure),
                                   icon: Icon(

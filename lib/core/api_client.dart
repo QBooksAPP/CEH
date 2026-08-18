@@ -26,7 +26,7 @@ class CehApiClient {
   static const String baseUrl = 'https://qbook.concretehireng.com';
 
   Future<CehSession> login({
-    required String email,
+    required String login,
     required String password,
   }) async {
     final response = await http
@@ -37,7 +37,7 @@ class CehApiClient {
             'Accept': 'application/json',
           },
           body: jsonEncode({
-            'email': email.trim().toLowerCase(),
+            'login': login.trim(),
             'password': password,
           }),
         )
@@ -63,6 +63,68 @@ class CehApiClient {
     }
 
     return session;
+  }
+
+  Future<List<CehUser>> users(CehSession session) async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/users_list.php'),
+            headers: authHeaders(session))
+        .timeout(const Duration(seconds: 20));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'USERS_FAILED');
+    return (data['users'] as List? ?? const [])
+        .map((value) =>
+            CehUser.fromJson(Map<String, dynamic>.from(value as Map)))
+        .toList();
+  }
+
+  Future<CehUser> createOperator(
+    CehSession session, {
+    required String fullName,
+    required String username,
+    required String password,
+  }) async {
+    final data = await _postJson(
+      session,
+      'users_create.php',
+      {'full_name': fullName, 'username': username, 'password': password},
+      'USER_CREATE_FAILED',
+    );
+    return CehUser.fromJson(Map<String, dynamic>.from(data['user'] as Map));
+  }
+
+  Future<CehUser> updateUser(
+    CehSession session, {
+    required int userId,
+    required String fullName,
+    required String username,
+    required bool isActive,
+  }) async {
+    final data = await _postJson(
+      session,
+      'users_update.php',
+      {
+        'user_id': userId,
+        'full_name': fullName,
+        'username': username,
+        'is_active': isActive,
+      },
+      'USER_UPDATE_FAILED',
+    );
+    return CehUser.fromJson(Map<String, dynamic>.from(data['user'] as Map));
+  }
+
+  Future<void> resetUserPassword(
+    CehSession session, {
+    required int userId,
+    required String password,
+  }) async {
+    await _postJson(
+      session,
+      'users_reset_password.php',
+      {'user_id': userId, 'new_password': password},
+      'PASSWORD_RESET_FAILED',
+    );
   }
 
   Future<List<Map<String, dynamic>>> mixers(CehSession session) async {

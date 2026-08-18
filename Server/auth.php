@@ -26,6 +26,7 @@ function qbook_require_user(): array {
         "SELECT
             u.id,
             u.full_name,
+            u.username,
             u.email,
             u.phone,
             u.role,

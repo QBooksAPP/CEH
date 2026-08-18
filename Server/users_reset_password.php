@@ -51,6 +51,7 @@ $stmt = $db->prepare(
     "SELECT
         id,
         full_name,
+        username,
         email,
         role,
         is_active
@@ -136,6 +137,9 @@ try {
 
             'email' =>
                 $target['email'],
+
+            'username' =>
+                $target['username'],
 
             'role' =>
                 $target['role'],

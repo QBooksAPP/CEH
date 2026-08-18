@@ -5,11 +5,13 @@ class CehUser {
     required this.email,
     required this.role,
     required this.isActive,
+    this.username,
     this.phone,
   });
 
   final int id;
   final String fullName;
+  final String? username;
   final String email;
   final String? phone;
   final String role;
@@ -23,6 +25,7 @@ class CehUser {
     return CehUser(
       id: (json['id'] as num).toInt(),
       fullName: (json['full_name'] ?? '').toString(),
+      username: json['username']?.toString(),
       email: (json['email'] ?? '').toString(),
       phone: json['phone']?.toString(),
       role: (json['role'] ?? '').toString().toUpperCase(),
@@ -36,6 +39,7 @@ class CehUser {
     return {
       'id': id,
       'full_name': fullName,
+      'username': username,
       'email': email,
       'phone': phone,
       'role': role,

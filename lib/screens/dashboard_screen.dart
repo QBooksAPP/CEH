@@ -8,6 +8,7 @@ import '../core/view_mode.dart';
 import '../models/session.dart';
 import 'concrete_operations_screen.dart';
 import 'module_placeholder_screen.dart';
+import 'user_management_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({
@@ -264,6 +265,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       MaterialPageRoute(
                         builder: (_) =>
                             ConcreteOperationsScreen(session: session),
+                      ),
+                    );
+                  } else if (m['t'] == 'Administration') {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => UserManagementScreen(session: session),
                       ),
                     );
                   } else {
