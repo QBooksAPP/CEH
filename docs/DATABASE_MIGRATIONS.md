@@ -34,3 +34,14 @@ together with the Build 41 PHP files; do not deploy `settings_apply.php` first.
 # Build #42
 
 `Server/migration_v1_3_production_log.sql` is proposed and has not been applied. It must be reviewed, backed up, and applied after v1.2 before the Build #42 production-log PHP endpoints are deployed. It adds session/load/sign-off records plus non-destructive load revision history. It does not alter existing production rows.
+
+# Signed Production Reports (v1.6, not applied)
+
+`Server/migration_v1_6_production_reports.sql` adds the independent,
+non-reusable Production Report sequence. Apply it after v1.5 and before
+deploying the report endpoint or the updated sign-off endpoint.
+
+The planned pre-go-live test cleanup and sequence reset is deliberately not in
+this migration. It requires a fresh backup, a separately reviewed list of test
+transactional rows, and explicit approval. Once live operations begin, report
+rows and numbers must never be deleted, reset, reused or renumbered.

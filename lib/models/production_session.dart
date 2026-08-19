@@ -86,6 +86,12 @@ bool canAccessProductionSession(
 
 bool canEditProductionSession(ProductionSession session) => session.isOpen;
 
+bool canShareProductionReport(ProductionSession session) =>
+    !session.isOpen && session.signoff != null;
+
+String formatProductionReportReference(int reportNumber) =>
+    'CEH-PR-${reportNumber.toString().padLeft(6, '0')}';
+
 DateTime? productionUtcToLocal(String? value) {
   final text = value?.trim() ?? '';
   if (text.isEmpty) return null;

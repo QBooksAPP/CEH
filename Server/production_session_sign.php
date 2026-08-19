@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/production_log_common.php';
+require_once __DIR__ . '/production_report_common.php';
 $user=qbook_require_user(); qbook_require_role($user,['ADMIN','OPERATOR']); production_require_method('POST'); $in=production_input();
 $sessionId=(int)($in['session_id']??0); $name=production_clean_text($in['representative_name']??'',150,'REPRESENTATIVE_NAME_REQUIRED');
 $encoded=(string)($in['signature_base64']??''); $binary=base64_decode($encoded,true);
@@ -18,6 +19,7 @@ try {
   $db->prepare("INSERT INTO qbook_production_signoffs (production_session_id, representative_name, signature_mime, signature_data, signature_sha256, load_count, total_m3, signed_at, signed_by_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")->execute([$sessionId,$name,$mime,$binary,hash('sha256',$binary),(int)$totals['load_count'],$totals['total_m3'],$now,(int)$user['id']]);
   $stmt=$db->prepare("UPDATE qbook_production_sessions SET status='SIGNED', signed_at=? WHERE id=? AND status='OPEN'"); $stmt->execute([$now,$sessionId]);
   if ($stmt->rowCount()!==1) throw new RuntimeException('SIGN_RACE');
+  production_report_issue($db, $sessionId);
   $db->commit(); qbook_audit($user,'PRODUCTION_SESSION_SIGNED','PRODUCTION_SESSION',$sessionId,['load_count'=>(int)$totals['load_count'],'total_m3'=>(float)$totals['total_m3'],'signature_sha256'=>hash('sha256',$binary)]);
   qbook_json(['ok'=>true,'session'=>production_payload($db,production_session_row($db,$sessionId),true)]);
 } catch (Throwable $e) { if ($db->inTransaction()) $db->rollBack(); qbook_json(['ok'=>false,'error'=>$e instanceof RuntimeException?'SESSION_ALREADY_SIGNED':'SERVER_ERROR'],$e instanceof RuntimeException?409:500); }

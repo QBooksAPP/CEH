@@ -61,6 +61,27 @@ void main() {
     expect(canEditProductionSession(record(status: 'SIGNED')), isFalse);
   });
 
+  test('official PDF share action is available only for signed sessions', () {
+    expect(canShareProductionReport(record()), isFalse);
+    expect(canShareProductionReport(record(status: 'SIGNED')), isFalse);
+    final signed = ProductionSession(
+      id: 1,
+      productionDate: '2026-08-18',
+      clientName: 'ABC',
+      projectSite: 'Site',
+      mixer: const {'id': 3, 'code': '307'},
+      operator: const {'id': 7, 'name': 'Operator'},
+      status: 'SIGNED',
+      signoff: const {'representative_name': 'Client'},
+    );
+    expect(canShareProductionReport(signed), isTrue);
+  });
+
+  test('production report reference is zero padded and deterministic', () {
+    expect(formatProductionReportReference(1), 'CEH-PR-000001');
+    expect(formatProductionReportReference(123), 'CEH-PR-000123');
+  });
+
   test('sign-off requires representative name and signature', () {
     expect(validateSignoff(representativeName: '', hasSignature: true),
         contains('name'));

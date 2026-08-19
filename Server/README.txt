@@ -29,3 +29,10 @@ Deployment:
 - health.php intentionally returns only minimal availability information.
 - The repository does not yet include the complete production database schema.
   See docs/DATABASE_MIGRATIONS.md in the repository root.
+
+Signed Production Reports:
+- Apply migration_v1_6_production_reports.sql before deploying the updated
+  production_session_sign.php or production_report_pdf.php.
+- Deploy production_report_common.php, production_report_pdf.php,
+  assets/ceh_logo.png and the complete pinned vendor/tcpdf directory together.
+- Reports are generated in memory; do not add a writable/public reports folder.

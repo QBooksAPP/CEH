@@ -1,9 +1,12 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../core/api_client.dart';
 import '../core/ceh_theme.dart';
@@ -300,6 +303,34 @@ class _ProductionSessionScreenState extends State<ProductionSessionScreen> {
   final _api = const CehApiClient();
   ProductionSession? _record;
   bool _busy = true;
+
+  void _error(Object error) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(error.toString().replaceFirst('ApiException: ', ''))));
+
+  Future<void> _shareProductionReport(ProductionSession record) async {
+    if (!canShareProductionReport(record)) return;
+    setState(() => _busy = true);
+    try {
+      final report = await _api.productionReportPdf(widget.session, record.id);
+      final temporary = await getTemporaryDirectory();
+      final directory = Directory('${temporary.path}/ceh-production-reports');
+      await directory.create(recursive: true);
+      final file = File('${directory.path}/${report.filename}');
+      await file.writeAsBytes(report.bytes, flush: true);
+      await SharePlus.instance.share(ShareParams(
+        title: 'CEH Daily Production Report',
+        subject: report.filename.replaceAll('.pdf', ''),
+        text: 'Concrete Equipment Hire Limited — signed production report',
+        files: [XFile(file.path, mimeType: 'application/pdf')],
+      ));
+    } catch (error) {
+      if (mounted) _error(error);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -466,7 +497,16 @@ class _ProductionSessionScreenState extends State<ProductionSessionScreen> {
                                         },
                                   icon: const Icon(Icons.draw_outlined),
                                   label: const Text('Client Sign-Off'))),
-                        if (!r.isOpen && r.signoff != null) _signed(r),
+                        if (canShareProductionReport(r)) ...[
+                          _signed(r),
+                          const SizedBox(height: 10),
+                          FilledButton.icon(
+                            onPressed:
+                                _busy ? null : () => _shareProductionReport(r),
+                            icon: const Icon(Icons.picture_as_pdf_outlined),
+                            label: const Text('Share Production Report (PDF)'),
+                          ),
+                        ],
                       ]));
   }
 

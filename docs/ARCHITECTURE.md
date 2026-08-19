@@ -94,3 +94,24 @@ Production Log endpoints set their PDO session to `+00:00` before reading or
 writing log records. This makes MySQL defaults and automatic update timestamps
 UTC without changing unrelated legacy endpoint behaviour. Flutter treats these
 backend date-times as UTC and renders them in the device's local timezone.
+
+## Signed Production Reports
+
+`production_report_pdf.php` is an authenticated binary endpoint for SIGNED
+sessions. It reuses the Production Log ownership rule (an Operator's own
+sessions, or every session for Admin), reads the immutable sign-off load count
+and total, embeds the stored PNG signature, and streams a PDF generated in
+memory. No PDF or signature is written to a public path.
+
+`qbook_production_reports.report_no` supplies the independent permanent
+sequence formatted as `CEH-PR-000001`. The one-to-one unique session key makes
+repeated downloads idempotent. New numbers are allocated in the sign-off
+transaction; the PDF endpoint can allocate a number lazily for a signed session
+created before v1.6 was deployed.
+
+TCPDF 6.11.3 is pinned under `Server/vendor/tcpdf` (LGPL-3.0-or-later). The CEH
+renderer uses direct cells, local PNG images and bundled DejaVu fonts. It does
+not use optional mbstring-dependent transformations. TCPDF's cURL options are
+initialized only inside its optional remote-resource functions. CEH uses no
+remote resources, so the report endpoint requires zlib and a PNG image engine
+(GD is available in production), but not cURL or mbstring.

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -18,6 +19,12 @@ class ApiException implements Exception {
 
   @override
   String toString() => code;
+}
+
+class ProductionReportFile {
+  const ProductionReportFile({required this.bytes, required this.filename});
+  final Uint8List bytes;
+  final String filename;
 }
 
 class CehApiClient {
@@ -583,6 +590,39 @@ class CehApiClient {
         'PRODUCTION_SIGNOFF_FAILED');
     return ProductionSession.fromJson(
         Map<String, dynamic>.from(data['session'] as Map));
+  }
+
+  Future<ProductionReportFile> productionReportPdf(
+      CehSession session, int sessionId) async {
+    final uri = Uri.parse('$baseUrl/production_report_pdf.php')
+        .replace(queryParameters: {'session_id': '$sessionId'});
+    final response = await http
+        .get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 40));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      var error = 'PRODUCTION_REPORT_FAILED';
+      try {
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
+        if (data is Map && data['error'] != null) {
+          error = data['error'].toString();
+        }
+      } catch (_) {}
+      throw ApiException(error, statusCode: response.statusCode);
+    }
+    final contentType = response.headers['content-type'] ?? '';
+    if (!contentType.toLowerCase().startsWith('application/pdf') ||
+        response.bodyBytes.length < 5 ||
+        String.fromCharCodes(response.bodyBytes.take(5)) != '%PDF-') {
+      throw const ApiException('INVALID_PRODUCTION_REPORT');
+    }
+    final disposition = response.headers['content-disposition'] ?? '';
+    final match = RegExp(r'filename="?([^";]+)"?', caseSensitive: false)
+        .firstMatch(disposition);
+    final filename = match?.group(1) ?? 'CEH-Production-Report.pdf';
+    if (!RegExp(r'^CEH-PR-[0-9]{6,}\.pdf$').hasMatch(filename)) {
+      throw const ApiException('INVALID_PRODUCTION_REPORT_FILENAME');
+    }
+    return ProductionReportFile(bytes: response.bodyBytes, filename: filename);
   }
 
   Future<Map<String, dynamic>> _postJson(
