@@ -10,16 +10,35 @@ $sessionId = (int)($_GET['session_id'] ?? 0);
 if ($sessionId <= 0) qbook_json(['ok' => false, 'error' => 'PRODUCTION_SESSION_REQUIRED'], 422);
 
 // CEH renders only local/inline resources. zlib is required for compressed PDF
-// streams, and GD or Imagick is required for alpha-channel PNG processing.
+// streams, and GD is required to validate and normalize the required PNGs.
 // Optional TCPDF remote-resource support is unused.
-if (!extension_loaded('zlib')
-    || (!extension_loaded('gd') && !extension_loaded('imagick'))) {
+if (!extension_loaded('zlib') || !extension_loaded('gd')) {
     qbook_json(['ok' => false, 'error' => 'PDF_ENGINE_UNAVAILABLE'], 503);
 }
+$cacheDirectory = production_report_cache_directory();
+if (!defined('K_PATH_CACHE')) define('K_PATH_CACHE', $cacheDirectory);
 require_once __DIR__ . '/vendor/tcpdf/tcpdf.php';
 
 final class CehProductionReportPdf extends TCPDF {
     public string $reportReference = '';
+
+    public function disableTcpdfAttribution(): void {
+        $this->tcpdflink = false;
+    }
+
+    public function embedRequiredPng(
+        string $png,
+        float $x,
+        float $y,
+        float $width,
+        float $height = 0
+    ): void {
+        $before = count($this->images);
+        $this->Image('@' . $png, $x, $y, $width, $height, 'PNG');
+        if (count($this->images) <= $before) {
+            throw new RuntimeException('PDF_IMAGE_EMBED_FAILED');
+        }
+    }
 
     public function Footer(): void {
         $this->SetY(-14);
@@ -61,14 +80,26 @@ try {
     if (!$signoff || (string)$signoff['signature_mime'] !== 'image/png') {
         throw new RuntimeException('SIGNED_EVIDENCE_MISSING');
     }
+    $signatureOriginal = production_report_blob_bytes($signoff['signature_data']);
+    if (!hash_equals((string)$signoff['signature_sha256'], hash('sha256', $signatureOriginal))) {
+        throw new RuntimeException('SIGNED_EVIDENCE_HASH_MISMATCH');
+    }
 
     $report = production_report_issue($db, $sessionId);
     $loads = production_loads($db, $sessionId);
     $db->commit();
 
     $reference = $report['reference'];
+    $logoPath = __DIR__ . '/assets/ceh_logo.png';
+    $logoOriginal = @file_get_contents($logoPath);
+    if (!is_string($logoOriginal) || $logoOriginal === '') {
+        throw new RuntimeException('PDF_LOGO_MISSING');
+    }
+    $logoPng = production_report_normalize_png($logoOriginal);
+    $signaturePng = production_report_normalize_png($signatureOriginal);
     $pdf = new CehProductionReportPdf('P', 'mm', 'A4', true, 'UTF-8', false);
     $pdf->reportReference = $reference;
+    $pdf->disableTcpdfAttribution();
     $pdf->SetCreator('Concrete Equipment Hire Limited');
     $pdf->SetAuthor('Concrete Equipment Hire Limited');
     $pdf->SetTitle($reference . ' Daily Production Report');
@@ -82,8 +113,7 @@ try {
     $navy = [18, 42, 76];
     $blue = [31, 103, 178];
     $light = [234, 241, 248];
-    $logo = __DIR__ . '/assets/ceh_logo.png';
-    $pdf->Image($logo, 15, 12, 38, 0, 'PNG');
+    $pdf->embedRequiredPng($logoPng, 15, 12, 38);
     $pdf->SetXY(58, 13);
     $pdf->SetFont('dejavusans', 'B', 14);
     $pdf->SetTextColor(...$navy);
@@ -166,12 +196,16 @@ try {
     $pdf->Cell(48, 7, 'Signed', 0, 0);
     $pdf->Cell(132, 7, production_report_local_time((string)$signoff['signed_at']), 0, 1);
     $signatureY = $pdf->GetY() + 3;
-    $pdf->Image('@' . $signoff['signature_data'], 15, $signatureY, 75, 28, 'PNG');
+    $pdf->embedRequiredPng($signaturePng, 15, $signatureY, 75, 28);
     $pdf->SetXY(15, $signatureY + 30);
     $pdf->SetFont('dejavusans', '', 8);
     $pdf->Cell(75, 5, 'Original captured client signature', 'T', 1, 'C');
 
     $bytes = $pdf->Output($reference . '.pdf', 'S');
+    unset($pdf);
+    if (substr_count($bytes, '/Subtype /Image') < 2) {
+        throw new RuntimeException('PDF_REQUIRED_IMAGES_MISSING');
+    }
     production_discard_output();
     header('Content-Type: application/pdf');
     header('Content-Disposition: attachment; filename="' . $reference . '.pdf"');

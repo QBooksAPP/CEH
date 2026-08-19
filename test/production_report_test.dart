@@ -61,7 +61,12 @@ void main() {
   test('representative and original PNG signature are embedded', () {
     expect(endpoint, contains('representative_name'));
     expect(endpoint, contains('signature_data'));
-    expect(endpoint, contains("'@' . \$signoff['signature_data']"));
+    expect(
+      endpoint,
+      contains("production_report_blob_bytes(\$signoff['signature_data'])"),
+    );
+    expect(endpoint, contains('production_report_normalize_png'));
+    expect(endpoint, contains('embedRequiredPng(\$signaturePng'));
     expect(endpoint, contains("signature_mime'] !== 'image/png'"));
   });
 
@@ -79,11 +84,26 @@ void main() {
             .indexOf("require_once __DIR__ . '/vendor/tcpdf/tcpdf.php';")));
     expect(endpoint, contains("extension_loaded('zlib')"));
     expect(endpoint, contains("extension_loaded('gd')"));
-    expect(endpoint, contains("extension_loaded('imagick')"));
     expect(endpoint, contains("'PDF_ENGINE_UNAVAILABLE'"));
     expect(endpoint, isNot(contains("extension_loaded('curl')")));
     expect(endpoint, isNot(contains("extension_loaded('mbstring')")));
     expect(tcpdfStatic, contains('getCurlDefaultOptions()'));
     expect(tcpdfStatic, isNot(contains('protected const CURLOPT_DEFAULT')));
+  });
+
+  test('required evidentiary images are validated and embedded or fail', () {
+    expect(common, contains('production_report_cache_directory()'));
+    expect(common, contains('production_report_normalize_png'));
+    expect(endpoint,
+        contains("hash_equals((string)\$signoff['signature_sha256']"));
+    expect(endpoint, contains('embedRequiredPng(\$logoPng'));
+    expect(endpoint, contains('embedRequiredPng(\$signaturePng'));
+    expect(endpoint, contains("'PDF_IMAGE_EMBED_FAILED'"));
+    expect(endpoint, contains("'PDF_REQUIRED_IMAGES_MISSING'"));
+  });
+
+  test('client report disables TCPDF attribution footer and link', () {
+    expect(endpoint, contains('disableTcpdfAttribution()'));
+    expect(endpoint, contains('\$this->tcpdflink = false;'));
   });
 }

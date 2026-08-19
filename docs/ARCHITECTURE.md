@@ -113,5 +113,12 @@ TCPDF 6.11.3 is pinned under `Server/vendor/tcpdf` (LGPL-3.0-or-later). The CEH
 renderer uses direct cells, local PNG images and bundled DejaVu fonts. It does
 not use optional mbstring-dependent transformations. TCPDF's cURL options are
 initialized only inside its optional remote-resource functions. CEH uses no
-remote resources, so the report endpoint requires zlib and a PNG image engine
-(GD is available in production), but not cURL or mbstring.
+remote resources, so the report endpoint requires zlib and GD, but not cURL or
+mbstring.
+
+Before loading TCPDF, the endpoint proves that PHP's private temporary
+directory is writable and assigns it as the TCPDF cache. The local logo and
+stored signature BLOB are decoded and normalized through GD, embedded as
+required image objects, and checked again in the completed PDF bytes. Missing,
+corrupt or unembeddable evidence fails with structured JSON instead of
+streaming a text-only report. TCPDF's attribution footer/link is disabled.
