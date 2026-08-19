@@ -47,7 +47,10 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
       final values = await Future.wait([
         _api.mixers(widget.session),
         _api.mixDesigns(widget.session),
-        _api.approvedCalibrationSources(widget.session),
+        if (widget.session.user.isAdmin)
+          _api.approvedCalibrationSources(widget.session)
+        else
+          Future.value(<CalibrationSource>[]),
       ]);
       if (!mounted) return;
       setState(() {
@@ -117,9 +120,15 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
         ]),
       );
 
-  List<CalibrationSource> get _mixerCalibrations => _calibrations
-      .where((calibration) => calibration.mixerId == _mixerId)
-      .toList();
+  List<CalibrationSource> get _mixerCalibrations =>
+      _calibrations.where((calibration) {
+        final design = _designs.where((d) => d.id == _designId).firstOrNull;
+        return calibration.mixerId == _mixerId &&
+            (design == null ||
+                (calibration.clientId == design.clientId &&
+                    calibration.projectId == design.projectId &&
+                    calibration.stoneSize == design.stoneSize));
+      }).toList();
 
   @override
   Widget build(BuildContext context) {
@@ -198,6 +207,7 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
                         .toList(),
                     onChanged: (v) => setState(() {
                           _designId = v;
+                          _calibrationId = 0;
                           _result = null;
                         })),
                 const SizedBox(height: 12),

@@ -5,6 +5,8 @@ import '../core/internal_navigation.dart';
 import '../core/view_mode.dart';
 import '../core/ceh_theme.dart';
 import '../models/mix_design.dart';
+import '../models/client.dart';
+import '../models/project.dart';
 import '../models/session.dart';
 
 class MixDesignEditorScreen extends StatefulWidget {
@@ -23,8 +25,6 @@ class _MixDesignEditorScreenState extends State<MixDesignEditorScreen> {
 
   late final TextEditingController _name;
   late final TextEditingController _description;
-  late final TextEditingController _client;
-  late final TextEditingController _project;
   late final TextEditingController _cement;
   late final TextEditingController _sand;
   late final TextEditingController _granite;
@@ -41,6 +41,12 @@ class _MixDesignEditorScreenState extends State<MixDesignEditorScreen> {
   String? _loadError;
   int? _mixDesignId;
   List<MixAdmixture> _admixtures = [];
+  List<CehClient> _clients = [];
+  List<CehProject> _projects = [];
+  int? _clientId;
+  int? _projectId;
+  String? _stoneSize;
+  String? _validationStatus;
 
   bool get _editing => _mixDesignId != null;
 
@@ -53,8 +59,10 @@ class _MixDesignEditorScreenState extends State<MixDesignEditorScreen> {
     _isActive = design?.isActive ?? true;
     _name = TextEditingController(text: design?.name ?? '');
     _description = TextEditingController(text: design?.description ?? '');
-    _client = TextEditingController(text: design?.clientName ?? '');
-    _project = TextEditingController(text: design?.projectName ?? '');
+    _clientId = design?.clientId;
+    _projectId = design?.projectId;
+    _stoneSize = design?.stoneSize;
+    _validationStatus = design?.clientValidationStatus;
     _cement = TextEditingController(text: _initialNumber(design?.cementKg));
     _sand = TextEditingController(text: _initialNumber(design?.sandKg));
     _granite = TextEditingController(text: _initialNumber(design?.graniteKg));
@@ -86,7 +94,37 @@ class _MixDesignEditorScreenState extends State<MixDesignEditorScreen> {
       controller.addListener(_recalculate);
     }
 
+    _loadOptions();
     if (design != null) _loadDetail(design.id);
+  }
+
+  Future<void> _loadOptions() async {
+    try {
+      final clients = await _api.clients(widget.session);
+      final projects = _clientId == null
+          ? <CehProject>[]
+          : await _api.projects(widget.session, _clientId!, activeOnly: false);
+      if (mounted) {
+        setState(() {
+          _clients = clients;
+          _projects = projects;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _selectClient(int? value) async {
+    setState(() {
+      _clientId = value;
+      _projectId = null;
+      _projects = [];
+    });
+    if (value == null) return;
+    try {
+      final projects =
+          await _api.projects(widget.session, value, activeOnly: false);
+      if (mounted) setState(() => _projects = projects);
+    } catch (_) {}
   }
 
   String _initialNumber(double? value) {
@@ -105,8 +143,6 @@ class _MixDesignEditorScreenState extends State<MixDesignEditorScreen> {
     for (final controller in [
       _name,
       _description,
-      _client,
-      _project,
       _cement,
       _sand,
       _granite,
@@ -174,8 +210,10 @@ class _MixDesignEditorScreenState extends State<MixDesignEditorScreen> {
     _isActive = design.isActive;
     _name.text = design.name;
     _description.text = design.description;
-    _client.text = design.clientName;
-    _project.text = design.projectName;
+    _clientId = design.clientId;
+    _projectId = design.projectId;
+    _stoneSize = design.stoneSize;
+    _validationStatus = design.clientValidationStatus;
     _cement.text = _initialNumber(design.cementKg);
     _sand.text = _initialNumber(design.sandKg);
     _granite.text = _initialNumber(design.graniteKg);
@@ -185,6 +223,7 @@ class _MixDesignEditorScreenState extends State<MixDesignEditorScreen> {
     _graniteSg.text = _initialNumber(design.graniteSg);
     _airPercent.text = _initialNumber(design.airFraction * 100);
     setState(() => _admixtures = List.of(design.admixtures));
+    _loadOptions();
   }
 
   String? _requiredText(String? value) {
@@ -248,10 +287,10 @@ class _MixDesignEditorScreenState extends State<MixDesignEditorScreen> {
     final difference = volume - 1;
     final isExact = difference.abs() < 0.0005;
     final status = isExact
-        ? 'Equals 1.000 m³'
+        ? 'EXACTLY 1.000 m³'
         : difference > 0
-            ? '${difference.abs().toStringAsFixed(3)} m³ above target'
-            : '${difference.abs().toStringAsFixed(3)} m³ below target';
+            ? 'EXCEEDS BY ${difference.abs().toStringAsFixed(3)} m³'
+            : 'SHORT BY ${difference.abs().toStringAsFixed(3)} m³';
     final color = isExact
         ? const Color(0xFF227A3D)
         : difference.abs() <= 0.01
@@ -425,8 +464,9 @@ class _MixDesignEditorScreenState extends State<MixDesignEditorScreen> {
       'name': _name.text.trim(),
       'description': _description.text.trim(),
       'design_mode': _mode.apiValue,
-      'client_name': _client.text.trim(),
-      'project_name': _project.text.trim(),
+      'client_id': _clientId,
+      'project_id': _projectId,
+      'stone_size': _stoneSize,
       'cement_kg': _value(_cement),
       if (_mode == MixDesignMode.client) 'sand_kg': _value(_sand),
       'granite_kg': _value(_granite),
@@ -440,7 +480,12 @@ class _MixDesignEditorScreenState extends State<MixDesignEditorScreen> {
   }
 
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate() ||
+        _clientId == null ||
+        _projectId == null ||
+        _stoneSize == null) {
+      return;
+    }
     if (_mode == MixDesignMode.calculated && _balancedSand == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -557,16 +602,49 @@ class _MixDesignEditorScreenState extends State<MixDesignEditorScreen> {
                         validator: _requiredText,
                       ),
                       const SizedBox(height: 10),
-                      TextFormField(
-                        controller: _client,
+                      DropdownButtonFormField<int>(
+                        initialValue: _clientId,
                         decoration: _decoration('Client'),
+                        items: _clients
+                            .where((c) => c.isActive || c.id == _clientId)
+                            .map((c) => DropdownMenuItem(
+                                value: c.id, child: Text(c.name)))
+                            .toList(),
+                        onChanged: _selectClient,
+                        validator: (v) => v == null ? 'Required' : null,
                       ),
                       const SizedBox(height: 10),
-                      TextFormField(
-                        controller: _project,
+                      DropdownButtonFormField<int>(
+                        key: ValueKey('project-$_clientId-$_projectId'),
+                        initialValue: _projectId,
                         decoration: _decoration('Project / site'),
+                        items: _projects
+                            .where((p) => p.isActive || p.id == _projectId)
+                            .map((p) => DropdownMenuItem(
+                                value: p.id, child: Text(p.name)))
+                            .toList(),
+                        onChanged: (v) => setState(() => _projectId = v),
+                        validator: (v) => v == null ? 'Required' : null,
                       ),
                       const SizedBox(height: 10),
+                      DropdownButtonFormField<String>(
+                        initialValue: _stoneSize,
+                        decoration: _decoration('Stone size'),
+                        items: const ['3/8"', '1/2"', '3/4 Down']
+                            .map((s) =>
+                                DropdownMenuItem(value: s, child: Text(s)))
+                            .toList(),
+                        onChanged: (v) => setState(() => _stoneSize = v),
+                        validator: (v) => v == null ? 'Required' : null,
+                      ),
+                      if (_mode == MixDesignMode.client &&
+                          _validationStatus != null)
+                        ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text('Client validation'),
+                            trailing: Text(_validationStatus!,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w900))),
                       TextFormField(
                         controller: _description,
                         minLines: 2,

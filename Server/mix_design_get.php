@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/job_context.php';
 
 $user = qbook_require_user();
 qbook_require_role($user, ['ADMIN']);
@@ -33,6 +34,7 @@ $stmt = $db->prepare(
         name,
         description,
         design_mode,
+        client_id, project_id, stone_size, client_validation_status,
         client_name,
         project_name,
         batch_volume_m3,
@@ -126,6 +128,7 @@ $calculatedVolume =
     + ($graniteKg / ($graniteSg * 1000))
     + ($waterL / 1000)
     + $airPct;
+$deviation=qbook_absolute_volume_deviation($calculatedVolume);
 
 qbook_json([
     'ok' => true,
@@ -136,6 +139,10 @@ qbook_json([
         'name' => $mix['name'],
         'description' => $mix['description'],
         'design_mode' => $mix['design_mode'],
+        'client_id'=>$mix['client_id']===null?null:(int)$mix['client_id'],
+        'project_id'=>$mix['project_id']===null?null:(int)$mix['project_id'],
+        'stone_size'=>$mix['stone_size'],
+        'client_validation_status'=>$mix['client_validation_status'],
 
         'client_name' => $mix['client_name'],
         'project_name' => $mix['project_name'],
@@ -171,6 +178,8 @@ qbook_json([
 
         'calculated_absolute_volume_m3' =>
             round($calculatedVolume, 4),
+        'absolute_volume_deviation_m3'=>round($deviation['deviation_m3'],4),
+        'absolute_volume_deviation_status'=>$deviation['deviation_status'],
 
         'is_active' =>
             (bool)$mix['is_active'],

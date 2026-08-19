@@ -14,6 +14,7 @@ import '../core/internal_navigation.dart';
 import '../core/view_mode.dart';
 import '../models/client.dart';
 import '../models/production_session.dart';
+import '../models/project.dart';
 import '../models/session.dart';
 
 class ProductionLogScreen extends StatefulWidget {
@@ -168,10 +169,12 @@ class _StartProductionSessionScreenState
     extends State<StartProductionSessionScreen> {
   final _api = const CehApiClient();
   final _form = GlobalKey<FormState>();
-  final _project = TextEditingController(), _notes = TextEditingController();
+  final _notes = TextEditingController();
   List<CehClient> _clients = [];
+  List<CehProject> _projects = [];
   List<Map<String, dynamic>> _mixers = [];
   int? _clientId;
+  int? _projectId;
   int? _mixerId;
   bool _busy = true;
   @override
@@ -202,20 +205,37 @@ class _StartProductionSessionScreenState
     }
   }
 
+  Future<void> _selectClient(int? value) async {
+    setState(() {
+      _clientId = value;
+      _projectId = null;
+      _projects = [];
+    });
+    if (value == null) return;
+    try {
+      final projects = await _api.projects(widget.session, value);
+      if (mounted) setState(() => _projects = projects);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$e')));
+      }
+    }
+  }
+
   @override
   void dispose() {
-    for (final c in [_project, _notes]) {
+    for (final c in [_notes]) {
       c.dispose();
     }
     super.dispose();
   }
 
-  String? _required(String? v) =>
-      v == null || v.trim().isEmpty ? 'Required' : null;
   Future<void> _save() async {
     if (!_form.currentState!.validate() ||
         _clientId == null ||
-        _mixerId == null) {
+        _mixerId == null ||
+        _projectId == null) {
       return;
     }
     setState(() => _busy = true);
@@ -226,7 +246,7 @@ class _StartProductionSessionScreenState
       final created = await _api.createProductionSession(widget.session, {
         'production_date': date,
         'client_id': _clientId,
-        'project_site': _project.text,
+        'project_id': _projectId,
         'mixer_id': _mixerId,
         'notes': _notes.text
       });
@@ -257,14 +277,20 @@ class _StartProductionSessionScreenState
                         .map((client) => DropdownMenuItem(
                             value: client.id, child: Text(client.name)))
                         .toList(),
-                    onChanged: (value) => _clientId = value,
+                    onChanged: _selectClient,
                     validator: (value) => value == null ? 'Required' : null),
                 const SizedBox(height: 12),
-                TextFormField(
-                    controller: _project,
+                DropdownButtonFormField<int>(
+                    key: ValueKey('project-$_clientId-$_projectId'),
                     decoration:
                         const InputDecoration(labelText: 'Project / Site'),
-                    validator: _required),
+                    items: _projects
+                        .where((p) => p.isActive)
+                        .map((p) =>
+                            DropdownMenuItem(value: p.id, child: Text(p.name)))
+                        .toList(),
+                    onChanged: (value) => setState(() => _projectId = value),
+                    validator: (value) => value == null ? 'Required' : null),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<int>(
                     decoration: const InputDecoration(labelText: 'Mixer'),

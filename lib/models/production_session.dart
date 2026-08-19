@@ -23,6 +23,7 @@ class ProductionSession {
     required this.productionDate,
     this.clientId,
     required this.clientName,
+    this.projectId,
     required this.projectSite,
     required this.mixer,
     required this.operator,
@@ -35,6 +36,7 @@ class ProductionSession {
   final String productionDate;
   final int? clientId;
   final String clientName;
+  final int? projectId;
   final String projectSite;
   final Map<String, dynamic> mixer;
   final Map<String, dynamic> operator;
@@ -53,6 +55,7 @@ class ProductionSession {
         productionDate: (json['production_date'] ?? '').toString(),
         clientId: (json['client_id'] as num?)?.toInt(),
         clientName: (json['client_name'] ?? '').toString(),
+        projectId: (json['project_id'] as num?)?.toInt(),
         projectSite: (json['project_site'] ?? '').toString(),
         mixer: Map<String, dynamic>.from(json['mixer'] as Map? ?? {}),
         operator: Map<String, dynamic>.from(json['operator'] as Map? ?? {}),

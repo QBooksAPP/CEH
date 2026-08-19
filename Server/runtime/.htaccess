@@ -1,0 +1,10 @@
+# Defense in depth for Apache-compatible deployments. IIS protection is
+# enforced by Server/web.config's hidden runtime segment.
+Options -Indexes
+<IfModule mod_authz_core.c>
+  Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Order allow,deny
+  Deny from all
+</IfModule>

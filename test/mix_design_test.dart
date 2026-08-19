@@ -106,5 +106,57 @@ void main() {
       expect(ccPer100KgToLitres(909), 0.909);
       expect(litresPer100KgToCc(0.909), 909);
     });
+
+    test('CLIENT validation and job context are preserved', () {
+      final design = MixDesign.fromJson({
+        'id': 9,
+        'name': 'Client 30',
+        'design_mode': 'CLIENT',
+        'client_id': 4,
+        'project_id': 12,
+        'client_name': 'ABC',
+        'project_name': 'Depot',
+        'stone_size': '3/4 Down',
+        'client_validation_status': 'VALIDATED',
+        'cement_kg': 320,
+        'sand_kg': 700,
+        'granite_kg': 1100,
+        'water_l': 180,
+        'air_pct': .02,
+        'cement_sg': 3.15,
+        'sand_sg': 2.6,
+        'granite_sg': 2.7,
+        'is_active': true,
+      });
+      expect(design.clientId, 4);
+      expect(design.projectId, 12);
+      expect(design.stoneSize, '3/4 Down');
+      expect(design.isProductionEligible, isTrue);
+      expect(
+          design.absoluteVolumeDeviationLabel,
+          anyOf(startsWith('SHORT BY'), startsWith('EXCEEDS BY'),
+              'EXACTLY 1.000 m³'));
+    });
+
+    test('unvalidated CLIENT design is never production eligible', () {
+      MixDesign design(String status) => MixDesign.fromJson({
+            'id': 1,
+            'name': 'Client',
+            'design_mode': 'CLIENT',
+            'client_validation_status': status,
+            'cement_kg': 320,
+            'sand_kg': 700,
+            'granite_kg': 1100,
+            'water_l': 180,
+            'air_pct': .02,
+            'cement_sg': 3.15,
+            'sand_sg': 2.6,
+            'granite_sg': 2.7,
+            'is_active': true,
+          });
+      expect(design('PENDING_VALIDATION').isProductionEligible, isFalse);
+      expect(design('REQUIRES_REVISION').isProductionEligible, isFalse);
+      expect(design('VALIDATED').isProductionEligible, isTrue);
+    });
   });
 }

@@ -5,6 +5,9 @@
 .packages
 build/
 coverage/
+output/
+android/local.properties
+android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
 
 # IDE and OS files
 .idea/
@@ -54,5 +57,7 @@ key.properties
 *.log
 logs/
 Server/logs/
+Server/runtime/*
+!Server/runtime/.htaccess
 *.tmp
 *.temp

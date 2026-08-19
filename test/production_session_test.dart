@@ -26,6 +26,7 @@ void main() {
       'id': 10,
       'production_date': '2026-08-18',
       'client_id': 24,
+      'project_id': 25,
       'client_name': 'ABC Construction Ltd',
       'project_site': 'Lagos site',
       'mixer': {'id': 3, 'code': '307'},
@@ -35,6 +36,7 @@ void main() {
 
     expect(session.clientId, 24);
     expect(session.clientName, 'ABC Construction Ltd');
+    expect(session.projectId, 25);
   });
 
   test('load numbering follows the highest existing sequential number', () {

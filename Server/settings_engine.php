@@ -111,6 +111,10 @@ function qbook_calculate_settings(
             name,
             description,
             design_mode,
+            client_id,
+            project_id,
+            stone_size,
+            client_validation_status,
             client_name,
             project_name,
             cement_kg,
@@ -131,6 +135,12 @@ function qbook_calculate_settings(
     if (!$mix) {
         throw new RuntimeException('MIX_DESIGN_NOT_FOUND_OR_INACTIVE');
     }
+    if ($mix['client_id'] === null || $mix['project_id'] === null || $mix['stone_size'] === null) {
+        throw new RuntimeException('MIX_DESIGN_CONTEXT_REQUIRED');
+    }
+    if ($mix['design_mode'] === 'CLIENT' && $mix['client_validation_status'] !== 'VALIDATED') {
+        throw new RuntimeException('CLIENT_MIX_NOT_VALIDATED');
+    }
 
     /*
      * Batch volume is always 1.00 m3.
@@ -149,14 +159,20 @@ function qbook_calculate_settings(
             calibration_date,
             calibration_notes,
             revision_no,
+            client_id,
+            project_id,
+            stone_size,
             stone_moisture_pct,
             sand_moisture_pct,
             reviewed_at
          FROM qbook_calibrations
          WHERE mixer_id = ?
+           AND client_id = ?
+           AND project_id = ?
+           AND stone_size = ?
            AND status = 'APPROVED'";
 
-    $calibrationParams = [$mixerId];
+    $calibrationParams = [$mixerId, (int)$mix['client_id'], (int)$mix['project_id'], (string)$mix['stone_size']];
     if ($calibrationId > 0) {
         $calibrationSql .= " AND id = ?";
         $calibrationParams[] = $calibrationId;
@@ -350,7 +366,10 @@ function qbook_calculate_settings(
             'date' => $calibration['calibration_date'],
             'notes' => $calibration['calibration_notes'],
             'revision_no' => (int)$calibration['revision_no'],
-            'reviewed_at' => $calibration['reviewed_at']
+            'reviewed_at' => $calibration['reviewed_at'],
+            'client_id' => (int)$calibration['client_id'],
+            'project_id' => (int)$calibration['project_id'],
+            'stone_size' => $calibration['stone_size']
         ],
 
         'mix_design' => [
@@ -359,7 +378,11 @@ function qbook_calculate_settings(
             'client_name' => $mix['client_name'],
             'project_name' => $mix['project_name'],
             'version_no' => (int)$mix['version_no'],
-            'design_mode' => $mix['design_mode']
+            'design_mode' => $mix['design_mode'],
+            'client_id' => (int)$mix['client_id'],
+            'project_id' => (int)$mix['project_id'],
+            'stone_size' => $mix['stone_size'],
+            'client_validation_status' => $mix['client_validation_status']
         ],
 
         'batch_volume_m3' => 1.0,

@@ -40,6 +40,9 @@ $stmt = $db->prepare(
     "SELECT
         c.id,
         c.mixer_id,
+        c.client_id,
+        c.project_id,
+        c.stone_size,
         c.entered_by,
         c.status,
         c.calibration_date,
@@ -94,6 +97,14 @@ if ($calibration['status'] !== 'DRAFT') {
         'error' => 'CALIBRATION_NOT_DRAFT',
         'status' => $calibration['status']
     ], 409);
+}
+if ($calibration['client_id'] === null || $calibration['project_id'] === null
+    || !in_array((string)$calibration['stone_size'], ['3/8"','1/2"','3/4 Down'], true)) {
+    qbook_json(['ok'=>false,'error'=>'CALIBRATION_CONTEXT_REQUIRED'],422);
+}
+if ((float)$calibration['sand_moisture_pct'] < 0 || (float)$calibration['sand_moisture_pct'] > 10
+    || (float)$calibration['stone_moisture_pct'] < 0 || (float)$calibration['stone_moisture_pct'] > 10) {
+    qbook_json(['ok'=>false,'error'=>'MOISTURE_MUST_BE_0_TO_10_PERCENT'],422);
 }
 
 /*

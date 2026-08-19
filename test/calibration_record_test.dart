@@ -6,6 +6,11 @@ CalibrationRecord record(String status) => CalibrationRecord.fromJson({
       'mixer': {'id': 3, 'code': '307', 'name': 'HM10'},
       'calibration_date': '2026-08-18',
       'calibration_notes': 'Koton Karfi',
+      'client_id': 4,
+      'project_id': 12,
+      'client_name': 'ABC',
+      'project_name': 'Depot',
+      'stone_size': '1/2"',
       'container_weight_kg': 2.5,
       'stone_moisture_pct': 1.2,
       'sand_moisture_pct': 2.3,
@@ -38,5 +43,14 @@ void main() {
     expect(value.rejectionReason, 'Correct Sand 8');
     expect(value.trials.single['gate_cm'], 8);
     expect(value.trials.single['counts'], 20);
+  });
+
+  test('calibration preserves its compatibility context', () {
+    final value = record('APPROVED');
+    expect(value.clientId, 4);
+    expect(value.projectId, 12);
+    expect(value.clientName, 'ABC');
+    expect(value.projectName, 'Depot');
+    expect(value.stoneSize, '1/2"');
   });
 }

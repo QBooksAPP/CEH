@@ -59,7 +59,9 @@ class _MixDesignsScreenState extends State<MixDesignsScreen> {
   }
 
   Future<void> _openEditor([MixDesign? design]) async {
-    if (!_isAdmin) return;
+    if (!_isAdmin) {
+      return;
+    }
     final changed = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
@@ -144,6 +146,12 @@ class _MixDesignsScreenState extends State<MixDesignsScreen> {
                       ? const Color(0xFFE3F4E8)
                       : const Color(0xFFF1F1F1),
                 ),
+              if (design.mode == MixDesignMode.client)
+                Chip(
+                    label: Text(
+                        design.clientValidationStatus ?? 'PENDING_VALIDATION')),
+              if (design.stoneSize.isNotEmpty)
+                Chip(label: Text(design.stoneSize)),
               if (location.isNotEmpty) Text(location),
             ],
           ),
@@ -160,6 +168,23 @@ class _MixDesignsScreenState extends State<MixDesignsScreen> {
               _quantityCell('Water', design.waterL, 'L'),
             ],
           ),
+          if (design.mode == MixDesignMode.client) ...[
+            const SizedBox(height: 12),
+            Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                    '${design.absoluteVolumeM3.toStringAsFixed(4)} m³ • ${design.absoluteVolumeDeviationLabel}',
+                    style: const TextStyle(fontWeight: FontWeight.w900))),
+            if (_isAdmin)
+              Wrap(spacing: 8, children: [
+                OutlinedButton(
+                    onPressed: () => _validate(design, 'REQUIRES_REVISION'),
+                    child: const Text('Requires revision')),
+                FilledButton(
+                    onPressed: () => _validate(design, 'VALIDATED'),
+                    child: const Text('Validate')),
+              ]),
+          ],
           if (activeAdmixtures.isNotEmpty) ...[
             const SizedBox(height: 16),
             const Align(
@@ -194,6 +219,23 @@ class _MixDesignsScreenState extends State<MixDesignsScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _validate(MixDesign design, String status) async {
+    if (!_isAdmin) {
+      return;
+    }
+    try {
+      await _api.validateClientMixDesign(widget.session,
+          mixDesignId: design.id, status: status);
+      await _load();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content:
+                Text(error.toString().replaceFirst('ApiException: ', ''))));
+      }
+    }
   }
 
   @override

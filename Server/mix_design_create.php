@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/job_context.php';
 
 $user = qbook_require_user();
 qbook_require_role($user, ['ADMIN']);
@@ -25,8 +26,9 @@ if (!is_array($input)) {
 $name        = trim((string)($input['name'] ?? ''));
 $description = trim((string)($input['description'] ?? ''));
 $designMode  = strtoupper(trim((string)($input['design_mode'] ?? 'CLIENT')));
-$clientName  = trim((string)($input['client_name'] ?? ''));
-$projectName = trim((string)($input['project_name'] ?? ''));
+$clientId = (int)($input['client_id'] ?? 0);
+$projectId = (int)($input['project_id'] ?? 0);
+$stoneSize = qbook_stone_size($input['stone_size'] ?? '');
 
 $isActive = array_key_exists('is_active', $input)
     ? ((bool)$input['is_active'] ? 1 : 0)
@@ -141,6 +143,11 @@ $calculatedVolume =
     $airVolume;
 
 $db = qbook_db();
+$context = qbook_active_job_context($db, $clientId, $projectId);
+$clientName = (string)$context['client_name'];
+$projectName = (string)$context['project_name'];
+$validationStatus = $designMode === 'CLIENT' ? 'PENDING_VALIDATION' : null;
+$deviation = qbook_absolute_volume_deviation($calculatedVolume);
 
 try {
 
@@ -150,6 +157,10 @@ try {
             name,
             description,
             design_mode,
+            client_id,
+            project_id,
+            stone_size,
+            client_validation_status,
             client_name,
             project_name,
             cement_kg,
@@ -167,13 +178,17 @@ try {
             updated_by
         )
         VALUES
-        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1.0000, ?, 1, ?, ?)"
+        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1.0000, ?, 1, ?, ?)"
     );
 
     $stmt->execute([
         $name,
         $description !== '' ? $description : null,
         $designMode,
+        $clientId,
+        $projectId,
+        $stoneSize,
+        $validationStatus,
         $clientName !== '' ? $clientName : null,
         $projectName !== '' ? $projectName : null,
         $cementKg,
@@ -202,6 +217,10 @@ try {
         [
             'name' => $name,
             'design_mode' => $designMode,
+            'client_id' => $clientId,
+            'project_id' => $projectId,
+            'stone_size' => $stoneSize,
+            'client_validation_status' => $validationStatus,
 
             'client_name' =>
                 $clientName !== '' ? $clientName : null,
@@ -235,6 +254,8 @@ try {
 
             'calculated_absolute_volume_m3' =>
                 round($calculatedVolume, 4),
+            'absolute_volume_deviation_m3' => round($deviation['deviation_m3'], 4),
+            'absolute_volume_deviation_status' => $deviation['deviation_status'],
 
             'is_active' =>
                 (bool)$isActive,
@@ -267,6 +288,10 @@ try {
             'id' => $mixId,
             'name' => $name,
             'design_mode' => $designMode,
+            'client_id' => $clientId,
+            'project_id' => $projectId,
+            'stone_size' => $stoneSize,
+            'client_validation_status' => $validationStatus,
             'client_name' =>
                 $clientName !== '' ? $clientName : null,
             'project_name' =>
@@ -282,6 +307,8 @@ try {
             'granite_sg' => round($graniteSg, 3),
             'calculated_absolute_volume_m3' =>
                 round($calculatedVolume, 4),
+            'absolute_volume_deviation_m3' => round($deviation['deviation_m3'], 4),
+            'absolute_volume_deviation_status' => $deviation['deviation_status'],
             'is_active' => (bool)$isActive,
             'version_no' => 1
         ]

@@ -7,6 +7,7 @@ import '../models/mix_design.dart';
 import '../models/calibration_record.dart';
 import '../models/calibration_source.dart';
 import '../models/client.dart';
+import '../models/project.dart';
 import '../models/production_settings.dart';
 import '../models/production_session.dart';
 import '../models/session.dart';
@@ -536,6 +537,52 @@ class CehApiClient {
         {'client_id': clientId, 'name': name, 'is_active': isActive},
         'CLIENT_UPDATE_FAILED');
     return CehClient.fromJson(Map<String, dynamic>.from(data['client'] as Map));
+  }
+
+  Future<List<CehProject>> projects(CehSession session, int clientId,
+      {bool activeOnly = true}) async {
+    final uri = Uri.parse('$baseUrl/projects.php').replace(queryParameters: {
+      'client_id': '$clientId',
+      if (activeOnly) 'active_only': '1'
+    });
+    final response = await http
+        .get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'PROJECTS_FAILED');
+    return (data['projects'] as List? ?? const [])
+        .map((e) => CehProject.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  Future<CehProject> createProject(CehSession session,
+      {required int clientId, required String name}) async {
+    final data = await _postJson(session, 'project_create.php',
+        {'client_id': clientId, 'name': name}, 'PROJECT_CREATE_FAILED');
+    return CehProject.fromJson(
+        Map<String, dynamic>.from(data['project'] as Map));
+  }
+
+  Future<CehProject> updateProject(CehSession session,
+      {required int projectId,
+      required String name,
+      required bool isActive}) async {
+    final data = await _postJson(
+        session,
+        'project_update.php',
+        {'project_id': projectId, 'name': name, 'is_active': isActive},
+        'PROJECT_UPDATE_FAILED');
+    return CehProject.fromJson(
+        Map<String, dynamic>.from(data['project'] as Map));
+  }
+
+  Future<void> validateClientMixDesign(CehSession session,
+      {required int mixDesignId, required String status}) async {
+    await _postJson(
+        session,
+        'mix_design_validate.php',
+        {'mix_design_id': mixDesignId, 'status': status},
+        'MIX_DESIGN_VALIDATION_FAILED');
   }
 
   Future<ProductionSession> productionSession(

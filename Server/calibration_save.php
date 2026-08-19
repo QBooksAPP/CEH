@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/calibration_math.php';
+require_once __DIR__ . '/job_context.php';
 
 $user = qbook_require_user();
 qbook_require_role($user, ['ADMIN', 'SUPERVISOR', 'OPERATOR']);
@@ -19,13 +20,18 @@ if (!is_array($input)) {
 $db = qbook_db();
 
 $id = (int)($input['calibration_id'] ?? 0);
+$clientId = (int)($input['client_id'] ?? 0);
+$projectId = (int)($input['project_id'] ?? 0);
+$stoneSize = qbook_stone_size($input['stone_size'] ?? '');
 $mixerCode = trim((string)($input['mixer_code'] ?? ''));
 $date = trim((string)($input['calibration_date'] ?? ''));
 $notes = trim((string)($input['calibration_notes'] ?? ''));
 $container = (float)($input['container_weight_kg'] ?? 0);
 $stoneMoisture = (float)($input['stone_moisture_pct'] ?? 0);
 $sandMoisture = (float)($input['sand_moisture_pct'] ?? 0);
-$cementSafety = (float)($input['cement_safety_factor_pct'] ?? 0);
+$cementSafety = $user['role'] === 'ADMIN'
+    ? (float)($input['cement_safety_factor_pct'] ?? 2.0)
+    : 2.0;
 $trials = $input['trials'] ?? [];
 
 if ($mixerCode === '' || $date === '') {
@@ -37,6 +43,9 @@ if (!is_array($trials)) {
 if ($container < 0 || $stoneMoisture < 0 || $sandMoisture < 0 || $cementSafety < 0) {
     qbook_json(['ok' => false, 'error' => 'NEGATIVE_CALIBRATION_VALUE'], 422);
 }
+if ($stoneMoisture > 10 || $sandMoisture > 10) {
+    qbook_json(['ok' => false, 'error' => 'MOISTURE_MUST_BE_0_TO_10_PERCENT'], 422);
+}
 
 $stmt = $db->prepare(
     "SELECT id FROM qbook_mixers WHERE code = ? AND is_active = 1 LIMIT 1"
@@ -47,6 +56,7 @@ if (!$mixer) {
     qbook_json(['ok' => false, 'error' => 'MIXER_NOT_FOUND'], 404);
 }
 $mixerId = (int)$mixer['id'];
+$context = qbook_active_job_context($db, $clientId, $projectId);
 
 try {
     $db->beginTransaction();
@@ -76,7 +86,8 @@ try {
 
         $stmt = $db->prepare(
             "UPDATE qbook_calibrations
-             SET mixer_id=?, calibration_date=?, calibration_notes=?,
+             SET mixer_id=?, client_id=?, project_id=?, client_name_snapshot=?,
+                 project_name_snapshot=?, stone_size=?, calibration_date=?, calibration_notes=?,
                  container_weight_kg=?, stone_moisture_pct=?, sand_moisture_pct=?,
                  cement_safety_factor_pct=?, status='DRAFT',
                  submitted_at=NULL, reviewed_by=NULL, reviewed_at=NULL,
@@ -85,7 +96,8 @@ try {
              WHERE id=?"
         );
         $stmt->execute([
-            $mixerId, $date, $notes, $container, $stoneMoisture,
+            $mixerId, $clientId, $projectId, $context['client_name'],
+            $context['project_name'], $stoneSize, $date, $notes, $container, $stoneMoisture,
             $sandMoisture, $cementSafety,
             (string)$existing['status'] === 'REJECTED' ? 1 : 0,
             $id
@@ -93,13 +105,15 @@ try {
     } else {
         $stmt = $db->prepare(
             "INSERT INTO qbook_calibrations
-             (mixer_id, calibration_date, calibration_notes, container_weight_kg,
+             (mixer_id, client_id, project_id, client_name_snapshot,
+              project_name_snapshot, stone_size, calibration_date, calibration_notes, container_weight_kg,
               stone_moisture_pct, sand_moisture_pct, cement_safety_factor_pct,
               status, entered_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?)"
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?)"
         );
         $stmt->execute([
-            $mixerId, $date, $notes, $container, $stoneMoisture,
+            $mixerId, $clientId, $projectId, $context['client_name'],
+            $context['project_name'], $stoneSize, $date, $notes, $container, $stoneMoisture,
             $sandMoisture, $cementSafety, (int)$user['id']
         ]);
         $id = (int)$db->lastInsertId();

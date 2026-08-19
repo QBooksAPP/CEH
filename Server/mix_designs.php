@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/job_context.php';
 
 $user = qbook_require_user();
 qbook_require_role($user, ['ADMIN', 'SUPERVISOR', 'OPERATOR']);
@@ -23,6 +24,7 @@ $sql = "
         name,
         description,
         design_mode,
+        client_id, project_id, stone_size, client_validation_status,
         client_name,
         project_name,
         cement_kg,
@@ -40,7 +42,11 @@ $sql = "
 ";
 
 if (!$isAdmin) {
-    $sql .= " WHERE is_active = 1";
+    $sql .= " WHERE is_active = 1
+               AND client_id IS NOT NULL
+               AND project_id IS NOT NULL
+               AND stone_size IS NOT NULL
+               AND (design_mode = 'CALCULATED' OR client_validation_status = 'VALIDATED')";
 }
 
 $sql .= "
@@ -60,6 +66,8 @@ $rows = $stmt->fetchAll();
 $mixes = [];
 
 foreach ($rows as $row) {
+    $absoluteVolume=(float)$row['cement_kg']/((float)$row['cement_sg']*1000)+(float)$row['sand_kg']/((float)$row['sand_sg']*1000)+(float)$row['granite_kg']/((float)$row['granite_sg']*1000)+(float)$row['water_l']/1000+(float)$row['air_pct'];
+    $deviation=qbook_absolute_volume_deviation($absoluteVolume);
 
     /*
      * Load admixtures belonging to this mix.
@@ -104,10 +112,17 @@ foreach ($rows as $row) {
         'name' => $row['name'],
         'description' => $row['description'],
         'design_mode' => $row['design_mode'],
+        'client_id'=>$row['client_id']===null?null:(int)$row['client_id'],
+        'project_id'=>$row['project_id']===null?null:(int)$row['project_id'],
+        'stone_size'=>$row['stone_size'],
+        'client_validation_status'=>$row['client_validation_status'],
         'client_name' => $row['client_name'],
         'project_name' => $row['project_name'],
 
         'batch_volume_m3' => 1.00,
+        'calculated_absolute_volume_m3'=>round($absoluteVolume,4),
+        'absolute_volume_deviation_m3'=>round($deviation['deviation_m3'],4),
+        'absolute_volume_deviation_status'=>$deviation['deviation_status'],
 
         'cement_kg' =>
             round((float)$row['cement_kg'], 2),

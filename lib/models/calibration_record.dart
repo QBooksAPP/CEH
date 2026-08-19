@@ -12,6 +12,11 @@ class CalibrationRecord {
     required this.rejectionReason,
     required this.reviewedAt,
     required this.trials,
+    this.clientId,
+    this.projectId,
+    this.clientName = '',
+    this.projectName = '',
+    this.stoneSize = '',
   });
 
   final int id;
@@ -26,6 +31,11 @@ class CalibrationRecord {
   final String? rejectionReason;
   final String? reviewedAt;
   final List<Map<String, dynamic>> trials;
+  final int? clientId;
+  final int? projectId;
+  final String clientName;
+  final String projectName;
+  final String stoneSize;
 
   bool get canEdit => status == 'DRAFT' || status == 'REJECTED';
 
@@ -47,5 +57,10 @@ class CalibrationRecord {
         trials: (json['trials'] as List? ?? const [])
             .map((e) => Map<String, dynamic>.from(e as Map))
             .toList(),
+        clientId: (json['client_id'] as num?)?.toInt(),
+        projectId: (json['project_id'] as num?)?.toInt(),
+        clientName: '${json['client_name'] ?? ''}',
+        projectName: '${json['project_name'] ?? ''}',
+        stoneSize: '${json['stone_size'] ?? ''}',
       );
 }

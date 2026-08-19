@@ -16,7 +16,7 @@ foreach (['production_date' => 'production_date', 'client' => 'client_name', 'mi
 $sql = "SELECT * FROM qbook_production_sessions" . ($where ? ' WHERE ' . implode(' AND ', $where) : '') . " ORDER BY production_date DESC, id DESC LIMIT 200";
 $stmt = production_db()->prepare($sql); $stmt->execute($params);
 $items = array_map(static function(array $r): array {
-    return ['id'=>(int)$r['id'], 'production_date'=>$r['production_date'], 'client_id'=>$r['client_id'] !== null ? (int)$r['client_id'] : null, 'client_name'=>$r['client_name'],
+    return ['id'=>(int)$r['id'], 'production_date'=>$r['production_date'], 'client_id'=>$r['client_id'] !== null ? (int)$r['client_id'] : null, 'project_id'=>$r['project_id'] !== null ? (int)$r['project_id'] : null, 'client_name'=>$r['client_name'],
         'project_site'=>$r['project_site'], 'mixer'=>['id'=>(int)$r['mixer_id'], 'code'=>$r['mixer_code_snapshot'], 'name'=>$r['mixer_name_snapshot']],
         'operator'=>['id'=>(int)$r['operator_id'], 'name'=>$r['operator_name_snapshot']], 'status'=>$r['status'], 'signed_at'=>$r['signed_at']];
 }, $stmt->fetchAll());

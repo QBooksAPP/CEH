@@ -6,6 +6,8 @@ import '../core/view_mode.dart';
 import '../core/calibration_math.dart';
 import '../models/session.dart';
 import '../models/calibration_record.dart';
+import '../models/client.dart';
+import '../models/project.dart';
 
 class CalibrationFieldSheetScreen extends StatefulWidget {
   const CalibrationFieldSheetScreen({
@@ -37,6 +39,13 @@ class _CalibrationFieldSheetScreenState
   bool _submitted = false;
   bool _loadingMixers = false;
   List<Map<String, dynamic>> _mixers = [];
+  List<CehClient> _clients = [];
+  List<CehProject> _projects = [];
+  int? _clientId;
+  int? _projectId;
+  String _stoneSize = '1/2"';
+  int _activeSection = 0;
+  final Set<int> _completedSections = {};
 
   final Map<String, List<_Trial>> trials = {
     'Cement FULL': List.generate(6, (_) => _Trial()),
@@ -55,6 +64,7 @@ class _CalibrationFieldSheetScreenState
     _date = DateTime.now();
     _populateCalibration();
     _loadMixers();
+    _loadClients();
   }
 
   void _populateCalibration() {
@@ -69,6 +79,9 @@ class _CalibrationFieldSheetScreenState
     _sandMoisture.text = '${record.sandMoisturePct}';
     _cementSafety.text = '${record.cementSafetyFactorPct}';
     _date = DateTime.tryParse(record.calibrationDate) ?? _date;
+    _clientId = record.clientId;
+    _projectId = record.projectId;
+    if (record.stoneSize.isNotEmpty) _stoneSize = record.stoneSize;
 
     for (final trial in record.trials) {
       final material = '${trial['material']}';
@@ -137,6 +150,22 @@ class _CalibrationFieldSheetScreenState
     } finally {
       if (mounted) setState(() => _loadingMixers = false);
     }
+  }
+
+  Future<void> _loadClients() async {
+    final clients = await _api.clients(widget.session);
+    if (!mounted) return;
+    setState(() => _clients = clients);
+    if (_clientId != null) await _loadProjects(_clientId!);
+  }
+
+  Future<void> _loadProjects(int clientId) async {
+    final projects = await _api.projects(widget.session, clientId);
+    if (!mounted) return;
+    setState(() {
+      _projects = projects;
+      if (!projects.any((p) => p.id == _projectId)) _projectId = null;
+    });
   }
 
   Future<void> pickDate() async {
@@ -213,6 +242,9 @@ class _CalibrationFieldSheetScreenState
     return {
       if (_calibrationId != null) 'calibration_id': _calibrationId,
       'mixer_code': _mixer.text.trim(),
+      'client_id': _clientId,
+      'project_id': _projectId,
+      'stone_size': _stoneSize,
       'calibration_date': '${_date.year.toString().padLeft(4, '0')}-'
           '${_date.month.toString().padLeft(2, '0')}-'
           '${_date.day.toString().padLeft(2, '0')}',
@@ -226,6 +258,20 @@ class _CalibrationFieldSheetScreenState
   }
 
   Future<void> _saveDraft() async {
+    if (_clientId == null || _projectId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Select Client and Project / Site.')));
+      return;
+    }
+    if (n(_stoneMoisture) < 0 ||
+        n(_stoneMoisture) > 10 ||
+        n(_sandMoisture) < 0 ||
+        n(_sandMoisture) > 10) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content:
+              Text('Sand and Stone moisture must be between 0% and 10%.')));
+      return;
+    }
     if (_mixer.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Select or enter a mixer first.')),
@@ -360,34 +406,74 @@ class _CalibrationFieldSheetScreenState
         decoration: InputDecoration(labelText: label, suffixText: suffix),
       );
 
-  Widget trialCard(String name) => Card(
-        margin: const EdgeInsets.only(bottom: 10),
-        child: ExpansionTile(
-          title:
-              Text(name, style: const TextStyle(fontWeight: FontWeight.w800)),
-          subtitle: Text(name == 'Cement HALF'
-              ? 'Optional • up to 6 trials'
-              : 'Up to 6 trials'),
-          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-          children: [
-            for (int i = 0; i < 6; i++)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(children: [
-                  SizedBox(
-                      width: 34,
-                      child: Text('${i + 1}', textAlign: TextAlign.center)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                      child: numField(trials[name]![i].weight, 'Total weight',
-                          suffix: 'kg')),
-                  const SizedBox(width: 8),
-                  Expanded(child: numField(trials[name]![i].counts, 'Counts')),
-                ]),
-              )
-          ],
-        ),
-      );
+  Widget trialCard(String name) {
+    final index = trials.keys.toList().indexOf(name);
+    final open = index == _activeSection;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Column(children: [
+        ListTile(
+            onTap: _completedSections.contains(index)
+                ? () => setState(() => _activeSection = index)
+                : null,
+            leading: _completedSections.contains(index)
+                ? const Icon(Icons.check_circle, color: Colors.green)
+                : CircleAvatar(child: Text('${index + 1}')),
+            title:
+                Text(name, style: const TextStyle(fontWeight: FontWeight.w800)),
+            subtitle: Text(_completedSections.contains(index)
+                ? 'Complete - tap to reopen'
+                : (name == 'Cement HALF'
+                    ? 'Optional'
+                    : 'Complete this section to continue'))),
+        if (open)
+          Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: Column(children: [
+                for (int i = 0; i < 6; i++)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(children: [
+                      SizedBox(
+                          width: 34,
+                          child: Text('${i + 1}', textAlign: TextAlign.center)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                          child: numField(
+                              trials[name]![i].weight, 'Total weight',
+                              suffix: 'kg')),
+                      const SizedBox(width: 8),
+                      Expanded(
+                          child: numField(trials[name]![i].counts, 'Counts')),
+                    ]),
+                  ),
+                const SizedBox(height: 8),
+                SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                        icon: const Icon(Icons.arrow_forward),
+                        label: Text(
+                            name == 'Cement HALF' ? 'Skip / Next' : 'Next'),
+                        onPressed: () {
+                          final valid = resultFor(name)['trials']!.toInt();
+                          if (name != 'Cement HALF' && valid == 0) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content: Text(
+                                        'Enter at least one valid trial before continuing.')));
+                            return;
+                          }
+                          setState(() {
+                            _completedSections.add(index);
+                            if (index < trials.length - 1) {
+                              _activeSection = index + 1;
+                            }
+                          });
+                        })),
+              ]))
+      ]),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -408,6 +494,48 @@ class _CalibrationFieldSheetScreenState
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(children: [
+                DropdownButtonFormField<int>(
+                    initialValue: _clients.any((c) => c.id == _clientId)
+                        ? _clientId
+                        : null,
+                    decoration: const InputDecoration(labelText: 'Client'),
+                    items: _clients
+                        .map((c) =>
+                            DropdownMenuItem(value: c.id, child: Text(c.name)))
+                        .toList(),
+                    onChanged: (v) {
+                      setState(() {
+                        _clientId = v;
+                        _projectId = null;
+                        _projects = [];
+                      });
+                      if (v != null) _loadProjects(v);
+                    }),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<int>(
+                    key: ValueKey('project-$_clientId-$_projectId'),
+                    initialValue: _projects.any((p) => p.id == _projectId)
+                        ? _projectId
+                        : null,
+                    decoration:
+                        const InputDecoration(labelText: 'Project / Site'),
+                    items: _projects
+                        .map((p) =>
+                            DropdownMenuItem(value: p.id, child: Text(p.name)))
+                        .toList(),
+                    onChanged: _clientId == null
+                        ? null
+                        : (v) => setState(() => _projectId = v)),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                    initialValue: _stoneSize,
+                    decoration: const InputDecoration(labelText: 'Stone Size'),
+                    items: const ['3/8"', '1/2"', '3/4 Down']
+                        .map((v) => DropdownMenuItem(value: v, child: Text(v)))
+                        .toList(),
+                    onChanged: (v) =>
+                        setState(() => _stoneSize = v ?? _stoneSize)),
+                const SizedBox(height: 10),
                 if (_mixers.isNotEmpty)
                   DropdownButtonFormField<String>(
                     initialValue: _mixers.any(
@@ -497,7 +625,8 @@ class _CalibrationFieldSheetScreenState
                     padding: EdgeInsets.only(top: 6),
                     child: Align(
                       alignment: Alignment.centerLeft,
-                      child: Text('Set by CEH Admin',
+                      child: Text(
+                          'Standard CEH value: 2.00% (Admin override only)',
                           style:
                               TextStyle(color: Colors.black54, fontSize: 12)),
                     ),

@@ -4,7 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 
 $user = qbook_require_user();
-qbook_require_role($user, ['ADMIN', 'SUPERVISOR', 'OPERATOR']);
+qbook_require_role($user, ['ADMIN']);
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     qbook_json(['ok' => false, 'error' => 'METHOD_NOT_ALLOWED'], 405);
@@ -15,6 +15,7 @@ $db = qbook_db();
 $stmt = $db->query(
     "SELECT
         c.id,
+        c.client_id, c.project_id, c.client_name_snapshot, c.project_name_snapshot, c.stone_size,
         c.calibration_date,
         c.calibration_notes,
         c.container_weight_kg,
@@ -76,6 +77,11 @@ foreach ($stmt->fetchAll() as $c) {
 
     $items[] = [
         'id' => $id,
+        'client_id' => $c['client_id'] === null ? null : (int)$c['client_id'],
+        'project_id' => $c['project_id'] === null ? null : (int)$c['project_id'],
+        'client_name' => $c['client_name_snapshot'],
+        'project_name' => $c['project_name_snapshot'],
+        'stone_size' => $c['stone_size'],
         'calibration_date' => (string)$c['calibration_date'],
         'calibration_notes' => $c['calibration_notes'],
         'container_weight_kg' => (float)$c['container_weight_kg'],

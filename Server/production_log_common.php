@@ -120,6 +120,7 @@ function production_payload(PDO $db, array $row, bool $includeSignature = false)
     return [
         'id' => (int)$row['id'], 'production_date' => $row['production_date'],
         'client_id' => $row['client_id'] !== null ? (int)$row['client_id'] : null,
+        'project_id' => $row['project_id'] !== null ? (int)$row['project_id'] : null,
         'client_name' => $row['client_name'], 'project_site' => $row['project_site'],
         'mixer' => ['id' => (int)$row['mixer_id'], 'code' => $row['mixer_code_snapshot'], 'name' => $row['mixer_name_snapshot']],
         'operator' => ['id' => (int)$row['operator_id'], 'name' => $row['operator_name_snapshot']],

@@ -12,7 +12,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 
 $db = qbook_db();
 $stmt = $db->prepare(
-    "SELECT c.id, c.mixer_id, c.calibration_date, c.calibration_notes,
+    "SELECT c.id, c.mixer_id, c.client_id, c.project_id,
+            c.client_name_snapshot, c.project_name_snapshot, c.stone_size,
+            c.calibration_date, c.calibration_notes,
             c.container_weight_kg, c.stone_moisture_pct,
             c.sand_moisture_pct, c.cement_safety_factor_pct,
             c.status, c.submitted_at, c.reviewed_at, c.rejection_reason,
@@ -55,6 +57,11 @@ foreach ($rows as $row) {
             'code' => $row['mixer_code'],
             'name' => $row['mixer_name']
         ],
+        'client_id' => $row['client_id'] === null ? null : (int)$row['client_id'],
+        'project_id' => $row['project_id'] === null ? null : (int)$row['project_id'],
+        'client_name' => $row['client_name_snapshot'],
+        'project_name' => $row['project_name_snapshot'],
+        'stone_size' => $row['stone_size'],
         'calibration_date' => $row['calibration_date'],
         'calibration_notes' => $row['calibration_notes'],
         'container_weight_kg' => (float)$row['container_weight_kg'],

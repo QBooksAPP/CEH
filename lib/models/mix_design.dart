@@ -126,6 +126,10 @@ class MixDesign {
     required this.isActive,
     required this.versionNo,
     required this.admixtures,
+    this.clientId,
+    this.projectId,
+    this.stoneSize = '',
+    this.clientValidationStatus,
     this.serverCalculatedAbsoluteVolumeM3,
     this.createdAt,
     this.updatedAt,
@@ -149,6 +153,10 @@ class MixDesign {
   final bool isActive;
   final int versionNo;
   final List<MixAdmixture> admixtures;
+  final int? clientId;
+  final int? projectId;
+  final String stoneSize;
+  final String? clientValidationStatus;
   final double? serverCalculatedAbsoluteVolumeM3;
   final String? createdAt;
   final String? updatedAt;
@@ -163,6 +171,19 @@ class MixDesign {
         sandSg: sandSg,
         graniteSg: graniteSg,
       );
+  double get absoluteVolumeDeviationM3 => absoluteVolumeM3 - 1.0;
+  String get absoluteVolumeDeviationLabel {
+    final d = absoluteVolumeDeviationM3;
+    if (d.abs() < 0.0005) return 'EXACTLY 1.000 m³';
+    return d < 0
+        ? 'SHORT BY ${(-d).toStringAsFixed(3)} m³'
+        : 'EXCEEDS BY ${d.toStringAsFixed(3)} m³';
+  }
+
+  bool get isProductionEligible =>
+      isActive &&
+      (mode == MixDesignMode.calculated ||
+          clientValidationStatus == 'VALIDATED');
 
   factory MixDesign.fromJson(Map<String, dynamic> json) {
     return MixDesign(
@@ -189,6 +210,10 @@ class MixDesign {
               : _number(json['calculated_absolute_volume_m3']),
       createdAt: json['created_at']?.toString(),
       updatedAt: json['updated_at']?.toString(),
+      clientId: (json['client_id'] as num?)?.toInt(),
+      projectId: (json['project_id'] as num?)?.toInt(),
+      stoneSize: '${json['stone_size'] ?? ''}',
+      clientValidationStatus: json['client_validation_status']?.toString(),
       admixtures: (json['admixtures'] as List? ?? const [])
           .map(
             (item) =>

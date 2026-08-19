@@ -4,6 +4,7 @@ import '../core/api_client.dart';
 import '../core/internal_navigation.dart';
 import '../core/view_mode.dart';
 import '../models/client.dart';
+import '../models/project.dart';
 import '../models/session.dart';
 
 class ClientManagementScreen extends StatefulWidget {
@@ -99,6 +100,100 @@ class _ClientManagementScreenState extends State<ClientManagementScreen> {
     }
   }
 
+  Future<void> _manageProjects(CehClient client) async {
+    if (!isUiAdmin(context, widget.session)) return;
+    var projects =
+        await _api.projects(widget.session, client.id, activeOnly: false);
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        builder: (sheetContext) => StatefulBuilder(
+            builder: (context, setSheetState) => SafeArea(
+                    child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                      16, 16, 16, 16 + MediaQuery.viewInsetsOf(context).bottom),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Text('${client.name} Projects / Sites',
+                        style: Theme.of(context).textTheme.titleLarge),
+                    const SizedBox(height: 12),
+                    Flexible(
+                        child: ListView(shrinkWrap: true, children: [
+                      for (final project in projects)
+                        ListTile(
+                          title: Text(project.name),
+                          subtitle:
+                              Text(project.isActive ? 'ACTIVE' : 'INACTIVE'),
+                          trailing: const Icon(Icons.edit_outlined),
+                          onTap: () async {
+                            final changed = await _editProject(client, project);
+                            if (changed) {
+                              projects = await _api.projects(
+                                  widget.session, client.id,
+                                  activeOnly: false);
+                              setSheetState(() {});
+                            }
+                          },
+                        )
+                    ])),
+                    FilledButton.icon(
+                        onPressed: () async {
+                          final changed = await _editProject(client);
+                          if (changed) {
+                            projects = await _api.projects(
+                                widget.session, client.id,
+                                activeOnly: false);
+                            setSheetState(() {});
+                          }
+                        },
+                        icon: const Icon(Icons.add),
+                        label: const Text('Add Project / Site')),
+                  ]),
+                ))));
+  }
+
+  Future<bool> _editProject(CehClient client, [CehProject? project]) async {
+    final name = TextEditingController(text: project?.name ?? '');
+    var active = project?.isActive ?? true;
+    final save = await showDialog<bool>(
+        context: context,
+        builder: (d) => StatefulBuilder(
+            builder: (context, setD) => AlertDialog(
+                    title: Text(project == null
+                        ? 'Add Project / Site'
+                        : 'Edit Project / Site'),
+                    content: Column(mainAxisSize: MainAxisSize.min, children: [
+                      TextField(
+                          controller: name,
+                          decoration: const InputDecoration(
+                              labelText: 'Project / Site Name')),
+                      if (project != null)
+                        SwitchListTile(
+                            value: active,
+                            onChanged: (v) => setD(() => active = v),
+                            title: const Text('Active'))
+                    ]),
+                    actions: [
+                      TextButton(
+                          onPressed: () => Navigator.pop(d, false),
+                          child: const Text('Cancel')),
+                      FilledButton(
+                          onPressed: () => Navigator.pop(d, true),
+                          child: const Text('Save'))
+                    ])));
+    final value = name.text.trim();
+    name.dispose();
+    if (save != true || value.isEmpty) return false;
+    if (project == null) {
+      await _api.createProject(widget.session,
+          clientId: client.id, name: value);
+    } else {
+      await _api.updateProject(widget.session,
+          projectId: project.id, name: value, isActive: active);
+    }
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
     final admin = isUiAdmin(context, widget.session);
@@ -132,9 +227,19 @@ class _ClientManagementScreenState extends State<ClientManagementScreen> {
                             style:
                                 const TextStyle(fontWeight: FontWeight.w900)),
                         subtitle: Text(client.isActive ? 'ACTIVE' : 'INACTIVE'),
-                        trailing:
-                            admin ? const Icon(Icons.edit_outlined) : null,
-                        onTap: admin ? () => _edit(client) : null,
+                        trailing: admin
+                            ? Wrap(children: [
+                                IconButton(
+                                    tooltip: 'Projects / Sites',
+                                    onPressed: () => _manageProjects(client),
+                                    icon: const Icon(
+                                        Icons.account_tree_outlined)),
+                                IconButton(
+                                    tooltip: 'Edit Client',
+                                    onPressed: () => _edit(client),
+                                    icon: const Icon(Icons.edit_outlined))
+                              ])
+                            : null,
                       ),
                     );
                   },

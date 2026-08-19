@@ -10,6 +10,8 @@ void main() {
   final sign = source('Server/production_session_sign.php');
   final migration = source('Server/migration_v1_6_production_reports.sql');
   final tcpdfStatic = source('Server/vendor/tcpdf/include/tcpdf_static.php');
+  final webConfig = source('Server/web.config');
+  final runtimeHtaccess = source('Server/runtime/.htaccess');
 
   test('report references use an independent permanent sequence', () {
     expect(common, contains("'CEH-PR-' . str_pad"));
@@ -33,7 +35,7 @@ void main() {
     expect(endpoint, contains("!== 'SIGNED'"));
     expect(endpoint, contains("'SIGNED_SESSION_REQUIRED'"));
     expect(endpoint, contains('FROM qbook_production_signoffs'));
-    expect(endpoint, contains("'SIGNED_EVIDENCE_MISSING'"));
+    expect(endpoint, contains("'PDF_SIGNATURE_MISSING'"));
   });
 
   test('operator ownership and admin access use the production authorization',
@@ -92,7 +94,7 @@ void main() {
   });
 
   test('required evidentiary images are validated and embedded or fail', () {
-    expect(common, contains('production_report_cache_directory()'));
+    expect(common, contains('production_report_cache_directory('));
     expect(common, contains('production_report_normalize_png'));
     expect(endpoint,
         contains("hash_equals((string)\$signoff['signature_sha256']"));
@@ -102,8 +104,85 @@ void main() {
     expect(endpoint, contains("'PDF_REQUIRED_IMAGES_MISSING'"));
   });
 
+  test('temporary diagnostics expose fixed safe codes to Admin only', () {
+    expect(common, contains('production_report_safe_diagnostic'));
+    expect(common, contains("'diagnostic_code'"));
+    expect(common, contains("(\$user['role'] ?? '') === 'ADMIN'"));
+    expect(common, contains("'error' => 'PRODUCTION_REPORT_FAILED'"));
+    expect(common, contains("\$response['error'] = \$code"));
+    expect(common, isNot(contains("'message' => \$exception")));
+    expect(common, isNot(contains("'detail' => \$exception")));
+    for (final code in [
+      'PDF_CACHE_UNAVAILABLE',
+      'PDF_LOGO_UNREADABLE',
+      'PDF_LOGO_INVALID',
+      'PDF_SIGNATURE_MISSING',
+      'PDF_SIGNATURE_HASH_MISMATCH',
+      'PDF_SIGNATURE_INVALID',
+      'PDF_IMAGE_EMBED_FAILED',
+      'PDF_OUTPUT_IMAGES_MISSING',
+    ]) {
+      expect(common, contains(code));
+    }
+  });
+
+  test('cache capability failure is inside the safe diagnostic boundary', () {
+    expect(endpoint, contains('try {'));
+    expect(endpoint, contains('production_report_cache_directory()'));
+    expect(endpoint, contains('production_report_fail(\$user, \$exception)'));
+  });
+
+  test('IONOS cache fallback is private, writable-tested and HTTP blocked', () {
+    expect(common, contains("__DIR__ . '/runtime/pdf-cache'"));
+    expect(common, contains("mkdir(\$runtimeCache, 0700, true)"));
+    expect(common, contains('production_report_prove_writable_directory'));
+    expect(common, contains('production_report_create_request_cache'));
+    expect(common, contains("tempnam(\$resolved, 'ceh_pdf_probe_')"));
+    expect(webConfig, contains('<add segment="runtime" />'));
+    expect(webConfig, contains('<directoryBrowse enabled="false" />'));
+    expect(runtimeHtaccess, contains('Require all denied'));
+    expect(runtimeHtaccess, contains('Options -Indexes'));
+  });
+
+  test('TCPDF temporary files are cleaned up on success and failure', () {
+    expect(endpoint, contains('unset(\$pdf);'));
+    expect(endpoint, contains('TCPDF destructor removes its temp files'));
+    expect(common, contains('production_report_cleanup_cache_directory'));
+    expect(common, contains("basename(\$resolved), 'ceh_pdf_'"));
+    expect(
+        endpoint,
+        contains(
+            'production_report_cleanup_cache_directory(\$cacheDirectory)'));
+  });
+
   test('client report disables TCPDF attribution footer and link', () {
     expect(endpoint, contains('disableTcpdfAttribution()'));
     expect(endpoint, contains('\$this->tcpdflink = false;'));
+  });
+
+  test('report uses the supplied logo prominently without duplicate branding',
+      () {
+    expect(endpoint, contains('embedRequiredPng(\$logoPng, 15, 12, 78)'));
+    expect(endpoint, contains("'DAILY PRODUCTION REPORT'"));
+    expect(
+      endpoint,
+      isNot(contains("Cell(137, 7, 'Concrete Equipment Hire Limited'")),
+    );
+  });
+
+  test('report palette is sampled from the monochrome CEH logo', () {
+    expect(endpoint, contains('\$black = [0, 0, 0]'));
+    expect(endpoint, contains('\$darkGray = [89, 89, 89]'));
+    expect(endpoint, contains('\$midGray = [165, 165, 165]'));
+    expect(endpoint, isNot(contains('\$navy =')));
+    expect(endpoint, isNot(contains('\$blue =')));
+  });
+
+  test('signature display preserves its source aspect ratio', () {
+    expect(endpoint, contains('getimagesizefromstring(\$signaturePng)'));
+    expect(endpoint, contains('\$signatureWidth'));
+    expect(endpoint, contains('\$signatureHeight'));
+    expect(endpoint,
+        contains("throw new RuntimeException('PDF_SIGNATURE_INVALID')"));
   });
 }
