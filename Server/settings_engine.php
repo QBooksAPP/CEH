@@ -2,6 +2,13 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/job_context.php';
+
+final class QbookSettingsException extends RuntimeException {
+    public function __construct(string $code, public readonly array $context = []) {
+        parent::__construct($code);
+    }
+}
 
 /*
  * Excel TREND equivalent.
@@ -126,6 +133,7 @@ function qbook_calculate_settings(
          FROM qbook_mix_designs
          WHERE id = ?
            AND is_active = 1
+           AND archived_at IS NULL
          LIMIT 1"
     );
 
@@ -141,6 +149,7 @@ function qbook_calculate_settings(
     if ($mix['design_mode'] === 'CLIENT' && $mix['client_validation_status'] !== 'VALIDATED') {
         throw new RuntimeException('CLIENT_MIX_NOT_VALIDATED');
     }
+    qbook_require_project_mixer($db, (int)$mix['project_id'], $mixerId);
 
     /*
      * Batch volume is always 1.00 m3.
@@ -171,6 +180,7 @@ function qbook_calculate_settings(
            AND project_id = ?
            AND stone_size = ?
            AND status = 'APPROVED'";
+    $calibrationSql .= " AND archived_at IS NULL";
 
     $calibrationParams = [$mixerId, (int)$mix['client_id'], (int)$mix['project_id'], (string)$mix['stone_size']];
     if ($calibrationId > 0) {
@@ -184,11 +194,15 @@ function qbook_calculate_settings(
     $calibration = $stmt->fetch();
 
     if (!$calibration) {
-        throw new RuntimeException(
-            $calibrationId > 0
-                ? 'INVALID_CALIBRATION_SOURCE'
-                : 'NO_APPROVED_CALIBRATION'
-        );
+        $code = $calibrationId > 0
+            ? 'INVALID_CALIBRATION_SOURCE'
+            : 'NO_APPROVED_CALIBRATION_FOR_CONTEXT';
+        throw new QbookSettingsException($code, [
+            'client' => (string)$mix['client_name'],
+            'project' => (string)$mix['project_name'],
+            'mixer' => (string)$mixer['code'],
+            'stone_size' => (string)$mix['stone_size'],
+        ]);
     }
 
     /*

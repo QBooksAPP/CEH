@@ -6,7 +6,12 @@ qbook_require_role($user, ['ADMIN', 'OPERATOR']);
 production_require_method('GET');
 $where = [];
 $params = [];
-if ($user['role'] !== 'ADMIN') { $where[] = 'operator_id = ?'; $params[] = (int)$user['id']; }
+if ($user['role'] !== 'ADMIN') {
+    $where[] = 'operator_id = ?'; $params[] = (int)$user['id'];
+    $where[] = "(project_id IS NULL OR EXISTS(SELECT 1 FROM qbook_projects p
+      JOIN qbook_clients c ON c.id=p.client_id WHERE p.id=qbook_production_sessions.project_id
+      AND p.is_active=1 AND p.archived_at IS NULL AND c.is_active=1 AND c.archived_at IS NULL))";
+}
 $status = strtoupper(trim((string)($_GET['status'] ?? '')));
 if ($status !== '') { if (!in_array($status, ['OPEN', 'SIGNED'], true)) qbook_json(['ok' => false, 'error' => 'INVALID_STATUS'], 422); $where[] = 'status = ?'; $params[] = $status; }
 foreach (['production_date' => 'production_date', 'client' => 'client_name', 'mixer_id' => 'mixer_id'] as $query => $column) {

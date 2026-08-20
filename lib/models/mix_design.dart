@@ -133,6 +133,7 @@ class MixDesign {
     this.serverCalculatedAbsoluteVolumeM3,
     this.createdAt,
     this.updatedAt,
+    this.archivedAt,
   });
 
   final int id;
@@ -160,6 +161,8 @@ class MixDesign {
   final double? serverCalculatedAbsoluteVolumeM3;
   final String? createdAt;
   final String? updatedAt;
+  final String? archivedAt;
+  bool get isArchived => archivedAt != null || !isActive;
 
   double get absoluteVolumeM3 => calculateAbsoluteVolumeM3(
         cementKg: cementKg,
@@ -210,6 +213,7 @@ class MixDesign {
               : _number(json['calculated_absolute_volume_m3']),
       createdAt: json['created_at']?.toString(),
       updatedAt: json['updated_at']?.toString(),
+      archivedAt: json['archived_at']?.toString(),
       clientId: (json['client_id'] as num?)?.toInt(),
       projectId: (json['project_id'] as num?)?.toInt(),
       stoneSize: '${json['stone_size'] ?? ''}',

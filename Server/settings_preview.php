@@ -111,10 +111,14 @@ try {
         'INVALID_CONVEYOR_SPEED'
     ], true) ? 400 : 409;
 
-    qbook_json([
+    $response = [
         'ok' => false,
         'error' => $error
-    ], $status);
+    ];
+    if ($e instanceof QbookSettingsException && $e->context !== []) {
+        $response['context'] = $e->context;
+    }
+    qbook_json($response, $status);
 
 } catch (Throwable $e) {
 

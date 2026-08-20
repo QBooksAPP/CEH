@@ -13,10 +13,11 @@ import '../models/production_session.dart';
 import '../models/session.dart';
 
 class ApiException implements Exception {
-  const ApiException(this.code, {this.statusCode});
+  const ApiException(this.code, {this.statusCode, this.details = const {}});
 
   final String code;
   final int? statusCode;
+  final Map<String, dynamic> details;
 
   @override
   String toString() => code;
@@ -135,9 +136,14 @@ class CehApiClient {
     );
   }
 
-  Future<List<Map<String, dynamic>>> mixers(CehSession session) async {
+  Future<List<Map<String, dynamic>>> mixers(CehSession session,
+      {int? projectId, bool includeAllocation = false}) async {
+    final uri = Uri.parse('$baseUrl/mixers.php').replace(queryParameters: {
+      if (projectId != null) 'project_id': '$projectId',
+      if (includeAllocation) 'include_allocation': '1',
+    });
     final response = await http
-        .get(Uri.parse('$baseUrl/mixers.php'), headers: authHeaders(session))
+        .get(uri, headers: authHeaders(session))
         .timeout(const Duration(seconds: 20));
 
     final data = _decodeObject(response);
@@ -230,12 +236,13 @@ class CehApiClient {
         .toList();
   }
 
-  Future<List<Map<String, dynamic>>> adminCalibrations(
-    CehSession session,
-  ) async {
+  Future<List<Map<String, dynamic>>> adminCalibrations(CehSession session,
+      {String status = 'ACTIVE'}) async {
+    final uri = Uri.parse('$baseUrl/calibration_admin_list.php')
+        .replace(queryParameters: {'status': status});
     final response = await http
         .get(
-          Uri.parse('$baseUrl/calibration_admin_list.php'),
+          uri,
           headers: authHeaders(session),
         )
         .timeout(const Duration(seconds: 25));
@@ -315,12 +322,13 @@ class CehApiClient {
     return data;
   }
 
-  Future<List<Map<String, dynamic>>> approvedCalibrations(
-    CehSession session,
-  ) async {
+  Future<List<Map<String, dynamic>>> approvedCalibrations(CehSession session,
+      {bool activeOnly = false}) async {
+    final uri = Uri.parse('$baseUrl/calibration_data.php')
+        .replace(queryParameters: activeOnly ? {'active_only': '1'} : null);
     final response = await http
         .get(
-          Uri.parse('$baseUrl/calibration_data.php'),
+          uri,
           headers: authHeaders(session),
         )
         .timeout(const Duration(seconds: 25));
@@ -343,14 +351,20 @@ class CehApiClient {
   Future<List<CalibrationSource>> approvedCalibrationSources(
     CehSession session,
   ) async =>
-      (await approvedCalibrations(session))
+      (await approvedCalibrations(session, activeOnly: true))
           .map(CalibrationSource.fromJson)
           .toList();
 
-  Future<List<MixDesign>> mixDesigns(CehSession session) async {
+  Future<List<MixDesign>> mixDesigns(CehSession session,
+      {int? clientId, int? projectId, String? status}) async {
+    final uri = Uri.parse('$baseUrl/mix_designs.php').replace(queryParameters: {
+      if (clientId != null) 'client_id': '$clientId',
+      if (projectId != null) 'project_id': '$projectId',
+      if (status != null) 'status': status,
+    });
     final response = await http
         .get(
-          Uri.parse('$baseUrl/mix_designs.php'),
+          uri,
           headers: authHeaders(session),
         )
         .timeout(const Duration(seconds: 25));
@@ -507,9 +521,12 @@ class CehApiClient {
   }
 
   Future<List<CehClient>> clients(CehSession session,
-      {bool activeOnly = true}) async {
+      {bool activeOnly = true, String? status}) async {
     final uri = Uri.parse('$baseUrl/clients.php').replace(
-      queryParameters: activeOnly ? {'active_only': '1'} : null,
+      queryParameters: {
+        if (activeOnly) 'active_only': '1',
+        if (status != null) 'status': status,
+      },
     );
     final response = await http
         .get(uri, headers: authHeaders(session))
@@ -540,10 +557,11 @@ class CehApiClient {
   }
 
   Future<List<CehProject>> projects(CehSession session, int clientId,
-      {bool activeOnly = true}) async {
+      {bool activeOnly = true, String? status}) async {
     final uri = Uri.parse('$baseUrl/projects.php').replace(queryParameters: {
       'client_id': '$clientId',
-      if (activeOnly) 'active_only': '1'
+      if (activeOnly) 'active_only': '1',
+      if (!activeOnly && status != null) 'status': status,
     });
     final response = await http
         .get(uri, headers: authHeaders(session))
@@ -574,6 +592,32 @@ class CehApiClient {
         'PROJECT_UPDATE_FAILED');
     return CehProject.fromJson(
         Map<String, dynamic>.from(data['project'] as Map));
+  }
+
+  Future<void> updateProjectMixer(CehSession session,
+      {required int projectId,
+      required int mixerId,
+      required bool isActive}) async {
+    await _postJson(
+        session,
+        'project_mixer_update.php',
+        {'project_id': projectId, 'mixer_id': mixerId, 'is_active': isActive},
+        'PROJECT_MIXER_UPDATE_FAILED');
+  }
+
+  Future<void> updateRecordLifecycle(CehSession session,
+      {required String recordType,
+      required int recordId,
+      required String action}) async {
+    await _postJson(
+        session,
+        'record_lifecycle.php',
+        {
+          'record_type': recordType,
+          'record_id': recordId,
+          'action': action,
+        },
+        'RECORD_LIFECYCLE_FAILED');
   }
 
   Future<void> validateClientMixDesign(CehSession session,
@@ -705,6 +749,9 @@ class CehApiClient {
       throw ApiException(
         (data['error'] ?? fallbackError).toString(),
         statusCode: response.statusCode,
+        details: data['context'] is Map
+            ? Map<String, dynamic>.from(data['context'] as Map)
+            : const {},
       );
     }
   }

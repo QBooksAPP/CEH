@@ -27,8 +27,9 @@ if ($duplicate->fetch()) {
     qbook_json(['ok' => false, 'error' => 'CLIENT_NAME_EXISTS'], 409);
 }
 
-$db->prepare("UPDATE qbook_clients SET name = ?, is_active = ? WHERE id = ?")
-   ->execute([$name, $isActive ? 1 : 0, $id]);
+$db->prepare("UPDATE qbook_clients SET name=?,is_active=?,
+    archived_at=IF(?=1,NULL,UTC_TIMESTAMP()),archived_by=IF(?=1,NULL,?) WHERE id=?")
+   ->execute([$name,$isActive?1:0,$isActive?1:0,$isActive?1:0,(int)$user['id'],$id]);
 qbook_audit($user, 'CLIENT_UPDATED', 'CLIENT', $id, [
     'old_name' => $before['name'], 'name' => $name,
     'old_is_active' => (bool)$before['is_active'], 'is_active' => $isActive,

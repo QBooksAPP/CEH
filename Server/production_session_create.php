@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/production_log_common.php';
+require_once __DIR__ . '/job_context.php';
 $user = qbook_require_user();
 qbook_require_role($user, ['ADMIN', 'OPERATOR']);
 production_require_method('POST');
@@ -23,6 +24,10 @@ $stmt = $db->prepare("SELECT id, code, name FROM qbook_mixers WHERE id = ? AND i
 $stmt->execute([$mixerId]);
 $mixer = $stmt->fetch();
 if (!$mixer) qbook_json(['ok' => false, 'error' => 'INVALID_MIXER'], 422);
+try { qbook_require_project_mixer($db, $projectId, $mixerId); }
+catch (RuntimeException $e) {
+    qbook_json(['ok'=>false,'error'=>$e->getMessage()],409);
+}
 $values = [
     $date,
     $clientId,

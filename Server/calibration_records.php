@@ -22,7 +22,11 @@ $stmt = $db->prepare(
             m.code AS mixer_code, m.name AS mixer_name
      FROM qbook_calibrations c
      JOIN qbook_mixers m ON m.id = c.mixer_id
-     WHERE c.entered_by = ?
+     WHERE c.entered_by = ? AND c.archived_at IS NULL
+       AND (c.project_id IS NULL OR EXISTS(
+         SELECT 1 FROM qbook_projects p JOIN qbook_clients cl ON cl.id=p.client_id
+         WHERE p.id=c.project_id AND p.is_active=1 AND p.archived_at IS NULL
+           AND cl.is_active=1 AND cl.archived_at IS NULL))
      ORDER BY c.updated_at DESC, c.id DESC
      LIMIT 250"
 );

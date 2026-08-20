@@ -8,6 +8,8 @@ import '../models/mix_design.dart';
 import '../models/calibration_source.dart';
 import '../models/production_settings.dart';
 import '../models/session.dart';
+import '../models/client.dart';
+import '../models/project.dart';
 import 'settings_history_screen.dart';
 
 class MixDesignSettingsScreen extends StatefulWidget {
@@ -24,6 +26,10 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
   List<Map<String, dynamic>> _mixers = [];
   List<MixDesign> _designs = [];
   List<CalibrationSource> _calibrations = [];
+  List<CehClient> _clients = [];
+  List<CehProject> _projects = [];
+  int? _clientId;
+  int? _projectId;
   int? _mixerId;
   int? _designId;
   int _calibrationId = 0;
@@ -45,8 +51,7 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
   Future<void> _load() async {
     try {
       final values = await Future.wait([
-        _api.mixers(widget.session),
-        _api.mixDesigns(widget.session),
+        _api.clients(widget.session),
         if (widget.session.user.isAdmin)
           _api.approvedCalibrationSources(widget.session)
         else
@@ -54,10 +59,8 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
       ]);
       if (!mounted) return;
       setState(() {
-        _mixers = values[0] as List<Map<String, dynamic>>;
-        _designs =
-            (values[1] as List<MixDesign>).where((d) => d.isActive).toList();
-        _calibrations = values[2] as List<CalibrationSource>;
+        _clients = values[0] as List<CehClient>;
+        _calibrations = values[1] as List<CalibrationSource>;
         _busy = false;
       });
     } catch (e) {
@@ -66,10 +69,60 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
     }
   }
 
+  Future<void> _selectClient(int? clientId) async {
+    setState(() {
+      _clientId = clientId;
+      _projectId = null;
+      _projects = [];
+      _mixers = [];
+      _designs = [];
+      _mixerId = null;
+      _designId = null;
+      _calibrationId = 0;
+      _result = null;
+    });
+    if (clientId == null) return;
+    try {
+      final projects = await _api.projects(widget.session, clientId);
+      if (mounted) setState(() => _projects = projects);
+    } catch (e) {
+      _error(e);
+    }
+  }
+
+  Future<void> _selectProject(int? projectId) async {
+    setState(() {
+      _projectId = projectId;
+      _mixers = [];
+      _designs = [];
+      _mixerId = null;
+      _designId = null;
+      _calibrationId = 0;
+      _result = null;
+    });
+    if (projectId == null || _clientId == null) return;
+    try {
+      final values = await Future.wait([
+        _api.mixers(widget.session, projectId: projectId),
+        _api.mixDesigns(widget.session,
+            clientId: _clientId, projectId: projectId),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _mixers = values[0] as List<Map<String, dynamic>>;
+        _designs =
+            (values[1] as List<MixDesign>).where((d) => d.isActive).toList();
+      });
+    } catch (e) {
+      _error(e);
+    }
+  }
+
   Future<void> _calculate(bool apply) async {
     final speed = double.tryParse(_speed.text.trim());
     if (_mixerId == null || _designId == null || speed == null || speed <= 0) {
-      _error('Select a mixer, active Mix Design, and valid conveyor speed.');
+      _error(
+          'Select Client, Project, allocated Mixer, active Mix Design, and valid conveyor speed.');
       return;
     }
     setState(() => _busy = true);
@@ -105,9 +158,15 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
 
   void _error(Object e) {
     if (!mounted) return;
-    final text = e.toString().contains('NO_APPROVED_CALIBRATION')
-        ? 'This mixer requires a latest APPROVED calibration before settings can be calculated.'
-        : e.toString().replaceFirst('ApiException: ', '');
+    var text = e.toString().replaceFirst('ApiException: ', '');
+    if (e is ApiException && e.code == 'NO_APPROVED_CALIBRATION_FOR_CONTEXT') {
+      final d = e.details;
+      text = 'No approved calibration found for ${d['client'] ?? 'Client'} / '
+          '${d['project'] ?? 'Project'} / Mixer ${d['mixer'] ?? '—'} / '
+          '${d['stone_size'] ?? 'Stone Size'}.';
+    } else if (text.contains('MIXER_NOT_ALLOCATED_TO_PROJECT')) {
+      text = 'The selected mixer is not allocated to this Project / Site.';
+    }
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
@@ -155,8 +214,30 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
               padding: const EdgeInsets.all(16),
               children: [
                 DropdownButtonFormField<int>(
+                    initialValue: _clientId,
+                    decoration: const InputDecoration(labelText: 'Client'),
+                    items: _clients
+                        .map((c) =>
+                            DropdownMenuItem(value: c.id, child: Text(c.name)))
+                        .toList(),
+                    onChanged: _busy ? null : _selectClient),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                    key: ValueKey('settings-project-$_clientId-$_projectId'),
+                    initialValue: _projectId,
+                    decoration:
+                        const InputDecoration(labelText: 'Project / Site'),
+                    items: _projects
+                        .map((p) =>
+                            DropdownMenuItem(value: p.id, child: Text(p.name)))
+                        .toList(),
+                    onChanged: _clientId == null ? null : _selectProject),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                    key: ValueKey('settings-mixer-$_projectId-$_mixerId'),
                     initialValue: _mixerId,
-                    decoration: const InputDecoration(labelText: 'Mixer'),
+                    decoration:
+                        const InputDecoration(labelText: 'Allocated Mixer'),
                     items: _mixers
                         .map((m) => DropdownMenuItem(
                             value: int.tryParse('${m['id']}'),
@@ -167,17 +248,34 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
                           _calibrationId = 0;
                           _result = null;
                         })),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                    key: ValueKey('settings-design-$_projectId-$_designId'),
+                    initialValue: _designId,
+                    decoration:
+                        const InputDecoration(labelText: 'Active Mix Design'),
+                    items: _designs
+                        .map((d) => DropdownMenuItem(
+                            value: d.id,
+                            child: Text('${d.name} (${d.mode.apiValue})')))
+                        .toList(),
+                    onChanged: (v) => setState(() {
+                          _designId = v;
+                          _calibrationId = 0;
+                          _result = null;
+                        })),
                 if (admin) ...[
                   const SizedBox(height: 12),
                   DropdownButtonFormField<int>(
-                    key: ValueKey('calibration-$_mixerId-$_calibrationId'),
+                    key: ValueKey(
+                        'calibration-$_mixerId-$_designId-$_calibrationId'),
                     initialValue: _calibrationId,
                     decoration:
                         const InputDecoration(labelText: 'Calibration Source'),
                     items: [
                       const DropdownMenuItem(
                         value: 0,
-                        child: Text('Latest Approved'),
+                        child: Text('Latest matching Approved'),
                       ),
                       for (var i = 0; i < _mixerCalibrations.length; i++)
                         DropdownMenuItem(
@@ -195,21 +293,6 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
                     }),
                   ),
                 ],
-                const SizedBox(height: 12),
-                DropdownButtonFormField<int>(
-                    initialValue: _designId,
-                    decoration:
-                        const InputDecoration(labelText: 'Active Mix Design'),
-                    items: _designs
-                        .map((d) => DropdownMenuItem(
-                            value: d.id,
-                            child: Text('${d.name} (${d.mode.apiValue})')))
-                        .toList(),
-                    onChanged: (v) => setState(() {
-                          _designId = v;
-                          _calibrationId = 0;
-                          _result = null;
-                        })),
                 const SizedBox(height: 12),
                 TextField(
                     controller: _speed,

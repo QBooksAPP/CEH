@@ -11,6 +11,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 }
 
 $db = qbook_db();
+$activeOnly=(string)($_GET['active_only']??'')==='1';
 
 $stmt = $db->query(
     "SELECT
@@ -23,6 +24,7 @@ $stmt = $db->query(
         c.sand_moisture_pct,
         c.cement_safety_factor_pct,
         c.revision_no,
+        c.archived_at,
         c.reviewed_at,
         m.id AS mixer_id,
         m.code AS mixer_code,
@@ -33,7 +35,7 @@ $stmt = $db->query(
      JOIN qbook_mixers m ON m.id = c.mixer_id
      JOIN qbook_users entrant ON entrant.id = c.entered_by
      LEFT JOIN qbook_users reviewer ON reviewer.id = c.reviewed_by
-     WHERE c.status = 'APPROVED'
+     WHERE c.status = 'APPROVED'" . ($activeOnly?" AND c.archived_at IS NULL":"") . "
      ORDER BY m.code ASC, c.reviewed_at DESC, c.id DESC"
 );
 
@@ -89,6 +91,7 @@ foreach ($stmt->fetchAll() as $c) {
         'sand_moisture_pct' => (float)$c['sand_moisture_pct'],
         'cement_safety_factor_pct' => (float)$c['cement_safety_factor_pct'],
         'revision_no' => (int)$c['revision_no'],
+        'archived_at' => $c['archived_at'],
         'reviewed_at' => $c['reviewed_at'],
         'mixer_id' => (int)$c['mixer_id'],
         'mixer_code' => (string)$c['mixer_code'],

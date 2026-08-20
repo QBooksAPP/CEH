@@ -25,12 +25,26 @@ function qbook_active_job_context(PDO $db, int $clientId, int $projectId): array
          FROM qbook_clients c
          JOIN qbook_projects p ON p.client_id = c.id
          WHERE c.id = ? AND p.id = ? AND c.is_active = 1 AND p.is_active = 1
+           AND c.archived_at IS NULL AND p.archived_at IS NULL
          LIMIT 1"
     );
     $stmt->execute([$clientId, $projectId]);
     $context = $stmt->fetch();
     if (!$context) qbook_json(['ok' => false, 'error' => 'ACTIVE_CLIENT_PROJECT_REQUIRED'], 422);
     return $context;
+}
+
+function qbook_require_project_mixer(PDO $db, int $projectId, int $mixerId): void {
+    $stmt = $db->prepare(
+        "SELECT 1 FROM qbook_project_mixers pm
+         JOIN qbook_projects p ON p.id=pm.project_id
+         JOIN qbook_clients c ON c.id=p.client_id
+         WHERE pm.project_id=? AND pm.mixer_id=? AND pm.is_active=1
+           AND p.is_active=1 AND p.archived_at IS NULL
+           AND c.is_active=1 AND c.archived_at IS NULL LIMIT 1"
+    );
+    $stmt->execute([$projectId, $mixerId]);
+    if (!$stmt->fetchColumn()) throw new RuntimeException('MIXER_NOT_ALLOCATED_TO_PROJECT');
 }
 
 function qbook_absolute_volume_deviation(float $absoluteVolume): array {

@@ -185,14 +185,10 @@ class _StartProductionSessionScreenState
 
   Future<void> _loadOptions() async {
     try {
-      final values = await Future.wait([
-        _api.clients(widget.session),
-        _api.mixers(widget.session),
-      ]);
+      final clients = await _api.clients(widget.session);
       if (mounted) {
         setState(() {
-          _clients = values[0] as List<CehClient>;
-          _mixers = values[1] as List<Map<String, dynamic>>;
+          _clients = clients;
           _busy = false;
         });
       }
@@ -210,11 +206,31 @@ class _StartProductionSessionScreenState
       _clientId = value;
       _projectId = null;
       _projects = [];
+      _mixers = [];
+      _mixerId = null;
     });
     if (value == null) return;
     try {
       final projects = await _api.projects(widget.session, value);
       if (mounted) setState(() => _projects = projects);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$e')));
+      }
+    }
+  }
+
+  Future<void> _selectProject(int? value) async {
+    setState(() {
+      _projectId = value;
+      _mixers = [];
+      _mixerId = null;
+    });
+    if (value == null) return;
+    try {
+      final mixers = await _api.mixers(widget.session, projectId: value);
+      if (mounted) setState(() => _mixers = mixers);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -265,7 +281,7 @@ class _StartProductionSessionScreenState
       appBar: AppBar(
           title: const Text('Start Production Session'),
           actions: cehHomeAction(context)),
-      body: _busy && (_clients.isEmpty || _mixers.isEmpty)
+      body: _busy && _clients.isEmpty
           ? const Center(child: CircularProgressIndicator())
           : Form(
               key: _form,
@@ -289,11 +305,12 @@ class _StartProductionSessionScreenState
                         .map((p) =>
                             DropdownMenuItem(value: p.id, child: Text(p.name)))
                         .toList(),
-                    onChanged: (value) => setState(() => _projectId = value),
+                    onChanged: _selectProject,
                     validator: (value) => value == null ? 'Required' : null),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<int>(
-                    decoration: const InputDecoration(labelText: 'Mixer'),
+                    decoration:
+                        const InputDecoration(labelText: 'Allocated Mixer'),
                     items: _mixers
                         .map((m) => DropdownMenuItem(
                             value: (m['id'] as num).toInt(),

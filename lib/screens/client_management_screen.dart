@@ -18,6 +18,7 @@ class _ClientManagementScreenState extends State<ClientManagementScreen> {
   final _api = const CehApiClient();
   List<CehClient> _clients = [];
   bool _busy = true;
+  String _filter = 'ACTIVE';
 
   @override
   void initState() {
@@ -27,7 +28,8 @@ class _ClientManagementScreenState extends State<ClientManagementScreen> {
 
   Future<void> _load() async {
     try {
-      final value = await _api.clients(widget.session, activeOnly: false);
+      final value = await _api.clients(widget.session,
+          activeOnly: false, status: _filter);
       if (mounted) {
         setState(() {
           _clients = value;
@@ -45,6 +47,36 @@ class _ClientManagementScreenState extends State<ClientManagementScreen> {
   void _error(Object error) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(error.toString().replaceFirst('ApiException: ', ''))));
+
+  Future<void> _lifecycle(String type, int id, String action) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('$action ${type.replaceAll('_', ' ')}?'),
+        content: Text(action == 'DELETE'
+            ? 'Permanent deletion is allowed only when no operational or historical evidence references this record.'
+            : action == 'ARCHIVE'
+                ? 'It will leave normal Operator lists while history is retained.'
+                : 'It will return to active lists.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(action)),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await _api.updateRecordLifecycle(widget.session,
+          recordType: type, recordId: id, action: action);
+      await _load();
+    } catch (e) {
+      _error(e);
+    }
+  }
 
   Future<void> _edit([CehClient? client]) async {
     if (!isUiAdmin(context, widget.session)) return;
@@ -64,7 +96,7 @@ class _ClientManagementScreenState extends State<ClientManagementScreen> {
             if (client != null)
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Active'),
+                title: const Text('Active (off archives)'),
                 value: active,
                 onChanged: (value) => setDialogState(() => active = value),
               ),
@@ -102,8 +134,9 @@ class _ClientManagementScreenState extends State<ClientManagementScreen> {
 
   Future<void> _manageProjects(CehClient client) async {
     if (!isUiAdmin(context, widget.session)) return;
-    var projects =
-        await _api.projects(widget.session, client.id, activeOnly: false);
+    var projectFilter = 'ACTIVE';
+    var projects = await _api.projects(widget.session, client.id,
+        activeOnly: false, status: projectFilter);
     if (!mounted) return;
     await showModalBottomSheet<void>(
         context: context,
@@ -117,23 +150,83 @@ class _ClientManagementScreenState extends State<ClientManagementScreen> {
                     Text('${client.name} Projects / Sites',
                         style: Theme.of(context).textTheme.titleLarge),
                     const SizedBox(height: 12),
+                    SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(value: 'ACTIVE', label: Text('Active')),
+                        ButtonSegment(
+                            value: 'ARCHIVED', label: Text('Archived')),
+                        ButtonSegment(value: 'ALL', label: Text('All')),
+                      ],
+                      selected: {projectFilter},
+                      onSelectionChanged: (value) async {
+                        projectFilter = value.first;
+                        projects = await _api.projects(
+                            widget.session, client.id,
+                            activeOnly: false, status: projectFilter);
+                        setSheetState(() {});
+                      },
+                    ),
+                    const SizedBox(height: 8),
                     Flexible(
                         child: ListView(shrinkWrap: true, children: [
                       for (final project in projects)
                         ListTile(
                           title: Text(project.name),
                           subtitle:
-                              Text(project.isActive ? 'ACTIVE' : 'INACTIVE'),
-                          trailing: const Icon(Icons.edit_outlined),
-                          onTap: () async {
-                            final changed = await _editProject(client, project);
-                            if (changed) {
-                              projects = await _api.projects(
-                                  widget.session, client.id,
-                                  activeOnly: false);
-                              setSheetState(() {});
-                            }
-                          },
+                              Text(project.isArchived ? 'ARCHIVED' : 'ACTIVE'),
+                          trailing:
+                              Row(mainAxisSize: MainAxisSize.min, children: [
+                            IconButton(
+                                tooltip: 'Project Mixer Allocation',
+                                onPressed: () => _manageProjectMixers(project),
+                                icon:
+                                    const Icon(Icons.precision_manufacturing)),
+                            IconButton(
+                              tooltip: 'Edit Project',
+                              icon: const Icon(Icons.edit_outlined),
+                              onPressed: () async {
+                                final changed =
+                                    await _editProject(client, project);
+                                if (changed) {
+                                  projects = await _api.projects(
+                                      widget.session, client.id,
+                                      activeOnly: false, status: projectFilter);
+                                  setSheetState(() {});
+                                }
+                              },
+                            ),
+                            PopupMenuButton<String>(
+                              onSelected: (action) async {
+                                try {
+                                  await _api.updateRecordLifecycle(
+                                      widget.session,
+                                      recordType: 'PROJECT',
+                                      recordId: project.id,
+                                      action: action);
+                                  projects = await _api.projects(
+                                      widget.session, client.id,
+                                      activeOnly: false, status: projectFilter);
+                                  setSheetState(() {});
+                                } catch (e) {
+                                  _error(e);
+                                }
+                              },
+                              itemBuilder: (_) => [
+                                PopupMenuItem(
+                                  value: project.isArchived
+                                      ? 'RESTORE'
+                                      : 'ARCHIVE',
+                                  child: Text(project.isArchived
+                                      ? 'Restore'
+                                      : 'Archive'),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'DELETE',
+                                  child: Text('Delete permanently'),
+                                ),
+                              ],
+                            ),
+                          ]),
                         )
                     ])),
                     FilledButton.icon(
@@ -142,7 +235,7 @@ class _ClientManagementScreenState extends State<ClientManagementScreen> {
                           if (changed) {
                             projects = await _api.projects(
                                 widget.session, client.id,
-                                activeOnly: false);
+                                activeOnly: false, status: projectFilter);
                             setSheetState(() {});
                           }
                         },
@@ -150,6 +243,55 @@ class _ClientManagementScreenState extends State<ClientManagementScreen> {
                         label: const Text('Add Project / Site')),
                   ]),
                 ))));
+  }
+
+  Future<void> _manageProjectMixers(CehProject project) async {
+    var mixers = await _api.mixers(widget.session,
+        projectId: project.id, includeAllocation: true);
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text('${project.name} — Mixer Allocation',
+                  style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 8),
+              const Text(
+                  'Only allocated mixers are available for this project.'),
+              const SizedBox(height: 12),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final mixer in mixers)
+                      SwitchListTile(
+                        title: Text('${mixer['code']} — ${mixer['name']}'),
+                        value: mixer['is_allocated'] == true,
+                        onChanged: (value) async {
+                          await _api.updateProjectMixer(widget.session,
+                              projectId: project.id,
+                              mixerId: (mixer['id'] as num).toInt(),
+                              isActive: value);
+                          mixers = await _api.mixers(widget.session,
+                              projectId: project.id, includeAllocation: true);
+                          setSheetState(() {});
+                        },
+                      ),
+                  ],
+                ),
+              ),
+              TextButton(
+                  onPressed: () => Navigator.pop(sheetContext),
+                  child: const Text('Done')),
+            ]),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<bool> _editProject(CehClient client, [CehProject? project]) async {
@@ -171,7 +313,7 @@ class _ClientManagementScreenState extends State<ClientManagementScreen> {
                         SwitchListTile(
                             value: active,
                             onChanged: (v) => setD(() => active = v),
-                            title: const Text('Active'))
+                            title: const Text('Active (off archives)'))
                     ]),
                     actions: [
                       TextButton(
@@ -200,6 +342,20 @@ class _ClientManagementScreenState extends State<ClientManagementScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Clients'), actions: [
         ...cehHomeAction(context),
+        PopupMenuButton<String>(
+          tooltip: 'Lifecycle filter',
+          initialValue: _filter,
+          onSelected: (value) {
+            setState(() => _filter = value);
+            _load();
+          },
+          itemBuilder: (_) => const [
+            PopupMenuItem(value: 'ACTIVE', child: Text('Active')),
+            PopupMenuItem(value: 'ARCHIVED', child: Text('Archived')),
+            PopupMenuItem(value: 'ALL', child: Text('All')),
+          ],
+          icon: const Icon(Icons.filter_alt_outlined),
+        ),
         IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
       ]),
       floatingActionButton: admin
@@ -226,7 +382,8 @@ class _ClientManagementScreenState extends State<ClientManagementScreen> {
                         title: Text(client.name,
                             style:
                                 const TextStyle(fontWeight: FontWeight.w900)),
-                        subtitle: Text(client.isActive ? 'ACTIVE' : 'INACTIVE'),
+                        subtitle:
+                            Text(client.isArchived ? 'ARCHIVED' : 'ACTIVE'),
                         trailing: admin
                             ? Wrap(children: [
                                 IconButton(
@@ -237,7 +394,25 @@ class _ClientManagementScreenState extends State<ClientManagementScreen> {
                                 IconButton(
                                     tooltip: 'Edit Client',
                                     onPressed: () => _edit(client),
-                                    icon: const Icon(Icons.edit_outlined))
+                                    icon: const Icon(Icons.edit_outlined)),
+                                PopupMenuButton<String>(
+                                  onSelected: (action) =>
+                                      _lifecycle('CLIENT', client.id, action),
+                                  itemBuilder: (_) => [
+                                    PopupMenuItem(
+                                      value: client.isArchived
+                                          ? 'RESTORE'
+                                          : 'ARCHIVE',
+                                      child: Text(client.isArchived
+                                          ? 'Restore'
+                                          : 'Archive'),
+                                    ),
+                                    const PopupMenuItem(
+                                      value: 'DELETE',
+                                      child: Text('Delete permanently'),
+                                    ),
+                                  ],
+                                )
                               ])
                             : null,
                       ),

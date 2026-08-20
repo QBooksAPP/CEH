@@ -17,6 +17,7 @@ class CalibrationRecord {
     this.clientName = '',
     this.projectName = '',
     this.stoneSize = '',
+    this.archivedAt,
   });
 
   final int id;
@@ -36,13 +37,21 @@ class CalibrationRecord {
   final String clientName;
   final String projectName;
   final String stoneSize;
+  final String? archivedAt;
+  bool get isArchived => archivedAt != null;
 
   bool get canEdit => status == 'DRAFT' || status == 'REJECTED';
 
   factory CalibrationRecord.fromJson(Map<String, dynamic> json) =>
       CalibrationRecord(
-        id: (json['calibration_id'] as num).toInt(),
-        mixer: Map<String, dynamic>.from(json['mixer'] as Map? ?? {}),
+        id: (json['calibration_id'] as num? ?? json['id'] as num).toInt(),
+        mixer: json['mixer'] is Map
+            ? Map<String, dynamic>.from(json['mixer'] as Map)
+            : {
+                'id': json['mixer_id'],
+                'code': json['mixer_code'],
+                'name': json['mixer_name'],
+              },
         calibrationDate: '${json['calibration_date']}',
         notes: '${json['calibration_notes'] ?? ''}',
         containerWeightKg:
@@ -62,5 +71,6 @@ class CalibrationRecord {
         clientName: '${json['client_name'] ?? ''}',
         projectName: '${json['project_name'] ?? ''}',
         stoneSize: '${json['stone_size'] ?? ''}',
+        archivedAt: json['archived_at']?.toString(),
       );
 }

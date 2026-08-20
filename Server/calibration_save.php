@@ -33,6 +33,9 @@ $cementSafety = $user['role'] === 'ADMIN'
     ? (float)($input['cement_safety_factor_pct'] ?? 2.0)
     : 2.0;
 $trials = $input['trials'] ?? [];
+$adminReason = substr(trim((string)($input['admin_edit_reason'] ?? '')), 0, 500);
+$adminChanges = [];
+$originalStatus = null;
 
 if ($mixerCode === '' || $date === '') {
     qbook_json(['ok' => false, 'error' => 'MIXER_AND_DATE_REQUIRED'], 422);
@@ -57,13 +60,18 @@ if (!$mixer) {
 }
 $mixerId = (int)$mixer['id'];
 $context = qbook_active_job_context($db, $clientId, $projectId);
+try {
+    qbook_require_project_mixer($db, $projectId, $mixerId);
+} catch (RuntimeException $e) {
+    qbook_json(['ok' => false, 'error' => $e->getMessage()], 409);
+}
 
 try {
     $db->beginTransaction();
 
     if ($id > 0) {
         $stmt = $db->prepare(
-            "SELECT entered_by, status
+            "SELECT *
              FROM qbook_calibrations
              WHERE id = ?
              FOR UPDATE"
@@ -80,8 +88,33 @@ try {
             throw new RuntimeException('FORBIDDEN');
         }
 
-        if (!in_array((string)$existing['status'], ['DRAFT', 'REJECTED'], true)) {
+        $originalStatus = (string)$existing['status'];
+        $adminAllowed = $user['role'] === 'ADMIN' &&
+            in_array($originalStatus, ['DRAFT', 'REJECTED', 'SUBMITTED'], true);
+        $operatorAllowed = $user['role'] !== 'ADMIN' &&
+            in_array($originalStatus, ['DRAFT', 'REJECTED'], true);
+        if (!$adminAllowed && !$operatorAllowed) {
             throw new RuntimeException('CALIBRATION_LOCKED');
+        }
+
+        if ($user['role'] === 'ADMIN') {
+            $oldTrialsStmt = $db->prepare(
+                "SELECT material,gate_cm,trial_no,total_weight_kg,counts
+                 FROM qbook_calibration_trials WHERE calibration_id=?
+                 ORDER BY material,gate_cm,trial_no"
+            );
+            $oldTrialsStmt->execute([$id]);
+            $oldValues = [
+                'mixer_id'=>(int)$existing['mixer_id'], 'client_id'=>$existing['client_id'],
+                'project_id'=>$existing['project_id'], 'stone_size'=>$existing['stone_size'],
+                'calibration_date'=>$existing['calibration_date'],
+                'calibration_notes'=>$existing['calibration_notes'],
+                'container_weight_kg'=>(float)$existing['container_weight_kg'],
+                'stone_moisture_pct'=>(float)$existing['stone_moisture_pct'],
+                'sand_moisture_pct'=>(float)$existing['sand_moisture_pct'],
+                'cement_safety_factor_pct'=>(float)$existing['cement_safety_factor_pct'],
+                'trials'=>$oldTrialsStmt->fetchAll(),
+            ];
         }
 
         $stmt = $db->prepare(
@@ -89,9 +122,9 @@ try {
              SET mixer_id=?, client_id=?, project_id=?, client_name_snapshot=?,
                  project_name_snapshot=?, stone_size=?, calibration_date=?, calibration_notes=?,
                  container_weight_kg=?, stone_moisture_pct=?, sand_moisture_pct=?,
-                 cement_safety_factor_pct=?, status='DRAFT',
-                 submitted_at=NULL, reviewed_by=NULL, reviewed_at=NULL,
-                 rejection_reason=NULL,
+                 cement_safety_factor_pct=?, status=?,
+                 submitted_at=?, reviewed_by=NULL, reviewed_at=NULL,
+                 rejection_reason=?,
                  revision_no=revision_no + ?
              WHERE id=?"
         );
@@ -99,7 +132,10 @@ try {
             $mixerId, $clientId, $projectId, $context['client_name'],
             $context['project_name'], $stoneSize, $date, $notes, $container, $stoneMoisture,
             $sandMoisture, $cementSafety,
-            (string)$existing['status'] === 'REJECTED' ? 1 : 0,
+            $originalStatus === 'SUBMITTED' ? 'SUBMITTED' : 'DRAFT',
+            $originalStatus === 'SUBMITTED' ? $existing['submitted_at'] : null,
+            $originalStatus === 'SUBMITTED' ? $existing['rejection_reason'] : null,
+            $originalStatus === 'REJECTED' ? 1 : 0,
             $id
         ]);
     } else {
@@ -158,12 +194,53 @@ try {
 
     qbook_recalculate_calibration_results($db, $id);
 
+    if ($user['role'] === 'ADMIN' && isset($oldValues)) {
+        $newTrialsStmt = $db->prepare(
+            "SELECT material,gate_cm,trial_no,total_weight_kg,counts
+             FROM qbook_calibration_trials WHERE calibration_id=?
+             ORDER BY material,gate_cm,trial_no"
+        );
+        $newTrialsStmt->execute([$id]);
+        $newValues = [
+            'mixer_id'=>$mixerId, 'client_id'=>$clientId, 'project_id'=>$projectId,
+            'stone_size'=>$stoneSize, 'calibration_date'=>$date,
+            'calibration_notes'=>$notes, 'container_weight_kg'=>$container,
+            'stone_moisture_pct'=>$stoneMoisture,
+            'sand_moisture_pct'=>$sandMoisture,
+            'cement_safety_factor_pct'=>$cementSafety,
+            'trials'=>$newTrialsStmt->fetchAll(),
+        ];
+        foreach ($newValues as $field => $newValue) {
+            $oldValue = $oldValues[$field] ?? null;
+            if (json_encode($oldValue) !== json_encode($newValue)) {
+                $adminChanges[] = ['field'=>$field,'old'=>$oldValue,'new'=>$newValue];
+            }
+        }
+    }
+
+    if ($adminChanges !== []) {
+        $auditDetails = [
+            'revision_no'=>(int)($existing['revision_no'] ?? 1),
+            'status'=>$originalStatus, 'reason'=>$adminReason,
+            'changed_at_utc'=>gmdate('Y-m-d\TH:i:s\Z'),
+            'changes'=>$adminChanges,
+        ];
+        $auditStmt = $db->prepare(
+            "INSERT INTO qbook_audit_log
+             (user_id,event_type,source_type,source_id,details,ip_address)
+             VALUES(?,'CALIBRATION_ADMIN_CORRECTED','CALIBRATION',?,?,?)"
+        );
+        $auditStmt->execute([(int)$user['id'], $id,
+            json_encode($auditDetails, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE),
+            qbook_client_ip()]);
+    }
+
     $db->commit();
 
     qbook_json([
         'ok' => true,
         'calibration_id' => $id,
-        'status' => 'DRAFT',
+        'status' => $originalStatus === 'SUBMITTED' ? 'SUBMITTED' : 'DRAFT',
         'message' => 'Calibration draft saved and recalculated.'
     ]);
 } catch (RuntimeException $e) {

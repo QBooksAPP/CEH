@@ -393,10 +393,14 @@ try {
         $db->rollBack();
     }
 
-    qbook_json([
+    $response = [
         'ok' => false,
         'error' => $e->getMessage()
-    ], 409);
+    ];
+    if ($e instanceof QbookSettingsException && $e->context !== []) {
+        $response['context'] = $e->context;
+    }
+    qbook_json($response, 409);
 
 } catch (Throwable $e) {
 

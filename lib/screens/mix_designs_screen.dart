@@ -22,6 +22,7 @@ class _MixDesignsScreenState extends State<MixDesignsScreen> {
   bool _loading = true;
   String? _error;
   List<MixDesign> _designs = [];
+  String _filter = 'ACTIVE';
 
   bool get _isAdmin => isUiAdmin(context, widget.session);
   List<MixDesign> get _visibleDesigns => _isAdmin
@@ -41,7 +42,8 @@ class _MixDesignsScreenState extends State<MixDesignsScreen> {
     });
 
     try {
-      var designs = await _api.mixDesigns(widget.session);
+      var designs = await _api.mixDesigns(widget.session,
+          status: _isAdmin ? _filter : 'ACTIVE');
       if (!_isAdmin) {
         designs = designs.where((design) => design.isActive).toList();
       }
@@ -55,6 +57,37 @@ class _MixDesignsScreenState extends State<MixDesignsScreen> {
       setState(() => _error = 'MIX_DESIGNS_FAILED');
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _lifecycle(MixDesign design, String action) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('$action ${design.name}?'),
+        content: Text(action == 'DELETE'
+            ? 'Permanent deletion will be refused if settings, audit or other operational evidence references this design.'
+            : 'History remains available to Admin.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(action)),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await _api.updateRecordLifecycle(widget.session,
+          recordType: 'MIX_DESIGN', recordId: design.id, action: action);
+      await _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(e.toString().replaceFirst('ApiException: ', ''))));
+      }
     }
   }
 
@@ -120,11 +153,26 @@ class _MixDesignsScreenState extends State<MixDesignsScreen> {
               ),
             ),
             if (_isAdmin)
-              IconButton(
-                tooltip: 'Edit Mix Design',
-                onPressed: () => _openEditor(design),
-                icon: const Icon(Icons.edit_outlined),
-              ),
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                IconButton(
+                  tooltip: 'Edit Mix Design',
+                  onPressed: () => _openEditor(design),
+                  icon: const Icon(Icons.edit_outlined),
+                ),
+                PopupMenuButton<String>(
+                  onSelected: (action) => _lifecycle(design, action),
+                  itemBuilder: (_) => [
+                    PopupMenuItem(
+                      value: design.isArchived ? 'RESTORE' : 'ARCHIVE',
+                      child: Text(design.isArchived ? 'Restore' : 'Archive'),
+                    ),
+                    const PopupMenuItem(
+                      value: 'DELETE',
+                      child: Text('Delete permanently'),
+                    ),
+                  ],
+                ),
+              ]),
           ],
         ),
         subtitle: Padding(
@@ -140,7 +188,7 @@ class _MixDesignsScreenState extends State<MixDesignsScreen> {
               ),
               if (_isAdmin)
                 Chip(
-                  label: Text(design.isActive ? 'ACTIVE' : 'INACTIVE'),
+                  label: Text(design.isArchived ? 'ARCHIVED' : 'ACTIVE'),
                   visualDensity: VisualDensity.compact,
                   backgroundColor: design.isActive
                       ? const Color(0xFFE3F4E8)
@@ -248,6 +296,21 @@ class _MixDesignsScreenState extends State<MixDesignsScreen> {
         ),
         actions: [
           ...cehHomeAction(context),
+          if (_isAdmin)
+            PopupMenuButton<String>(
+              tooltip: 'Lifecycle filter',
+              initialValue: _filter,
+              onSelected: (value) {
+                setState(() => _filter = value);
+                _load();
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'ACTIVE', child: Text('Active')),
+                PopupMenuItem(value: 'ARCHIVED', child: Text('Archived')),
+                PopupMenuItem(value: 'ALL', child: Text('All')),
+              ],
+              icon: const Icon(Icons.filter_alt_outlined),
+            ),
           IconButton(
             tooltip: 'Refresh',
             onPressed: _loading ? null : _load,

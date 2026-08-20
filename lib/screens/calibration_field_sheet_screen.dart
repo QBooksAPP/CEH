@@ -37,6 +37,7 @@ class _CalibrationFieldSheetScreenState
   bool _saving = false;
   bool _submitting = false;
   bool _submitted = false;
+  String? _originalStatus;
   bool _loadingMixers = false;
   List<Map<String, dynamic>> _mixers = [];
   List<CehClient> _clients = [];
@@ -63,7 +64,6 @@ class _CalibrationFieldSheetScreenState
     super.initState();
     _date = DateTime.now();
     _populateCalibration();
-    _loadMixers();
     _loadClients();
   }
 
@@ -71,6 +71,8 @@ class _CalibrationFieldSheetScreenState
     final record = widget.calibration;
     if (record == null) return;
     _calibrationId = record.id;
+    _originalStatus = record.status;
+    _submitted = record.status == 'APPROVED';
     final mixer = record.mixer;
     _mixer.text = '${mixer['code'] ?? ''}';
     _notes.text = record.notes;
@@ -134,19 +136,24 @@ class _CalibrationFieldSheetScreenState
   double n(TextEditingController c) => double.tryParse(c.text.trim()) ?? 0;
 
   Future<void> _loadMixers() async {
+    if (_projectId == null) {
+      if (mounted) setState(() => _mixers = []);
+      return;
+    }
     if (mounted) setState(() => _loadingMixers = true);
     try {
-      final items = await _api.mixers(widget.session);
+      final items = await _api.mixers(widget.session, projectId: _projectId);
       if (!mounted) return;
       setState(() {
         _mixers = items;
         if (items.isNotEmpty &&
+            _calibrationId == null &&
             !items.any((m) => m['code'].toString() == _mixer.text.trim())) {
           _mixer.text = items.first['code'].toString();
         }
       });
     } catch (_) {
-      // Manual mixer entry remains available as a fallback.
+      if (mounted) setState(() => _mixers = []);
     } finally {
       if (mounted) setState(() => _loadingMixers = false);
     }
@@ -166,6 +173,7 @@ class _CalibrationFieldSheetScreenState
       _projects = projects;
       if (!projects.any((p) => p.id == _projectId)) _projectId = null;
     });
+    await _loadMixers();
   }
 
   Future<void> pickDate() async {
@@ -280,12 +288,20 @@ class _CalibrationFieldSheetScreenState
     }
     setState(() => _saving = true);
     try {
-      final data =
-          await _api.saveCalibrationDraft(widget.session, _draftPayload());
+      final payload = _draftPayload();
+      if (isUiAdmin(context, widget.session) && _calibrationId != null) {
+        final reason = await _adminCorrectionReason();
+        if (reason == null) return;
+        payload['admin_edit_reason'] = reason;
+      }
+      final data = await _api.saveCalibrationDraft(widget.session, payload);
       if (!mounted) return;
       setState(() => _calibrationId = (data['calibration_id'] as num).toInt());
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Draft #$_calibrationId saved to CEH server.')),
+        SnackBar(
+            content: Text(isUiAdmin(context, widget.session)
+                ? 'Calibration #$_calibrationId correction saved and audited.'
+                : 'Draft #$_calibrationId saved to CEH server.')),
       );
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -300,6 +316,34 @@ class _CalibrationFieldSheetScreenState
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<String?> _adminCorrectionReason() async {
+    final controller = TextEditingController();
+    final save = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Admin calibration correction'),
+        content: TextField(
+          controller: controller,
+          maxLines: 3,
+          decoration: const InputDecoration(
+              labelText: 'Reason / comment (optional)',
+              hintText: 'e.g. Corrected mistyped Trial 2 weight'),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Save Correction')),
+        ],
+      ),
+    );
+    final value = controller.text.trim();
+    controller.dispose();
+    return save == true ? value : null;
   }
 
   Future<void> _submitCalibration() async {
@@ -525,7 +569,14 @@ class _CalibrationFieldSheetScreenState
                         .toList(),
                     onChanged: _clientId == null
                         ? null
-                        : (v) => setState(() => _projectId = v)),
+                        : (v) async {
+                            setState(() {
+                              _projectId = v;
+                              _mixers = [];
+                              _mixer.text = '';
+                            });
+                            await _loadMixers();
+                          }),
                 const SizedBox(height: 10),
                 DropdownButtonFormField<String>(
                     initialValue: _stoneSize,
@@ -554,23 +605,13 @@ class _CalibrationFieldSheetScreenState
                     },
                   )
                 else
-                  TextField(
-                    controller: _mixer,
-                    decoration: InputDecoration(
-                      labelText: 'Mixer',
-                      hintText: 'e.g. 307',
-                      suffixIcon: _loadingMixers
-                          ? const Padding(
-                              padding: EdgeInsets.all(14),
-                              child: SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2)))
-                          : IconButton(
-                              onPressed: _loadMixers,
-                              icon: const Icon(Icons.refresh)),
-                    ),
+                  InputDecorator(
+                    decoration: const InputDecoration(labelText: 'Mixer'),
+                    child: Text(_loadingMixers
+                        ? 'Loading allocated mixers…'
+                        : _projectId == null
+                            ? 'Select a Project / Site first'
+                            : 'No mixers allocated to this Project / Site'),
                   ),
                 const SizedBox(height: 10),
                 ListTile(
@@ -667,12 +708,17 @@ class _CalibrationFieldSheetScreenState
               padding: const EdgeInsets.symmetric(vertical: 14),
               child: Text(_calibrationId == null
                   ? 'Save Draft'
-                  : 'Save Draft #$_calibrationId'),
+                  : isUiAdmin(context, widget.session)
+                      ? 'Save Admin Correction #$_calibrationId'
+                      : 'Save Draft #$_calibrationId'),
             ),
           ),
           const SizedBox(height: 10),
           FilledButton.icon(
-            onPressed: (_calibrationId == null || _submitting || _submitted)
+            onPressed: (_calibrationId == null ||
+                    _submitting ||
+                    _submitted ||
+                    _originalStatus == 'SUBMITTED')
                 ? null
                 : _submitCalibration,
             icon: _submitting
@@ -685,7 +731,9 @@ class _CalibrationFieldSheetScreenState
             label: Padding(
               padding: const EdgeInsets.symmetric(vertical: 14),
               child: Text(
-                _submitted ? 'Submitted — Locked' : 'Submit Calibration',
+                (_submitted || _originalStatus == 'SUBMITTED')
+                    ? 'Submitted — Admin correction remains submitted'
+                    : 'Submit Calibration',
               ),
             ),
           ),

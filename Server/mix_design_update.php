@@ -254,6 +254,8 @@ try {
             granite_sg = ?,
             batch_volume_m3 = 1.0000,
             is_active = ?,
+            archived_at = IF(?=1,NULL,UTC_TIMESTAMP()),
+            archived_by = IF(?=1,NULL,?),
             version_no = ?,
             updated_by = ?,
             updated_at = UTC_TIMESTAMP()
@@ -276,6 +278,9 @@ try {
         $sandSg,
         $graniteSg,
         $isActive,
+        $isActive,
+        $isActive,
+        (int)$user['id'],
         $newVersion,
         (int)$user['id'],
         $mixId

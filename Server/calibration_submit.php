@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/job_context.php';
 
 $user = qbook_require_user();
 qbook_require_role($user, ['ADMIN', 'SUPERVISOR', 'OPERATOR']);
@@ -101,6 +102,12 @@ if ($calibration['status'] !== 'DRAFT') {
 if ($calibration['client_id'] === null || $calibration['project_id'] === null
     || !in_array((string)$calibration['stone_size'], ['3/8"','1/2"','3/4 Down'], true)) {
     qbook_json(['ok'=>false,'error'=>'CALIBRATION_CONTEXT_REQUIRED'],422);
+}
+try {
+    qbook_require_project_mixer($db, (int)$calibration['project_id'],
+        (int)$calibration['mixer_id']);
+} catch (RuntimeException $e) {
+    qbook_json(['ok'=>false,'error'=>$e->getMessage()],409);
 }
 if ((float)$calibration['sand_moisture_pct'] < 0 || (float)$calibration['sand_moisture_pct'] > 10
     || (float)$calibration['stone_moisture_pct'] < 0 || (float)$calibration['stone_moisture_pct'] > 10) {

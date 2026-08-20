@@ -65,7 +65,7 @@ void main() {
     expect(settings, contains('AND client_id = ?'));
     expect(settings, contains('AND project_id = ?'));
     expect(settings, contains('AND stone_size = ?'));
-    expect(settings, contains('NO_APPROVED_CALIBRATION'));
+    expect(settings, contains('NO_APPROVED_CALIBRATION_FOR_CONTEXT'));
   });
 
   test('production requires an active project belonging to the client', () {

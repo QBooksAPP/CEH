@@ -17,6 +17,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 $db = qbook_db();
 
 $isAdmin = ($user['role'] === 'ADMIN');
+$clientId = (int)($_GET['client_id'] ?? 0);
+$projectId = (int)($_GET['project_id'] ?? 0);
+$lifecycle = strtoupper((string)($_GET['status'] ?? ($isAdmin ? 'ALL' : 'ACTIVE')));
+if (!in_array($lifecycle, ['ACTIVE','ARCHIVED','ALL'], true)) {
+    qbook_json(['ok'=>false,'error'=>'INVALID_LIFECYCLE_FILTER'],422);
+}
 
 $sql = "
     SELECT
@@ -37,17 +43,28 @@ $sql = "
         granite_sg,
         batch_volume_m3,
         is_active,
+        archived_at,
         version_no
     FROM qbook_mix_designs
 ";
 
+$conditions = [];
+$params = [];
 if (!$isAdmin) {
-    $sql .= " WHERE is_active = 1
+    $conditions[] = "is_active = 1
                AND client_id IS NOT NULL
                AND project_id IS NOT NULL
                AND stone_size IS NOT NULL
-               AND (design_mode = 'CALCULATED' OR client_validation_status = 'VALIDATED')";
+               AND (design_mode = 'CALCULATED' OR client_validation_status = 'VALIDATED')
+               AND EXISTS(SELECT 1 FROM qbook_projects p JOIN qbook_clients c ON c.id=p.client_id
+                 WHERE p.id=qbook_mix_designs.project_id AND p.is_active=1 AND p.archived_at IS NULL
+                   AND c.is_active=1 AND c.archived_at IS NULL)";
 }
+if ($lifecycle === 'ACTIVE') $conditions[] = 'is_active=1 AND archived_at IS NULL';
+if ($lifecycle === 'ARCHIVED') $conditions[] = '(is_active=0 OR archived_at IS NOT NULL)';
+if ($clientId > 0) { $conditions[] = 'client_id = ?'; $params[] = $clientId; }
+if ($projectId > 0) { $conditions[] = 'project_id = ?'; $params[] = $projectId; }
+if ($conditions !== []) $sql .= ' WHERE ' . implode(' AND ', $conditions);
 
 $sql .= "
     ORDER BY
@@ -59,7 +76,7 @@ $sql .= "
 ";
 
 $stmt = $db->prepare($sql);
-$stmt->execute();
+$stmt->execute($params);
 
 $rows = $stmt->fetchAll();
 
@@ -116,6 +133,7 @@ foreach ($rows as $row) {
         'project_id'=>$row['project_id']===null?null:(int)$row['project_id'],
         'stone_size'=>$row['stone_size'],
         'client_validation_status'=>$row['client_validation_status'],
+        'archived_at'=>$row['archived_at'],
         'client_name' => $row['client_name'],
         'project_name' => $row['project_name'],
 

@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../core/api_client.dart';
 import '../core/internal_navigation.dart';
 import '../models/session.dart';
+import '../models/calibration_record.dart';
+import 'calibration_field_sheet_screen.dart';
 
 class CalibrationReviewScreen extends StatefulWidget {
   const CalibrationReviewScreen({super.key, required this.session});
@@ -18,6 +20,7 @@ class _CalibrationReviewScreenState extends State<CalibrationReviewScreen> {
   bool _loading = true;
   String? _error;
   List<Map<String, dynamic>> _items = [];
+  String _filter = 'ACTIVE';
 
   @override
   void initState() {
@@ -31,7 +34,8 @@ class _CalibrationReviewScreenState extends State<CalibrationReviewScreen> {
       _error = null;
     });
     try {
-      final items = await _api.adminCalibrations(widget.session);
+      final items =
+          await _api.adminCalibrations(widget.session, status: _filter);
       if (!mounted) return;
       setState(() => _items = items);
     } on ApiException catch (e) {
@@ -45,6 +49,52 @@ class _CalibrationReviewScreenState extends State<CalibrationReviewScreen> {
   String _number(dynamic value, {int decimals = 2}) {
     final n = double.tryParse(value?.toString() ?? '');
     return n == null ? '—' : n.toStringAsFixed(decimals);
+  }
+
+  Future<void> _editCorrection(Map<String, dynamic> item) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CalibrationFieldSheetScreen(
+          session: widget.session,
+          calibration: CalibrationRecord.fromJson(item),
+        ),
+      ),
+    );
+    if (mounted) await _load();
+  }
+
+  Future<void> _lifecycle(Map<String, dynamic> item, String action) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('$action Calibration #${item['id']}?'),
+        content: Text(action == 'DELETE'
+            ? 'Permanent deletion will be refused if any submitted, approved, settings, revision or audit evidence exists.'
+            : 'Historical evidence is retained.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(action)),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await _api.updateRecordLifecycle(widget.session,
+          recordType: 'CALIBRATION',
+          recordId: (item['id'] as num).toInt(),
+          action: action);
+      await _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(e.toString().replaceFirst('ApiException: ', ''))));
+      }
+    }
   }
 
   String _resultName(Map<String, dynamic> r) {
@@ -325,6 +375,7 @@ class _CalibrationReviewScreenState extends State<CalibrationReviewScreen> {
 
   Widget _calibrationCard(Map<String, dynamic> c) {
     final status = (c['status'] ?? '').toString();
+    final archived = c['archived_at'] != null;
     final results = _maps(c['results']);
     final trials = _maps(c['trials']);
 
@@ -339,6 +390,19 @@ class _CalibrationReviewScreenState extends State<CalibrationReviewScreen> {
         subtitle: Text(status),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         children: [
+          Align(
+            alignment: Alignment.centerRight,
+            child: PopupMenuButton<String>(
+              onSelected: (action) => _lifecycle(c, action),
+              itemBuilder: (_) => [
+                PopupMenuItem(
+                    value: archived ? 'RESTORE' : 'ARCHIVE',
+                    child: Text(archived ? 'Restore' : 'Archive')),
+                const PopupMenuItem(
+                    value: 'DELETE', child: Text('Delete permanently')),
+              ],
+            ),
+          ),
           _metadata(c),
           const SizedBox(height: 14),
           const Align(
@@ -359,9 +423,18 @@ class _CalibrationReviewScreenState extends State<CalibrationReviewScreen> {
           else
             for (final r in results) _resultCard(r, trials),
           const SizedBox(height: 16),
-          if (status == 'SUBMITTED')
-            Row(
-              children: [
+          if (!archived && status == 'SUBMITTED')
+            Column(children: [
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => _editCorrection(c),
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('Correct Before Approval'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(children: [
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: () => _review(c, 'REJECT'),
@@ -377,9 +450,20 @@ class _CalibrationReviewScreenState extends State<CalibrationReviewScreen> {
                     label: const Text('Approve'),
                   ),
                 ),
-              ],
+              ]),
+            ])
+          else if (!archived && (status == 'DRAFT' || status == 'REJECTED'))
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _editCorrection(c),
+                icon: const Icon(Icons.edit_outlined),
+                label: Text(status == 'REJECTED'
+                    ? 'Correct Rejected Calibration'
+                    : 'Correct Draft Calibration'),
+              ),
             )
-          else if (status == 'APPROVED')
+          else if (!archived && status == 'APPROVED')
             OutlinedButton.icon(
               onPressed: () => _reopen(c),
               icon: const Icon(Icons.undo),
@@ -393,12 +477,41 @@ class _CalibrationReviewScreenState extends State<CalibrationReviewScreen> {
     );
   }
 
+  List<Widget> _groupedCards(List<Map<String, dynamic>> items) {
+    final sorted = [...items]..sort((a, b) {
+        String key(Map<String, dynamic> value) =>
+            '${value['client_name'] ?? 'Historical'}|${value['project_name'] ?? 'No Project'}|'
+            '${value['mixer_code'] ?? ''}|${value['stone_size'] ?? ''}';
+        return key(a).compareTo(key(b));
+      });
+    final widgets = <Widget>[];
+    String? previous;
+    for (final item in sorted) {
+      final group = '${item['client_name'] ?? 'Historical / Unassigned'} → '
+          '${item['project_name'] ?? 'No Project'} → Mixer '
+          '${item['mixer_code'] ?? '—'} / ${item['stone_size'] ?? 'No Stone Size'}';
+      if (group != previous) {
+        widgets.add(Padding(
+          padding: const EdgeInsets.fromLTRB(4, 10, 4, 6),
+          child:
+              Text(group, style: const TextStyle(fontWeight: FontWeight.w900)),
+        ));
+        previous = group;
+      }
+      widgets.add(_calibrationCard(item));
+    }
+    return widgets;
+  }
+
   @override
   Widget build(BuildContext context) {
     final waiting =
         _items.where((c) => c['status']?.toString() == 'SUBMITTED').toList();
     final approved =
         _items.where((c) => c['status']?.toString() == 'APPROVED').toList();
+    final editable = _items
+        .where((c) => ['DRAFT', 'REJECTED'].contains(c['status']?.toString()))
+        .toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -408,6 +521,20 @@ class _CalibrationReviewScreenState extends State<CalibrationReviewScreen> {
         ),
         actions: [
           ...cehHomeAction(context),
+          PopupMenuButton<String>(
+            tooltip: 'Lifecycle filter',
+            initialValue: _filter,
+            onSelected: (value) {
+              setState(() => _filter = value);
+              _load();
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'ACTIVE', child: Text('Active')),
+              PopupMenuItem(value: 'ARCHIVED', child: Text('Archived')),
+              PopupMenuItem(value: 'ALL', child: Text('All')),
+            ],
+            icon: const Icon(Icons.filter_alt_outlined),
+          ),
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
         ],
       ),
@@ -438,7 +565,19 @@ class _CalibrationReviewScreenState extends State<CalibrationReviewScreen> {
                           ),
                         )
                       else
-                        for (final c in waiting) _calibrationCard(c),
+                        ..._groupedCards(waiting),
+                      const SizedBox(height: 18),
+                      Text('Draft / Rejected (${editable.length})',
+                          style: const TextStyle(
+                              fontSize: 20, fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 8),
+                      if (editable.isEmpty)
+                        const Card(
+                            child: Padding(
+                                padding: EdgeInsets.all(16),
+                                child: Text('No editable calibrations.')))
+                      else
+                        ..._groupedCards(editable),
                       const SizedBox(height: 18),
                       Text(
                         'Approved (${approved.length})',
@@ -456,7 +595,7 @@ class _CalibrationReviewScreenState extends State<CalibrationReviewScreen> {
                           ),
                         )
                       else
-                        for (final c in approved) _calibrationCard(c),
+                        ..._groupedCards(approved),
                     ],
                   ),
                 ),

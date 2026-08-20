@@ -138,12 +138,20 @@ $resultStmt = $db->prepare(
         gate_cm"
 );
 
+$snapshotStmt = $db->prepare(
+    "SELECT revision_no,status,reason,captured_by,captured_at
+     FROM qbook_calibration_revision_snapshots
+     WHERE calibration_id=? ORDER BY revision_no DESC"
+);
+
 $history = [];
 
 foreach ($rows as $row) {
 
     $resultStmt->execute([(int)$row['id']]);
     $resultRows = $resultStmt->fetchAll();
+    $snapshotStmt->execute([(int)$row['id']]);
+    $revisionSnapshots = $snapshotStmt->fetchAll();
 
     $results = [];
 
@@ -265,7 +273,15 @@ foreach ($rows as $row) {
             $row['created_at'],
 
         'updated_at' =>
-            $row['updated_at']
+            $row['updated_at'],
+
+        'revision_snapshots' => array_map(static fn(array $snapshot): array => [
+            'revision_no'=>(int)$snapshot['revision_no'],
+            'status'=>(string)$snapshot['status'],
+            'reason'=>$snapshot['reason'],
+            'captured_by'=>(int)$snapshot['captured_by'],
+            'captured_at'=>$snapshot['captured_at'],
+        ], $revisionSnapshots)
     ];
 }
 

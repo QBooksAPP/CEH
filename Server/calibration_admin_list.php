@@ -12,6 +12,10 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 }
 
 $db = qbook_db();
+$lifecycle=strtoupper((string)($_GET['status']??'ACTIVE'));
+if(!in_array($lifecycle,['ACTIVE','ARCHIVED','ALL'],true)){
+    qbook_json(['ok'=>false,'error'=>'INVALID_LIFECYCLE_FILTER'],422);
+}
 
 /*
  * Important repair step:
@@ -21,7 +25,7 @@ $db = qbook_db();
 $idStmt = $db->query(
     "SELECT id
      FROM qbook_calibrations
-     WHERE status = 'SUBMITTED'
+     WHERE status = 'SUBMITTED' AND archived_at IS NULL
      ORDER BY id"
 );
 
@@ -40,6 +44,7 @@ $stmt = $db->query(
         c.sand_moisture_pct,
         c.cement_safety_factor_pct,
         c.status,
+        c.archived_at,
         c.revision_no,
         c.submitted_at,
         c.reviewed_at,
@@ -53,7 +58,14 @@ $stmt = $db->query(
      JOIN qbook_mixers m ON m.id = c.mixer_id
      JOIN qbook_users entrant ON entrant.id = c.entered_by
      LEFT JOIN qbook_users reviewer ON reviewer.id = c.reviewed_by
-     WHERE c.status IN ('SUBMITTED', 'APPROVED')
+     LEFT JOIN qbook_projects context_project ON context_project.id=c.project_id
+     LEFT JOIN qbook_clients context_client ON context_client.id=c.client_id
+     WHERE c.status IN ('DRAFT', 'REJECTED', 'SUBMITTED', 'APPROVED')" .
+     ($lifecycle==='ACTIVE'?" AND c.archived_at IS NULL
+       AND (c.project_id IS NULL OR (context_project.is_active=1 AND context_project.archived_at IS NULL
+         AND context_client.is_active=1 AND context_client.archived_at IS NULL))":
+       ($lifecycle==='ARCHIVED'?" AND (c.archived_at IS NOT NULL OR context_project.archived_at IS NOT NULL
+         OR context_client.archived_at IS NOT NULL)":"")) . "
      ORDER BY
         CASE WHEN c.status = 'SUBMITTED' THEN 0 ELSE 1 END,
         COALESCE(c.submitted_at, c.reviewed_at) DESC,
@@ -107,6 +119,7 @@ foreach ($calibrations as $c) {
 
     $items[] = [
         'id' => $id,
+        'calibration_id' => $id,
         'client_id' => $c['client_id'] === null ? null : (int)$c['client_id'],
         'project_id' => $c['project_id'] === null ? null : (int)$c['project_id'],
         'client_name' => $c['client_name_snapshot'],
@@ -119,6 +132,7 @@ foreach ($calibrations as $c) {
         'sand_moisture_pct' => (float)$c['sand_moisture_pct'],
         'cement_safety_factor_pct' => (float)$c['cement_safety_factor_pct'],
         'status' => (string)$c['status'],
+        'archived_at' => $c['archived_at'],
         'revision_no' => (int)$c['revision_no'],
         'submitted_at' => $c['submitted_at'],
         'reviewed_at' => $c['reviewed_at'],
