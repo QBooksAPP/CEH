@@ -220,11 +220,18 @@ class CehApiClient {
   }
 
   Future<List<CalibrationRecord>> calibrationRecords(
-    CehSession session,
-  ) async {
+    CehSession session, {
+    String lifecycle = 'ACTIVE',
+    bool includeAllOperators = false,
+  }) async {
+    final uri =
+        Uri.parse('$baseUrl/calibration_records.php').replace(queryParameters: {
+      'status': lifecycle,
+      'scope': includeAllOperators ? 'ALL' : 'OWN',
+    });
     final response = await http
         .get(
-          Uri.parse('$baseUrl/calibration_records.php'),
+          uri,
           headers: authHeaders(session),
         )
         .timeout(const Duration(seconds: 25));
@@ -234,6 +241,18 @@ class CehApiClient {
         .map((e) =>
             CalibrationRecord.fromJson(Map<String, dynamic>.from(e as Map)))
         .toList();
+  }
+
+  Future<Map<String, dynamic>> calibrationHistory(
+      CehSession session, int calibrationId) async {
+    final uri = Uri.parse('$baseUrl/calibration_history.php')
+        .replace(queryParameters: {'calibration_id': '$calibrationId'});
+    final response = await http
+        .get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'CALIBRATION_HISTORY_FAILED');
+    return data;
   }
 
   Future<List<Map<String, dynamic>>> adminCalibrations(CehSession session,

@@ -15,6 +15,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 
 $db = qbook_db();
 
+$calibrationId = isset($_GET['calibration_id'])
+    ? (int)$_GET['calibration_id'] : 0;
+if ($calibrationId <= 0) {
+    qbook_json(['ok' => false, 'error' => 'CALIBRATION_ID_REQUIRED'], 422);
+}
+
 $mixerId = isset($_GET['mixer_id'])
     ? (int)$_GET['mixer_id']
     : 0;
@@ -91,10 +97,10 @@ $sql = "
     LEFT JOIN qbook_users reviewed
         ON reviewed.id = c.reviewed_by
 
-    WHERE 1 = 1
+    WHERE c.id = ?
 ";
 
-$params = [];
+$params = [$calibrationId];
 
 if ($mixerId > 0) {
     $sql .= " AND c.mixer_id = ?";
@@ -139,9 +145,19 @@ $resultStmt = $db->prepare(
 );
 
 $snapshotStmt = $db->prepare(
-    "SELECT revision_no,status,reason,captured_by,captured_at
-     FROM qbook_calibration_revision_snapshots
-     WHERE calibration_id=? ORDER BY revision_no DESC"
+    "SELECT s.revision_no,s.status,s.snapshot_json,s.reason,s.captured_by,
+            s.captured_at,u.full_name AS captured_by_name
+     FROM qbook_calibration_revision_snapshots s
+     JOIN qbook_users u ON u.id=s.captured_by
+     WHERE s.calibration_id=? ORDER BY s.revision_no DESC"
+);
+
+$auditStmt = $db->prepare(
+    "SELECT a.event_type,a.details,a.created_at,u.full_name AS user_name
+     FROM qbook_audit_log a
+     JOIN qbook_users u ON u.id=a.user_id
+     WHERE a.source_type='CALIBRATION' AND a.source_id=?
+     ORDER BY a.created_at DESC,a.id DESC"
 );
 
 $history = [];
@@ -152,6 +168,8 @@ foreach ($rows as $row) {
     $resultRows = $resultStmt->fetchAll();
     $snapshotStmt->execute([(int)$row['id']]);
     $revisionSnapshots = $snapshotStmt->fetchAll();
+    $auditStmt->execute([(int)$row['id']]);
+    $auditRows = $auditStmt->fetchAll();
 
     $results = [];
 
@@ -275,14 +293,32 @@ foreach ($rows as $row) {
         'updated_at' =>
             $row['updated_at'],
 
-        'revision_snapshots' => array_map(static fn(array $snapshot): array => [
-            'revision_no'=>(int)$snapshot['revision_no'],
-            'status'=>(string)$snapshot['status'],
-            'reason'=>$snapshot['reason'],
-            'captured_by'=>(int)$snapshot['captured_by'],
-            'captured_at'=>$snapshot['captured_at'],
-        ], $revisionSnapshots)
+        'revision_snapshots' => array_map(static function(array $snapshot): array {
+            $evidence = json_decode((string)$snapshot['snapshot_json'], true);
+            return [
+                'revision_no'=>(int)$snapshot['revision_no'],
+                'status'=>(string)$snapshot['status'],
+                'reason'=>$snapshot['reason'],
+                'captured_by'=>(int)$snapshot['captured_by'],
+                'captured_by_name'=>(string)$snapshot['captured_by_name'],
+                'captured_at'=>$snapshot['captured_at'],
+                'evidence'=>is_array($evidence) ? $evidence : null,
+            ];
+        }, $revisionSnapshots),
+        'audit' => array_map(static function(array $audit): array {
+            $details=json_decode((string)$audit['details'],true);
+            return [
+                'event_type'=>(string)$audit['event_type'],
+                'user_name'=>(string)$audit['user_name'],
+                'created_at'=>$audit['created_at'],
+                'details'=>is_array($details)?$details:[],
+            ];
+        }, $auditRows)
     ];
+}
+
+if ($history === []) {
+    qbook_json(['ok'=>false,'error'=>'CALIBRATION_NOT_FOUND'],404);
 }
 
 qbook_json([

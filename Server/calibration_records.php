@@ -11,6 +11,22 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 }
 
 $db = qbook_db();
+$lifecycle = strtoupper(trim((string)($_GET['status'] ?? 'ACTIVE')));
+if (!in_array($lifecycle, ['ACTIVE', 'ARCHIVED', 'ALL'], true)) {
+    qbook_json(['ok' => false, 'error' => 'INVALID_LIFECYCLE_FILTER'], 422);
+}
+$isAdmin = (string)$user['role'] === 'ADMIN';
+$allOperators = $isAdmin && strtoupper(trim((string)($_GET['scope'] ?? 'OWN'))) === 'ALL';
+$ownershipSql = $allOperators ? '' : ' AND c.entered_by = ?';
+$lifecycleSql = match ($lifecycle) {
+    'ARCHIVED' => ' AND c.archived_at IS NOT NULL',
+    'ALL' => '',
+    default => ' AND c.archived_at IS NULL
+       AND (c.project_id IS NULL OR EXISTS(
+         SELECT 1 FROM qbook_projects p JOIN qbook_clients cl ON cl.id=p.client_id
+         WHERE p.id=c.project_id AND p.is_active=1 AND p.archived_at IS NULL
+           AND cl.is_active=1 AND cl.archived_at IS NULL))',
+};
 $stmt = $db->prepare(
     "SELECT c.id, c.mixer_id, c.client_id, c.project_id,
             c.client_name_snapshot, c.project_name_snapshot, c.stone_size,
@@ -19,18 +35,16 @@ $stmt = $db->prepare(
             c.sand_moisture_pct, c.cement_safety_factor_pct,
             c.status, c.submitted_at, c.reviewed_at, c.rejection_reason,
             c.revision_no, c.created_at, c.updated_at,
-            m.code AS mixer_code, m.name AS mixer_name
+            m.code AS mixer_code, m.name AS mixer_name,
+            entrant.full_name AS entered_by_name
      FROM qbook_calibrations c
      JOIN qbook_mixers m ON m.id = c.mixer_id
-     WHERE c.entered_by = ? AND c.archived_at IS NULL
-       AND (c.project_id IS NULL OR EXISTS(
-         SELECT 1 FROM qbook_projects p JOIN qbook_clients cl ON cl.id=p.client_id
-         WHERE p.id=c.project_id AND p.is_active=1 AND p.archived_at IS NULL
-           AND cl.is_active=1 AND cl.archived_at IS NULL))
+     JOIN qbook_users entrant ON entrant.id = c.entered_by
+     WHERE 1=1" . $ownershipSql . $lifecycleSql . "
      ORDER BY c.updated_at DESC, c.id DESC
      LIMIT 250"
 );
-$stmt->execute([(int)$user['id']]);
+$stmt->execute($allOperators ? [] : [(int)$user['id']]);
 $rows = $stmt->fetchAll();
 
 $trialStmt = $db->prepare(
@@ -77,6 +91,7 @@ foreach ($rows as $row) {
         'reviewed_at' => $row['reviewed_at'],
         'rejection_reason' => $row['rejection_reason'],
         'revision_no' => (int)$row['revision_no'],
+        'entered_by_name' => (string)$row['entered_by_name'],
         'created_at' => $row['created_at'],
         'updated_at' => $row['updated_at'],
         'trials' => $trials

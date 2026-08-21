@@ -18,6 +18,8 @@ class CalibrationRecord {
     this.projectName = '',
     this.stoneSize = '',
     this.archivedAt,
+    this.revisionNo = 1,
+    this.enteredByName = '',
   });
 
   final int id;
@@ -38,9 +40,34 @@ class CalibrationRecord {
   final String projectName;
   final String stoneSize;
   final String? archivedAt;
+  final int revisionNo;
+  final String enteredByName;
   bool get isArchived => archivedAt != null;
 
   bool get canEdit => status == 'DRAFT' || status == 'REJECTED';
+
+  CalibrationRecord asRevision(int revision) => CalibrationRecord(
+    id: id,
+    mixer: mixer,
+    calibrationDate: calibrationDate,
+    notes: notes,
+    containerWeightKg: containerWeightKg,
+    stoneMoisturePct: stoneMoisturePct,
+    sandMoisturePct: sandMoisturePct,
+    cementSafetyFactorPct: cementSafetyFactorPct,
+    status: 'SUBMITTED',
+    rejectionReason: null,
+    reviewedAt: null,
+    trials: trials,
+    clientId: clientId,
+    projectId: projectId,
+    clientName: clientName,
+    projectName: projectName,
+    stoneSize: stoneSize,
+    archivedAt: archivedAt,
+    revisionNo: revision,
+    enteredByName: enteredByName,
+  );
 
   factory CalibrationRecord.fromJson(Map<String, dynamic> json) =>
       CalibrationRecord(
@@ -54,12 +81,12 @@ class CalibrationRecord {
               },
         calibrationDate: '${json['calibration_date']}',
         notes: '${json['calibration_notes'] ?? ''}',
-        containerWeightKg:
-            (json['container_weight_kg'] as num? ?? 0).toDouble(),
+        containerWeightKg: (json['container_weight_kg'] as num? ?? 0)
+            .toDouble(),
         stoneMoisturePct: (json['stone_moisture_pct'] as num? ?? 0).toDouble(),
         sandMoisturePct: (json['sand_moisture_pct'] as num? ?? 0).toDouble(),
-        cementSafetyFactorPct:
-            (json['cement_safety_factor_pct'] as num? ?? 0).toDouble(),
+        cementSafetyFactorPct: (json['cement_safety_factor_pct'] as num? ?? 0)
+            .toDouble(),
         status: '${json['status']}',
         rejectionReason: json['rejection_reason']?.toString(),
         reviewedAt: json['reviewed_at']?.toString(),
@@ -72,5 +99,7 @@ class CalibrationRecord {
         projectName: '${json['project_name'] ?? ''}',
         stoneSize: '${json['stone_size'] ?? ''}',
         archivedAt: json['archived_at']?.toString(),
+        revisionNo: (json['revision_no'] as num? ?? 1).toInt(),
+        enteredByName: '${json['entered_by_name'] ?? ''}',
       );
 }
