@@ -8,15 +8,19 @@ import '../models/session.dart';
 import '../models/calibration_record.dart';
 import '../models/client.dart';
 import '../models/project.dart';
+import '../models/mixer_context.dart';
+import '../widgets/mixer_context_header.dart';
 
 class CalibrationFieldSheetScreen extends StatefulWidget {
   const CalibrationFieldSheetScreen({
     super.key,
     required this.session,
     this.calibration,
+    this.mixerContext,
   });
   final CehSession session;
   final CalibrationRecord? calibration;
+  final MixerContext? mixerContext;
 
   @override
   State<CalibrationFieldSheetScreen> createState() =>
@@ -63,6 +67,12 @@ class _CalibrationFieldSheetScreenState
   void initState() {
     super.initState();
     _date = DateTime.now();
+    final assignment = widget.mixerContext?.assignment;
+    if (assignment != null) {
+      _clientId = assignment.clientId;
+      _projectId = assignment.projectId;
+      _mixer.text = widget.mixerContext!.code;
+    }
     _populateCalibration();
     _loadClients();
   }
@@ -534,50 +544,57 @@ class _CalibrationFieldSheetScreenState
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
         children: [
+          if (widget.mixerContext != null) ...[
+            MixerContextHeader(
+                context: widget.mixerContext!, stoneSize: _stoneSize),
+            const SizedBox(height: 10),
+          ],
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(children: [
-                DropdownButtonFormField<int>(
-                    initialValue: _clients.any((c) => c.id == _clientId)
-                        ? _clientId
-                        : null,
-                    decoration: const InputDecoration(labelText: 'Client'),
-                    items: _clients
-                        .map((c) =>
-                            DropdownMenuItem(value: c.id, child: Text(c.name)))
-                        .toList(),
-                    onChanged: (v) {
-                      setState(() {
-                        _clientId = v;
-                        _projectId = null;
-                        _projects = [];
-                      });
-                      if (v != null) _loadProjects(v);
-                    }),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<int>(
-                    key: ValueKey('project-$_clientId-$_projectId'),
-                    initialValue: _projects.any((p) => p.id == _projectId)
-                        ? _projectId
-                        : null,
-                    decoration:
-                        const InputDecoration(labelText: 'Project / Site'),
-                    items: _projects
-                        .map((p) =>
-                            DropdownMenuItem(value: p.id, child: Text(p.name)))
-                        .toList(),
-                    onChanged: _clientId == null
-                        ? null
-                        : (v) async {
-                            setState(() {
-                              _projectId = v;
-                              _mixers = [];
-                              _mixer.text = '';
-                            });
-                            await _loadMixers();
-                          }),
-                const SizedBox(height: 10),
+                if (widget.mixerContext == null)
+                  DropdownButtonFormField<int>(
+                      initialValue: _clients.any((c) => c.id == _clientId)
+                          ? _clientId
+                          : null,
+                      decoration: const InputDecoration(labelText: 'Client'),
+                      items: _clients
+                          .map((c) => DropdownMenuItem(
+                              value: c.id, child: Text(c.name)))
+                          .toList(),
+                      onChanged: (v) {
+                        setState(() {
+                          _clientId = v;
+                          _projectId = null;
+                          _projects = [];
+                        });
+                        if (v != null) _loadProjects(v);
+                      }),
+                if (widget.mixerContext == null) const SizedBox(height: 10),
+                if (widget.mixerContext == null)
+                  DropdownButtonFormField<int>(
+                      key: ValueKey('project-$_clientId-$_projectId'),
+                      initialValue: _projects.any((p) => p.id == _projectId)
+                          ? _projectId
+                          : null,
+                      decoration:
+                          const InputDecoration(labelText: 'Project / Site'),
+                      items: _projects
+                          .map((p) => DropdownMenuItem(
+                              value: p.id, child: Text(p.name)))
+                          .toList(),
+                      onChanged: _clientId == null
+                          ? null
+                          : (v) async {
+                              setState(() {
+                                _projectId = v;
+                                _mixers = [];
+                                _mixer.text = '';
+                              });
+                              await _loadMixers();
+                            }),
+                if (widget.mixerContext == null) const SizedBox(height: 10),
                 DropdownButtonFormField<String>(
                     initialValue: _stoneSize,
                     decoration: const InputDecoration(labelText: 'Stone Size'),
@@ -587,7 +604,12 @@ class _CalibrationFieldSheetScreenState
                     onChanged: (v) =>
                         setState(() => _stoneSize = v ?? _stoneSize)),
                 const SizedBox(height: 10),
-                if (_mixers.isNotEmpty)
+                if (widget.mixerContext != null)
+                  InputDecorator(
+                    decoration: const InputDecoration(labelText: 'Mixer'),
+                    child: Text('Mixer ${widget.mixerContext!.code}'),
+                  )
+                else if (_mixers.isNotEmpty)
                   DropdownButtonFormField<String>(
                     initialValue: _mixers.any(
                             (m) => m['code'].toString() == _mixer.text.trim())

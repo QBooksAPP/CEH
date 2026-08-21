@@ -5,12 +5,16 @@ import '../core/internal_navigation.dart';
 import '../core/view_mode.dart';
 import '../models/session.dart';
 import '../models/calibration_record.dart';
+import '../models/mixer_context.dart';
+import '../widgets/mixer_context_header.dart';
 import 'calibration_field_sheet_screen.dart';
 import 'calibration_history_screen.dart';
 
 class CalibrationRecordsScreen extends StatefulWidget {
-  const CalibrationRecordsScreen({super.key, required this.session});
+  const CalibrationRecordsScreen(
+      {super.key, required this.session, this.mixerContext});
   final CehSession session;
+  final MixerContext? mixerContext;
   @override
   State<CalibrationRecordsScreen> createState() =>
       _CalibrationRecordsScreenState();
@@ -22,8 +26,12 @@ class _CalibrationRecordsScreenState extends State<CalibrationRecordsScreen> {
   bool _loading = true;
   String? _error;
   String _lifecycle = 'ACTIVE';
+  String _stoneFilter = 'ALL';
 
   bool get _admin => isUiAdmin(context, widget.session);
+  List<CalibrationRecord> get _visibleRecords => _stoneFilter == 'ALL'
+      ? _records
+      : _records.where((record) => record.stoneSize == _stoneFilter).toList();
 
   @override
   void initState() {
@@ -41,6 +49,9 @@ class _CalibrationRecordsScreenState extends State<CalibrationRecordsScreen> {
         widget.session,
         lifecycle: _admin ? _lifecycle : 'ACTIVE',
         includeAllOperators: _admin,
+        mixerId: widget.mixerContext?.id,
+        clientId: widget.mixerContext?.assignment?.clientId,
+        projectId: widget.mixerContext?.assignment?.projectId,
       );
       if (mounted) {
         setState(() {
@@ -65,6 +76,7 @@ class _CalibrationRecordsScreenState extends State<CalibrationRecordsScreen> {
         builder: (_) => CalibrationFieldSheetScreen(
           session: widget.session,
           calibration: record,
+          mixerContext: widget.mixerContext,
         ),
       ),
     );
@@ -109,6 +121,7 @@ class _CalibrationRecordsScreenState extends State<CalibrationRecordsScreen> {
           builder: (_) => CalibrationFieldSheetScreen(
             session: widget.session,
             calibration: record.asRevision(revision),
+            mixerContext: widget.mixerContext,
           ),
         ),
       );
@@ -179,22 +192,45 @@ class _CalibrationRecordsScreenState extends State<CalibrationRecordsScreen> {
                   },
                 ),
               ),
+            if (widget.mixerContext != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: MixerContextHeader(context: widget.mixerContext!),
+              ),
+            if (widget.mixerContext != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: DropdownButtonFormField<String>(
+                  initialValue: _stoneFilter,
+                  decoration:
+                      const InputDecoration(labelText: 'Stone Size Filter'),
+                  items: const [
+                    DropdownMenuItem(value: 'ALL', child: Text('All')),
+                    DropdownMenuItem(value: '3/8"', child: Text('3/8"')),
+                    DropdownMenuItem(value: '1/2"', child: Text('1/2"')),
+                    DropdownMenuItem(
+                        value: '3/4 Down', child: Text('3/4 Down')),
+                  ],
+                  onChanged: (value) =>
+                      setState(() => _stoneFilter = value ?? 'ALL'),
+                ),
+              ),
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
                   : _error != null
                       ? Center(
                           child: Text('Could not load calibrations: $_error'))
-                      : _records.isEmpty
+                      : _visibleRecords.isEmpty
                           ? const Center(
                               child: Text('No calibration records yet.'))
                           : RefreshIndicator(
                               onRefresh: _load,
                               child: ListView.builder(
                                 padding: const EdgeInsets.all(16),
-                                itemCount: _records.length,
+                                itemCount: _visibleRecords.length,
                                 itemBuilder: (_, index) {
-                                  final record = _records[index];
+                                  final record = _visibleRecords[index];
                                   final mixer = record.mixer;
                                   final status = record.status;
                                   final editable = record.canEdit ||

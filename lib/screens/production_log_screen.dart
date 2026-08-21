@@ -16,10 +16,14 @@ import '../models/client.dart';
 import '../models/production_session.dart';
 import '../models/project.dart';
 import '../models/session.dart';
+import '../models/mixer_context.dart';
+import '../widgets/mixer_context_header.dart';
 
 class ProductionLogScreen extends StatefulWidget {
-  const ProductionLogScreen({super.key, required this.session});
+  const ProductionLogScreen(
+      {super.key, required this.session, this.mixerContext});
   final CehSession session;
+  final MixerContext? mixerContext;
   @override
   State<ProductionLogScreen> createState() => _ProductionLogScreenState();
 }
@@ -40,7 +44,8 @@ class _ProductionLogScreenState extends State<ProductionLogScreen> {
     setState(() => _busy = true);
     try {
       final value = await _api.productionSessions(widget.session,
-          status: _status == 'ALL' ? null : _status);
+          status: _status == 'ALL' ? null : _status,
+          mixerId: widget.mixerContext?.id);
       if (mounted) {
         setState(() {
           _items = value;
@@ -59,11 +64,15 @@ class _ProductionLogScreenState extends State<ProductionLogScreen> {
       SnackBar(content: Text(e.toString().replaceFirst('ApiException: ', ''))));
 
   Future<void> _start() async {
+    if (widget.mixerContext != null && !widget.mixerContext!.isOperational) {
+      _error('This mixer has no current active Client / Project assignment.');
+      return;
+    }
     final created = await Navigator.push<ProductionSession>(
         context,
         MaterialPageRoute(
-            builder: (_) =>
-                StartProductionSessionScreen(session: widget.session)));
+            builder: (_) => StartProductionSessionScreen(
+                session: widget.session, mixerContext: widget.mixerContext)));
     if (created != null && mounted) {
       await Navigator.push(
           context,
@@ -88,6 +97,11 @@ class _ProductionLogScreenState extends State<ProductionLogScreen> {
             icon: const Icon(Icons.add),
             label: const Text('Start Session')),
         body: Column(children: [
+          if (widget.mixerContext != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: MixerContextHeader(context: widget.mixerContext!),
+            ),
           Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
               child: SegmentedButton<String>(
@@ -158,8 +172,10 @@ class _ProductionLogScreenState extends State<ProductionLogScreen> {
 }
 
 class StartProductionSessionScreen extends StatefulWidget {
-  const StartProductionSessionScreen({super.key, required this.session});
+  const StartProductionSessionScreen(
+      {super.key, required this.session, this.mixerContext});
   final CehSession session;
+  final MixerContext? mixerContext;
   @override
   State<StartProductionSessionScreen> createState() =>
       _StartProductionSessionScreenState();
@@ -180,6 +196,14 @@ class _StartProductionSessionScreenState
   @override
   void initState() {
     super.initState();
+    final assignment = widget.mixerContext?.assignment;
+    if (assignment != null) {
+      _clientId = assignment.clientId;
+      _projectId = assignment.projectId;
+      _mixerId = widget.mixerContext!.id;
+      _busy = false;
+      return;
+    }
     _loadOptions();
   }
 
@@ -286,38 +310,45 @@ class _StartProductionSessionScreenState
           : Form(
               key: _form,
               child: ListView(padding: const EdgeInsets.all(16), children: [
-                DropdownButtonFormField<int>(
-                    decoration: const InputDecoration(labelText: 'Client'),
-                    items: _clients
-                        .where((client) => client.isActive)
-                        .map((client) => DropdownMenuItem(
-                            value: client.id, child: Text(client.name)))
-                        .toList(),
-                    onChanged: _selectClient,
-                    validator: (value) => value == null ? 'Required' : null),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<int>(
-                    key: ValueKey('project-$_clientId-$_projectId'),
-                    decoration:
-                        const InputDecoration(labelText: 'Project / Site'),
-                    items: _projects
-                        .where((p) => p.isActive)
-                        .map((p) =>
-                            DropdownMenuItem(value: p.id, child: Text(p.name)))
-                        .toList(),
-                    onChanged: _selectProject,
-                    validator: (value) => value == null ? 'Required' : null),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<int>(
-                    decoration:
-                        const InputDecoration(labelText: 'Allocated Mixer'),
-                    items: _mixers
-                        .map((m) => DropdownMenuItem(
-                            value: (m['id'] as num).toInt(),
-                            child: Text('${m['code']} — ${m['name']}')))
-                        .toList(),
-                    onChanged: (v) => _mixerId = v,
-                    validator: (v) => v == null ? 'Required' : null),
+                if (widget.mixerContext != null) ...[
+                  MixerContextHeader(context: widget.mixerContext!),
+                  const SizedBox(height: 12),
+                ],
+                if (widget.mixerContext == null)
+                  DropdownButtonFormField<int>(
+                      decoration: const InputDecoration(labelText: 'Client'),
+                      items: _clients
+                          .where((client) => client.isActive)
+                          .map((client) => DropdownMenuItem(
+                              value: client.id, child: Text(client.name)))
+                          .toList(),
+                      onChanged: _selectClient,
+                      validator: (value) => value == null ? 'Required' : null),
+                if (widget.mixerContext == null) const SizedBox(height: 12),
+                if (widget.mixerContext == null)
+                  DropdownButtonFormField<int>(
+                      key: ValueKey('project-$_clientId-$_projectId'),
+                      decoration:
+                          const InputDecoration(labelText: 'Project / Site'),
+                      items: _projects
+                          .where((p) => p.isActive)
+                          .map((p) => DropdownMenuItem(
+                              value: p.id, child: Text(p.name)))
+                          .toList(),
+                      onChanged: _selectProject,
+                      validator: (value) => value == null ? 'Required' : null),
+                if (widget.mixerContext == null) const SizedBox(height: 12),
+                if (widget.mixerContext == null)
+                  DropdownButtonFormField<int>(
+                      decoration:
+                          const InputDecoration(labelText: 'Allocated Mixer'),
+                      items: _mixers
+                          .map((m) => DropdownMenuItem(
+                              value: (m['id'] as num).toInt(),
+                              child: Text('${m['code']} — ${m['name']}')))
+                          .toList(),
+                      onChanged: (v) => _mixerId = v,
+                      validator: (v) => v == null ? 'Required' : null),
                 const SizedBox(height: 12),
                 TextFormField(
                     controller: _notes,

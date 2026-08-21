@@ -8,6 +8,7 @@ import '../models/calibration_record.dart';
 import '../models/calibration_source.dart';
 import '../models/client.dart';
 import '../models/project.dart';
+import '../models/mixer_context.dart';
 import '../models/production_settings.dart';
 import '../models/production_session.dart';
 import '../models/session.dart';
@@ -161,6 +162,21 @@ class CehApiClient {
         .toList();
   }
 
+  Future<List<MixerContext>> mixerContexts(CehSession session,
+      {bool includeHistory = false}) async {
+    final uri = Uri.parse('$baseUrl/mixer_contexts.php').replace(
+        queryParameters: includeHistory ? {'include_history': '1'} : null);
+    final response = await http
+        .get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 20));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'MIXER_CONTEXTS_FAILED');
+    return (data['mixers'] as List? ?? const [])
+        .map((item) =>
+            MixerContext.fromJson(Map<String, dynamic>.from(item as Map)))
+        .toList();
+  }
+
   Future<Map<String, dynamic>> saveCalibrationDraft(
     CehSession session,
     Map<String, dynamic> payload,
@@ -223,11 +239,17 @@ class CehApiClient {
     CehSession session, {
     String lifecycle = 'ACTIVE',
     bool includeAllOperators = false,
+    int? mixerId,
+    int? clientId,
+    int? projectId,
   }) async {
     final uri =
         Uri.parse('$baseUrl/calibration_records.php').replace(queryParameters: {
       'status': lifecycle,
       'scope': includeAllOperators ? 'ALL' : 'OWN',
+      if (mixerId != null) 'mixer_id': '$mixerId',
+      if (clientId != null) 'client_id': '$clientId',
+      if (projectId != null) 'project_id': '$projectId',
     });
     final response = await http
         .get(
@@ -256,9 +278,16 @@ class CehApiClient {
   }
 
   Future<List<Map<String, dynamic>>> adminCalibrations(CehSession session,
-      {String status = 'ACTIVE'}) async {
+      {String status = 'ACTIVE',
+      int? mixerId,
+      int? clientId,
+      int? projectId}) async {
+    final query = <String, String>{'status': status};
+    if (mixerId != null) query['mixer_id'] = '$mixerId';
+    if (clientId != null) query['client_id'] = '$clientId';
+    if (projectId != null) query['project_id'] = '$projectId';
     final uri = Uri.parse('$baseUrl/calibration_admin_list.php')
-        .replace(queryParameters: {'status': status});
+        .replace(queryParameters: query);
     final response = await http
         .get(
           uri,
@@ -524,9 +553,12 @@ class CehApiClient {
   }
 
   Future<List<ProductionSession>> productionSessions(CehSession session,
-      {String? status}) async {
+      {String? status, int? mixerId}) async {
     final uri = Uri.parse('$baseUrl/production_sessions.php').replace(
-      queryParameters: status == null ? null : {'status': status},
+      queryParameters: {
+        if (status != null) 'status': status,
+        if (mixerId != null) 'mixer_id': '$mixerId',
+      },
     );
     final response = await http
         .get(uri, headers: authHeaders(session))

@@ -18,6 +18,14 @@ if (!in_array($lifecycle, ['ACTIVE', 'ARCHIVED', 'ALL'], true)) {
 $isAdmin = (string)$user['role'] === 'ADMIN';
 $allOperators = $isAdmin && strtoupper(trim((string)($_GET['scope'] ?? 'OWN'))) === 'ALL';
 $ownershipSql = $allOperators ? '' : ' AND c.entered_by = ?';
+$mixerId=(int)($_GET['mixer_id']??0);
+$clientId=(int)($_GET['client_id']??0);
+$projectId=(int)($_GET['project_id']??0);
+$contextSql='';
+$contextParams=[];
+if($mixerId>0){$contextSql.=' AND c.mixer_id=?';$contextParams[]=$mixerId;}
+if($clientId>0){$contextSql.=' AND c.client_id=?';$contextParams[]=$clientId;}
+if($projectId>0){$contextSql.=' AND c.project_id=?';$contextParams[]=$projectId;}
 $lifecycleSql = match ($lifecycle) {
     'ARCHIVED' => ' AND c.archived_at IS NOT NULL',
     'ALL' => '',
@@ -40,11 +48,11 @@ $stmt = $db->prepare(
      FROM qbook_calibrations c
      JOIN qbook_mixers m ON m.id = c.mixer_id
      JOIN qbook_users entrant ON entrant.id = c.entered_by
-     WHERE 1=1" . $ownershipSql . $lifecycleSql . "
+     WHERE 1=1" . $ownershipSql . $lifecycleSql . $contextSql . "
      ORDER BY c.updated_at DESC, c.id DESC
      LIMIT 250"
 );
-$stmt->execute($allOperators ? [] : [(int)$user['id']]);
+$stmt->execute(array_merge($allOperators ? [] : [(int)$user['id']],$contextParams));
 $rows = $stmt->fetchAll();
 
 $trialStmt = $db->prepare(

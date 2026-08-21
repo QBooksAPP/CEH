@@ -4,11 +4,15 @@ import '../core/api_client.dart';
 import '../core/internal_navigation.dart';
 import '../models/session.dart';
 import '../models/calibration_record.dart';
+import '../models/mixer_context.dart';
+import '../widgets/mixer_context_header.dart';
 import 'calibration_field_sheet_screen.dart';
 
 class CalibrationReviewScreen extends StatefulWidget {
-  const CalibrationReviewScreen({super.key, required this.session});
+  const CalibrationReviewScreen(
+      {super.key, required this.session, this.mixerContext});
   final CehSession session;
+  final MixerContext? mixerContext;
 
   @override
   State<CalibrationReviewScreen> createState() =>
@@ -34,8 +38,12 @@ class _CalibrationReviewScreenState extends State<CalibrationReviewScreen> {
       _error = null;
     });
     try {
-      final items =
-          await _api.adminCalibrations(widget.session, status: _filter);
+      final assignment = widget.mixerContext?.assignment;
+      final items = await _api.adminCalibrations(widget.session,
+          status: _filter,
+          mixerId: widget.mixerContext?.id,
+          clientId: assignment?.clientId,
+          projectId: assignment?.projectId);
       if (!mounted) return;
       setState(() => _items = items);
     } on ApiException catch (e) {
@@ -58,6 +66,7 @@ class _CalibrationReviewScreenState extends State<CalibrationReviewScreen> {
         builder: (_) => CalibrationFieldSheetScreen(
           session: widget.session,
           calibration: CalibrationRecord.fromJson(item),
+          mixerContext: widget.mixerContext,
         ),
       ),
     );
@@ -547,6 +556,10 @@ class _CalibrationReviewScreenState extends State<CalibrationReviewScreen> {
                   child: ListView(
                     padding: const EdgeInsets.all(16),
                     children: [
+                      if (widget.mixerContext != null) ...[
+                        MixerContextHeader(context: widget.mixerContext!),
+                        const SizedBox(height: 14),
+                      ],
                       Text(
                         'Waiting for Approval (${waiting.length})',
                         style: const TextStyle(

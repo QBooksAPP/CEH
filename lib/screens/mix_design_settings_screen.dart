@@ -10,11 +10,15 @@ import '../models/production_settings.dart';
 import '../models/session.dart';
 import '../models/client.dart';
 import '../models/project.dart';
+import '../models/mixer_context.dart';
+import '../widgets/mixer_context_header.dart';
 import 'settings_history_screen.dart';
 
 class MixDesignSettingsScreen extends StatefulWidget {
-  const MixDesignSettingsScreen({super.key, required this.session});
+  const MixDesignSettingsScreen(
+      {super.key, required this.session, this.mixerContext});
   final CehSession session;
+  final MixerContext? mixerContext;
   @override
   State<MixDesignSettingsScreen> createState() =>
       _MixDesignSettingsScreenState();
@@ -36,6 +40,13 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
   bool _busy = true;
   ProductionSettingsResult? _result;
 
+  List<MixDesign> get _availableDesigns => isUiAdmin(context, widget.session)
+      ? _designs
+      : _designs.where((design) => design.isProductionEligible).toList();
+
+  MixDesign? get _selectedDesign =>
+      _availableDesigns.where((design) => design.id == _designId).firstOrNull;
+
   @override
   void initState() {
     super.initState();
@@ -50,17 +61,33 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
 
   Future<void> _load() async {
     try {
+      final assignment = widget.mixerContext?.assignment;
       final values = await Future.wait([
         _api.clients(widget.session),
         if (widget.session.user.isAdmin)
           _api.approvedCalibrationSources(widget.session)
         else
           Future.value(<CalibrationSource>[]),
+        if (assignment != null)
+          _api.mixDesigns(widget.session,
+              clientId: assignment.clientId,
+              projectId: assignment.projectId,
+              status: 'ACTIVE')
+        else
+          Future.value(<MixDesign>[]),
       ]);
       if (!mounted) return;
       setState(() {
         _clients = values[0] as List<CehClient>;
         _calibrations = values[1] as List<CalibrationSource>;
+        if (assignment != null) {
+          _clientId = assignment.clientId;
+          _projectId = assignment.projectId;
+          _mixerId = widget.mixerContext!.id;
+          _designs = (values[2] as List<MixDesign>)
+              .where((design) => design.isActive)
+              .toList();
+        }
         _busy = false;
       });
     } catch (e) {
@@ -181,7 +208,8 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
 
   List<CalibrationSource> get _mixerCalibrations =>
       _calibrations.where((calibration) {
-        final design = _designs.where((d) => d.id == _designId).firstOrNull;
+        final design =
+            _availableDesigns.where((d) => d.id == _designId).firstOrNull;
         return calibration.mixerId == _mixerId &&
             (design == null ||
                 (calibration.clientId == design.clientId &&
@@ -213,48 +241,57 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                DropdownButtonFormField<int>(
-                    initialValue: _clientId,
-                    decoration: const InputDecoration(labelText: 'Client'),
-                    items: _clients
-                        .map((c) =>
-                            DropdownMenuItem(value: c.id, child: Text(c.name)))
-                        .toList(),
-                    onChanged: _busy ? null : _selectClient),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<int>(
-                    key: ValueKey('settings-project-$_clientId-$_projectId'),
-                    initialValue: _projectId,
-                    decoration:
-                        const InputDecoration(labelText: 'Project / Site'),
-                    items: _projects
-                        .map((p) =>
-                            DropdownMenuItem(value: p.id, child: Text(p.name)))
-                        .toList(),
-                    onChanged: _clientId == null ? null : _selectProject),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<int>(
-                    key: ValueKey('settings-mixer-$_projectId-$_mixerId'),
-                    initialValue: _mixerId,
-                    decoration:
-                        const InputDecoration(labelText: 'Allocated Mixer'),
-                    items: _mixers
-                        .map((m) => DropdownMenuItem(
-                            value: int.tryParse('${m['id']}'),
-                            child: Text('${m['code']} — ${m['name']}')))
-                        .toList(),
-                    onChanged: (v) => setState(() {
-                          _mixerId = v;
-                          _calibrationId = 0;
-                          _result = null;
-                        })),
+                if (widget.mixerContext != null) ...[
+                  MixerContextHeader(
+                      context: widget.mixerContext!,
+                      stoneSize: _selectedDesign?.stoneSize),
+                  const SizedBox(height: 12),
+                ],
+                if (widget.mixerContext == null)
+                  DropdownButtonFormField<int>(
+                      initialValue: _clientId,
+                      decoration: const InputDecoration(labelText: 'Client'),
+                      items: _clients
+                          .map((c) => DropdownMenuItem(
+                              value: c.id, child: Text(c.name)))
+                          .toList(),
+                      onChanged: _busy ? null : _selectClient),
+                if (widget.mixerContext == null) const SizedBox(height: 12),
+                if (widget.mixerContext == null)
+                  DropdownButtonFormField<int>(
+                      key: ValueKey('settings-project-$_clientId-$_projectId'),
+                      initialValue: _projectId,
+                      decoration:
+                          const InputDecoration(labelText: 'Project / Site'),
+                      items: _projects
+                          .map((p) => DropdownMenuItem(
+                              value: p.id, child: Text(p.name)))
+                          .toList(),
+                      onChanged: _clientId == null ? null : _selectProject),
+                if (widget.mixerContext == null) const SizedBox(height: 12),
+                if (widget.mixerContext == null)
+                  DropdownButtonFormField<int>(
+                      key: ValueKey('settings-mixer-$_projectId-$_mixerId'),
+                      initialValue: _mixerId,
+                      decoration:
+                          const InputDecoration(labelText: 'Allocated Mixer'),
+                      items: _mixers
+                          .map((m) => DropdownMenuItem(
+                              value: int.tryParse('${m['id']}'),
+                              child: Text('${m['code']} — ${m['name']}')))
+                          .toList(),
+                      onChanged: (v) => setState(() {
+                            _mixerId = v;
+                            _calibrationId = 0;
+                            _result = null;
+                          })),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<int>(
                     key: ValueKey('settings-design-$_projectId-$_designId'),
                     initialValue: _designId,
                     decoration:
                         const InputDecoration(labelText: 'Active Mix Design'),
-                    items: _designs
+                    items: _availableDesigns
                         .map((d) => DropdownMenuItem(
                             value: d.id,
                             child: Text('${d.name} (${d.mode.apiValue})')))

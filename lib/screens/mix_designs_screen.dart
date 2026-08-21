@@ -6,12 +6,15 @@ import '../core/view_mode.dart';
 import '../core/ceh_theme.dart';
 import '../models/mix_design.dart';
 import '../models/session.dart';
+import '../models/mixer_context.dart';
+import '../widgets/mixer_context_header.dart';
 import 'mix_design_editor_screen.dart';
 
 class MixDesignsScreen extends StatefulWidget {
-  const MixDesignsScreen({super.key, required this.session});
+  const MixDesignsScreen({super.key, required this.session, this.mixerContext});
 
   final CehSession session;
+  final MixerContext? mixerContext;
 
   @override
   State<MixDesignsScreen> createState() => _MixDesignsScreenState();
@@ -27,7 +30,7 @@ class _MixDesignsScreenState extends State<MixDesignsScreen> {
   bool get _isAdmin => isUiAdmin(context, widget.session);
   List<MixDesign> get _visibleDesigns => _isAdmin
       ? _designs
-      : _designs.where((design) => design.isActive).toList();
+      : _designs.where((design) => design.isProductionEligible).toList();
 
   @override
   void initState() {
@@ -43,9 +46,12 @@ class _MixDesignsScreenState extends State<MixDesignsScreen> {
 
     try {
       var designs = await _api.mixDesigns(widget.session,
+          clientId: widget.mixerContext?.assignment?.clientId,
+          projectId: widget.mixerContext?.assignment?.projectId,
           status: _isAdmin ? _filter : 'ACTIVE');
       if (!_isAdmin) {
-        designs = designs.where((design) => design.isActive).toList();
+        designs =
+            designs.where((design) => design.isProductionEligible).toList();
       }
       if (!mounted) return;
       setState(() => _designs = designs);
@@ -98,8 +104,10 @@ class _MixDesignsScreenState extends State<MixDesignsScreen> {
     final changed = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
-        builder: (_) =>
-            MixDesignEditorScreen(session: widget.session, design: design),
+        builder: (_) => MixDesignEditorScreen(
+            session: widget.session,
+            design: design,
+            mixerContext: widget.mixerContext),
       ),
     );
     if (changed == true) await _load();
@@ -349,6 +357,10 @@ class _MixDesignsScreenState extends State<MixDesignsScreen> {
                   child: ListView(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
                     children: [
+                      if (widget.mixerContext != null) ...[
+                        MixerContextHeader(context: widget.mixerContext!),
+                        const SizedBox(height: 14),
+                      ],
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(

@@ -16,6 +16,9 @@ $lifecycle=strtoupper((string)($_GET['status']??'ACTIVE'));
 if(!in_array($lifecycle,['ACTIVE','ARCHIVED','ALL'],true)){
     qbook_json(['ok'=>false,'error'=>'INVALID_LIFECYCLE_FILTER'],422);
 }
+$mixerId=(int)($_GET['mixer_id']??0);
+$clientId=(int)($_GET['client_id']??0);
+$projectId=(int)($_GET['project_id']??0);
 
 /*
  * Important repair step:
@@ -33,7 +36,13 @@ foreach ($idStmt->fetchAll() as $row) {
     qbook_recalculate_calibration_results($db, (int)$row['id']);
 }
 
-$stmt = $db->query(
+$contextSql='';
+$contextParams=[];
+if($mixerId>0){$contextSql.=' AND c.mixer_id=?';$contextParams[]=$mixerId;}
+if($clientId>0){$contextSql.=' AND c.client_id=?';$contextParams[]=$clientId;}
+if($projectId>0){$contextSql.=' AND c.project_id=?';$contextParams[]=$projectId;}
+
+$stmt = $db->prepare(
     "SELECT
         c.id,
         c.client_id, c.project_id, c.client_name_snapshot, c.project_name_snapshot, c.stone_size,
@@ -65,12 +74,13 @@ $stmt = $db->query(
        AND (c.project_id IS NULL OR (context_project.is_active=1 AND context_project.archived_at IS NULL
          AND context_client.is_active=1 AND context_client.archived_at IS NULL))":
        ($lifecycle==='ARCHIVED'?" AND (c.archived_at IS NOT NULL OR context_project.archived_at IS NOT NULL
-         OR context_client.archived_at IS NOT NULL)":"")) . "
+         OR context_client.archived_at IS NOT NULL)":"")) . $contextSql . "
      ORDER BY
         CASE WHEN c.status = 'SUBMITTED' THEN 0 ELSE 1 END,
         COALESCE(c.submitted_at, c.reviewed_at) DESC,
         c.id DESC"
 );
+$stmt->execute($contextParams);
 
 $calibrations = $stmt->fetchAll();
 

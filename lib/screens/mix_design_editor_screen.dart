@@ -8,12 +8,16 @@ import '../models/mix_design.dart';
 import '../models/client.dart';
 import '../models/project.dart';
 import '../models/session.dart';
+import '../models/mixer_context.dart';
+import '../widgets/mixer_context_header.dart';
 
 class MixDesignEditorScreen extends StatefulWidget {
-  const MixDesignEditorScreen({super.key, required this.session, this.design});
+  const MixDesignEditorScreen(
+      {super.key, required this.session, this.design, this.mixerContext});
 
   final CehSession session;
   final MixDesign? design;
+  final MixerContext? mixerContext;
 
   @override
   State<MixDesignEditorScreen> createState() => _MixDesignEditorScreenState();
@@ -61,6 +65,10 @@ class _MixDesignEditorScreenState extends State<MixDesignEditorScreen> {
     _description = TextEditingController(text: design?.description ?? '');
     _clientId = design?.clientId;
     _projectId = design?.projectId;
+    if (design == null && widget.mixerContext?.assignment != null) {
+      _clientId = widget.mixerContext!.assignment!.clientId;
+      _projectId = widget.mixerContext!.assignment!.projectId;
+    }
     _stoneSize = design?.stoneSize;
     _validationStatus = design?.clientValidationStatus;
     _cement = TextEditingController(text: _initialNumber(design?.cementKg));
@@ -589,6 +597,10 @@ class _MixDesignEditorScreenState extends State<MixDesignEditorScreen> {
                   child: ListView(
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
                     children: [
+                      if (widget.mixerContext != null) ...[
+                        MixerContextHeader(context: widget.mixerContext!),
+                        const SizedBox(height: 14),
+                      ],
                       _sectionTitle(
                         'Design identity',
                         'Strength/name and client project details',
@@ -602,30 +614,33 @@ class _MixDesignEditorScreenState extends State<MixDesignEditorScreen> {
                         validator: _requiredText,
                       ),
                       const SizedBox(height: 10),
-                      DropdownButtonFormField<int>(
-                        initialValue: _clientId,
-                        decoration: _decoration('Client'),
-                        items: _clients
-                            .where((c) => c.isActive || c.id == _clientId)
-                            .map((c) => DropdownMenuItem(
-                                value: c.id, child: Text(c.name)))
-                            .toList(),
-                        onChanged: _selectClient,
-                        validator: (v) => v == null ? 'Required' : null,
-                      ),
-                      const SizedBox(height: 10),
-                      DropdownButtonFormField<int>(
-                        key: ValueKey('project-$_clientId-$_projectId'),
-                        initialValue: _projectId,
-                        decoration: _decoration('Project / site'),
-                        items: _projects
-                            .where((p) => p.isActive || p.id == _projectId)
-                            .map((p) => DropdownMenuItem(
-                                value: p.id, child: Text(p.name)))
-                            .toList(),
-                        onChanged: (v) => setState(() => _projectId = v),
-                        validator: (v) => v == null ? 'Required' : null,
-                      ),
+                      if (widget.mixerContext == null)
+                        DropdownButtonFormField<int>(
+                          initialValue: _clientId,
+                          decoration: _decoration('Client'),
+                          items: _clients
+                              .where((c) => c.isActive || c.id == _clientId)
+                              .map((c) => DropdownMenuItem(
+                                  value: c.id, child: Text(c.name)))
+                              .toList(),
+                          onChanged: _selectClient,
+                          validator: (v) => v == null ? 'Required' : null,
+                        ),
+                      if (widget.mixerContext == null)
+                        const SizedBox(height: 10),
+                      if (widget.mixerContext == null)
+                        DropdownButtonFormField<int>(
+                          key: ValueKey('project-$_clientId-$_projectId'),
+                          initialValue: _projectId,
+                          decoration: _decoration('Project / site'),
+                          items: _projects
+                              .where((p) => p.isActive || p.id == _projectId)
+                              .map((p) => DropdownMenuItem(
+                                  value: p.id, child: Text(p.name)))
+                              .toList(),
+                          onChanged: (v) => setState(() => _projectId = v),
+                          validator: (v) => v == null ? 'Required' : null,
+                        ),
                       const SizedBox(height: 10),
                       DropdownButtonFormField<String>(
                         initialValue: _stoneSize,
