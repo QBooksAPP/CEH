@@ -6,6 +6,7 @@ import '../core/ceh_theme.dart';
 import '../core/update_service.dart';
 import '../core/view_mode.dart';
 import '../models/session.dart';
+import 'accounts/accounts_home_screen.dart';
 import 'concrete_operations_screen.dart';
 import 'module_placeholder_screen.dart';
 import 'user_management_screen.dart';
@@ -15,10 +16,12 @@ class DashboardScreen extends StatefulWidget {
     super.key,
     required this.session,
     required this.onLogout,
+    this.checkForUpdates = true,
   });
 
   final CehSession session;
   final Future<void> Function() onLogout;
+  final bool checkForUpdates;
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -36,7 +39,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
-    _checkForUpdate(silent: true);
+    if (widget.checkForUpdates) _checkForUpdate(silent: true);
   }
 
   Future<void> _checkForUpdate({bool silent = false}) async {
@@ -113,7 +116,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           't': 'Accounts',
           's': 'Expenses, income, petty cash and reports',
           'i': Icons.account_balance_wallet_outlined,
-          'e': false,
+          'e': true,
         },
       if (admin)
         {
@@ -272,6 +275,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       context,
                       MaterialPageRoute(
                         builder: (_) => UserManagementScreen(session: session),
+                      ),
+                    );
+                  } else if (m['t'] == 'Accounts') {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => AccountsHomeScreen(session: session),
                       ),
                     );
                   } else {
