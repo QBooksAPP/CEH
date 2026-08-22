@@ -49,11 +49,10 @@ class BillingPrototypeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) => _AccountsPage(
         session: session,
-        title: 'Billing',
+        title: 'Billing & Receivables',
         children: [
           const AccountsSectionTitle('Ready to Invoice',
-              subtitle:
-                  'Signed production grouped for future QuickBooks invoicing'),
+              subtitle: 'Signed production grouped for future CEH billing'),
           for (final item in AccountsMockData.readyToInvoice)
             Card(
               child: Padding(
@@ -81,9 +80,8 @@ class BillingPrototypeScreen extends StatelessWidget {
               ),
             ),
           const SizedBox(height: 20),
-          const AccountsSectionTitle('QuickBooks Invoices',
-              subtitle:
-                  'Mock external invoice status—no QuickBooks connection'),
+          const AccountsSectionTitle('Receivables',
+              subtitle: 'Mock CEH invoice and payment status'),
           for (final invoice in AccountsMockData.invoices)
             Card(
               child: ListTile(
@@ -248,92 +246,6 @@ class _AddExpensePrototypeScreenState extends State<AddExpensePrototypeScreen> {
               ),
             ]),
           ),
-        ],
-      );
-}
-
-class PettyCashPrototypeScreen extends StatelessWidget {
-  const PettyCashPrototypeScreen({super.key, required this.session});
-  final CehSession session;
-
-  void _add(BuildContext context) => showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => Padding(
-            padding: EdgeInsets.fromLTRB(
-                18, 18, 18, MediaQuery.viewInsetsOf(context).bottom + 24),
-            child: const Column(mainAxisSize: MainAxisSize.min, children: [
-              Text('Add Petty Cash Transaction',
-                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900)),
-              SizedBox(height: 14),
-              TextField(
-                  decoration: InputDecoration(labelText: 'Cash In / Cash Out')),
-              SizedBox(height: 12),
-              TextField(decoration: InputDecoration(labelText: 'Amount (₦)')),
-              SizedBox(height: 12),
-              TextField(decoration: InputDecoration(labelText: 'Description')),
-              SizedBox(height: 16),
-              PrototypeBanner(),
-            ]),
-          ));
-
-  @override
-  Widget build(BuildContext context) => _AccountsPage(
-        session: session,
-        title: 'Petty Cash',
-        floatingActionButton: FloatingActionButton.extended(
-            onPressed: () => _add(context),
-            icon: const Icon(Icons.add),
-            label: const Text('Add Transaction')),
-        children: [
-          const AccountsSectionTitle('Cash position'),
-          AccountsResponsiveGrid(
-            mobileColumns: 2,
-            tabletColumns: 4,
-            desktopColumns: 4,
-            childAspectRatio: 1.25,
-            children: const [
-              AccountsSummaryCard(
-                  label: 'Opening Balance',
-                  value: 300000,
-                  detail: 'Start of August',
-                  icon: Icons.lock_open_outlined),
-              AccountsSummaryCard(
-                  label: 'Cash In',
-                  value: 750000,
-                  detail: 'August inflows',
-                  icon: Icons.south_west),
-              AccountsSummaryCard(
-                  label: 'Cash Out',
-                  value: 592500,
-                  detail: 'August payments',
-                  icon: Icons.north_east),
-              AccountsSummaryCard(
-                  label: 'Current Balance',
-                  value: 457500,
-                  detail: 'Mock available cash',
-                  icon: Icons.account_balance_wallet_outlined,
-                  emphasized: true),
-            ],
-          ),
-          const SizedBox(height: 22),
-          const AccountsSectionTitle('Transaction history'),
-          for (final entry in AccountsMockData.pettyCash)
-            Card(
-                child: ListTile(
-              leading: CircleAvatar(
-                  child:
-                      Icon(entry.type == 'Cash In' ? Icons.add : Icons.remove)),
-              title: Text(entry.description,
-                  style: const TextStyle(fontWeight: FontWeight.w800)),
-              subtitle: Text('${entry.date} • ${entry.type}'),
-              trailing: Text(formatNaira(entry.amount),
-                  style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: entry.type == 'Cash In'
-                          ? Colors.green.shade700
-                          : Colors.red.shade700)),
-            )),
         ],
       );
 }
@@ -599,46 +511,6 @@ class ReportsPrototypeScreen extends StatelessWidget {
                           SnackBar(
                               content: Text('${report.$1} is a prototype.')))),
               ]),
-        ],
-      );
-}
-
-class QuickBooksPrototypeScreen extends StatelessWidget {
-  const QuickBooksPrototypeScreen({super.key, required this.session});
-  final CehSession session;
-  @override
-  Widget build(BuildContext context) => _AccountsPage(
-        session: session,
-        title: 'QuickBooks',
-        children: [
-          const AccountsSectionTitle('Integration status',
-              subtitle: 'Visual status only—QuickBooks is not connected'),
-          Card(
-              child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(children: [
-                    const Icon(Icons.sync_lock_outlined, size: 52),
-                    const SizedBox(height: 10),
-                    const AccountsStatusChip('Not Connected'),
-                    const SizedBox(height: 14),
-                    const AccountsMetricLine('Last Sync', 'Never'),
-                    const AccountsMetricLine(
-                        'Customers Matched / Unmatched', '0 / 12'),
-                    const AccountsMetricLine(
-                        'Invoices Synced / Pending', '0 / 3'),
-                    const AccountsMetricLine(
-                        'Expenses Synced / Pending', '0 / 24'),
-                    const SizedBox(height: 18),
-                    FilledButton.icon(
-                        onPressed: null,
-                        icon: Icon(Icons.sync),
-                        label: Text('Sync Now')),
-                    const SizedBox(height: 8),
-                    const Text(
-                        'QuickBooks integration will be designed and approved separately.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.black54)),
-                  ]))),
         ],
       );
 }

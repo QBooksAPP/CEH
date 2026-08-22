@@ -1,3 +1,4 @@
+// Mock-only Accounts Phase 1 models. No backend persistence is connected.
 class AccountSummary {
   const AccountSummary(this.label, this.value, this.detail);
   final String label;
@@ -60,12 +61,66 @@ class MockExpense {
   final String status;
 }
 
-class PettyCashEntry {
-  const PettyCashEntry(this.date, this.description, this.type, this.amount);
+class MockBankAccount {
+  const MockBankAccount({
+    required this.name,
+    required this.currentBalance,
+    required this.statementBalance,
+    required this.unreconciledCount,
+  });
+  final String name;
+  final double currentBalance;
+  final double statementBalance;
+  final int unreconciledCount;
+}
+
+class MockBankTransaction {
+  const MockBankTransaction({
+    required this.date,
+    required this.description,
+    required this.reference,
+    required this.amount,
+    required this.status,
+  });
   final String date;
   final String description;
-  final String type;
+  final String reference;
   final double amount;
+  final String status;
+}
+
+class PettyCashCustodian {
+  const PettyCashCustodian({
+    required this.name,
+    required this.role,
+    required this.fundsReceived,
+    required this.accounted,
+    required this.pendingApproval,
+  });
+  final String name;
+  final String role;
+  final double fundsReceived;
+  final double accounted;
+  final double pendingApproval;
+  double get balance => fundsReceived - accounted;
+  double get availableBalance => balance - pendingApproval;
+}
+
+class CustodianCashEntry {
+  const CustodianCashEntry({
+    required this.custodian,
+    required this.date,
+    required this.description,
+    required this.amount,
+    required this.type,
+    required this.status,
+  });
+  final String custodian;
+  final String date;
+  final String description;
+  final double amount;
+  final String type;
+  final String status;
 }
 
 class ProjectCosting {
@@ -151,7 +206,7 @@ class AccountsMockData {
         project: 'Lekki Infrastructure',
         references: ['CEH-PR-000125'],
         totalM3: 37.5,
-        status: 'Sent to QuickBooks'),
+        status: 'Ready'),
     BillingItem(
         client: 'XYZ Engineering',
         project: 'Ibeju Yard',
@@ -217,11 +272,111 @@ class AccountsMockData {
         status: 'Needs Receipt'),
   ];
 
-  static const pettyCash = [
-    PettyCashEntry('20 Aug 2026', 'Workshop consumables', 'Cash Out', 45000),
-    PettyCashEntry('19 Aug 2026', 'Petty cash top-up', 'Cash In', 250000),
-    PettyCashEntry('18 Aug 2026', 'Site refreshments', 'Cash Out', 28500),
-    PettyCashEntry('17 Aug 2026', 'Local transport', 'Cash Out', 32000),
+  static const bankAccounts = [
+    MockBankAccount(
+      name: 'Zenith Bank',
+      currentBalance: 18450000,
+      statementBalance: 18225000,
+      unreconciledCount: 4,
+    ),
+  ];
+
+  static const bankTransactions = [
+    MockBankTransaction(
+      date: '21 Aug 2026',
+      description: 'Transfer to Segun — petty cash funding',
+      reference: '01310',
+      amount: -150000,
+      status: 'Potential Match',
+    ),
+    MockBankTransaction(
+      date: '20 Aug 2026',
+      description: 'ABC Construction payment',
+      reference: 'NIP-884921',
+      amount: 7425000,
+      status: 'Matched',
+    ),
+    MockBankTransaction(
+      date: '19 Aug 2026',
+      description: 'Transfer to Felix',
+      reference: '01302',
+      amount: -100000,
+      status: 'Reconciled',
+    ),
+    MockBankTransaction(
+      date: '19 Aug 2026',
+      description: 'Repeated debit narration',
+      reference: '01302',
+      amount: -100000,
+      status: 'Possible Duplicate',
+    ),
+    MockBankTransaction(
+      date: '18 Aug 2026',
+      description: 'Bank charge',
+      reference: 'CHG-0826',
+      amount: -2500,
+      status: 'Unmatched',
+    ),
+  ];
+
+  static const pettyCashCustodians = [
+    PettyCashCustodian(
+      name: 'Felix',
+      role: 'Site Supervisor',
+      fundsReceived: 100000,
+      accounted: 35000,
+      pendingApproval: 0,
+    ),
+    PettyCashCustodian(
+      name: 'Segun',
+      role: 'Site Supervisor',
+      fundsReceived: 150000,
+      accounted: 40000,
+      pendingApproval: 30000,
+    ),
+  ];
+
+  static const custodianCashEntries = [
+    CustodianCashEntry(
+      custodian: 'Felix',
+      date: '20 Aug 2026',
+      description: 'Workshop consumables',
+      amount: 35000,
+      type: 'Expense',
+      status: 'Approved',
+    ),
+    CustodianCashEntry(
+      custodian: 'Felix',
+      date: '17 Aug 2026',
+      description: 'Funds from Zenith Bank',
+      amount: 100000,
+      type: 'Funding',
+      status: 'Posted',
+    ),
+    CustodianCashEntry(
+      custodian: 'Segun',
+      date: '21 Aug 2026',
+      description: 'Diesel — Badagry / Mixer 307',
+      amount: 30000,
+      type: 'Expense',
+      status: 'Pending Approval',
+    ),
+    CustodianCashEntry(
+      custodian: 'Segun',
+      date: '19 Aug 2026',
+      description: 'Site transport',
+      amount: 40000,
+      type: 'Expense',
+      status: 'Approved',
+    ),
+    CustodianCashEntry(
+      custodian: 'Segun',
+      date: '18 Aug 2026',
+      description: 'Funds from Zenith Bank',
+      amount: 150000,
+      type: 'Funding',
+      status: 'Posted',
+    ),
   ];
 
   static const projects = [

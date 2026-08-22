@@ -6,10 +6,17 @@ import '../../models/accounts_mock_data.dart';
 import '../../models/session.dart';
 import '../../widgets/accounts_widgets.dart';
 import 'accounts_detail_screens.dart';
+import 'accounts_live_screens.dart';
+import 'accounts_phase1_screens.dart';
 
 class AccountsHomeScreen extends StatelessWidget {
-  const AccountsHomeScreen({super.key, required this.session});
+  const AccountsHomeScreen({
+    super.key,
+    required this.session,
+    this.liveData = true,
+  });
   final CehSession session;
+  final bool liveData;
 
   @override
   Widget build(BuildContext context) {
@@ -19,17 +26,28 @@ class AccountsHomeScreen extends StatelessWidget {
     }
     final destinations = <_AccountsDestination>[
       _AccountsDestination(
-          'Billing',
-          'Production ready for QuickBooks',
+          'Banking',
+          'Balances, statements and reconciliation',
+          Icons.account_balance_outlined,
+          liveData
+              ? AccountsBankingScreen(session: session)
+              : BankingPrototypeScreen(session: session)),
+      _AccountsDestination(
+          'Billing & Receivables',
+          'Production reports and client balances',
           Icons.receipt_long_outlined,
           BillingPrototypeScreen(session: session)),
       _AccountsDestination('Expenses', 'Operating costs and receipts',
           Icons.payments_outlined, ExpensesPrototypeScreen(session: session)),
       _AccountsDestination(
           'Petty Cash',
-          'Cash movement and balance',
+          'Independent custodian balances',
           Icons.account_balance_wallet_outlined,
-          PettyCashPrototypeScreen(session: session)),
+          liveData
+              ? AccountsPettyCashScreen(session: session)
+              : PettyCashCustodianPrototypeScreen(session: session)),
+      _AccountsDestination('Payroll', 'Future payroll and staff payments',
+          Icons.badge_outlined, PayrollPrototypeScreen(session: session)),
       _AccountsDestination(
           'Projects / Job Costing',
           'Production and project contribution',
@@ -47,11 +65,6 @@ class AccountsHomeScreen extends StatelessWidget {
           SuppliersPrototypeScreen(session: session)),
       _AccountsDestination('Reports', 'Management reporting workspace',
           Icons.bar_chart_outlined, ReportsPrototypeScreen(session: session)),
-      _AccountsDestination(
-          'QuickBooks',
-          'Integration readiness and sync status',
-          Icons.sync_alt,
-          QuickBooksPrototypeScreen(session: session)),
     ];
 
     return Scaffold(

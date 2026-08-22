@@ -2,8 +2,10 @@ import 'dart:io';
 
 import 'package:ceh/core/ceh_theme.dart';
 import 'package:ceh/core/view_mode.dart';
+import 'package:ceh/models/accounts_mock_data.dart';
 import 'package:ceh/models/session.dart';
 import 'package:ceh/screens/accounts/accounts_home_screen.dart';
+import 'package:ceh/screens/accounts/accounts_phase1_screens.dart';
 import 'package:ceh/screens/dashboard_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -70,14 +72,15 @@ void main() {
 
   testWidgets('Accounts screen independently enforces Admin UI access',
       (tester) async {
-    await tester
-        .pumpWidget(app(const AccountsHomeScreen(session: operatorSession)));
+    await tester.pumpWidget(app(
+        const AccountsHomeScreen(session: operatorSession, liveData: false)));
     expect(find.text('Administrator access required.'), findsOneWidget);
     expect(find.text('Financial overview'), findsNothing);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
-    await tester.pumpWidget(app(const AccountsHomeScreen(session: adminSession),
+    await tester.pumpWidget(app(
+        const AccountsHomeScreen(session: adminSession, liveData: false),
         viewAsOperator: true));
     expect(find.text('Administrator access required.'), findsOneWidget);
   });
@@ -88,25 +91,27 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    await tester
-        .pumpWidget(app(const AccountsHomeScreen(session: adminSession)));
+    await tester.pumpWidget(
+        app(const AccountsHomeScreen(session: adminSession, liveData: false)));
 
     for (final label in [
       'Cash / Bank',
       'Receivables',
       'Expenses This Month',
       'Net Operating Position',
-      'Billing',
+      'Banking',
+      'Billing & Receivables',
       'Expenses',
       'Petty Cash',
+      'Payroll',
       'Projects / Job Costing',
       'Equipment Costing',
       'Suppliers',
       'Reports',
-      'QuickBooks',
     ]) {
       expect(find.text(label), findsOneWidget);
     }
+    expect(find.text('QuickBooks'), findsNothing);
     expect(find.text('Prototype • sample data only'), findsOneWidget);
   });
 
@@ -116,13 +121,13 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    await tester
-        .pumpWidget(app(const AccountsHomeScreen(session: adminSession)));
+    await tester.pumpWidget(
+        app(const AccountsHomeScreen(session: adminSession, liveData: false)));
     expect(find.text('Cash / Bank'), findsOneWidget);
-    final quickBooks = find.byKey(const ValueKey('accounts-menu-quickbooks'));
-    await tester.scrollUntilVisible(quickBooks, 300,
+    final reports = find.byKey(const ValueKey('accounts-menu-reports'));
+    await tester.scrollUntilVisible(reports, 300,
         scrollable: find.byType(Scrollable).first);
-    expect(quickBooks, findsOneWidget);
+    expect(reports, findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -131,18 +136,19 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    await tester
-        .pumpWidget(app(const AccountsHomeScreen(session: adminSession)));
+    await tester.pumpWidget(
+        app(const AccountsHomeScreen(session: adminSession, liveData: false)));
 
     const destinations = <String, String>{
-      'billing': 'Ready to Invoice',
+      'banking': 'Bank accounts',
+      'billing-receivables': 'Ready to Invoice',
       'expenses': 'Expense register',
-      'petty-cash': 'Transaction history',
+      'petty-cash': 'TOTAL PETTY CASH',
+      'payroll': 'Payroll foundation',
       'projects-job-costing': 'Project performance',
       'equipment-costing': 'Equipment profitability',
       'suppliers': 'Supplier directory',
       'reports': 'Management reports',
-      'quickbooks': 'Integration status',
     };
     for (final entry in destinations.entries) {
       final menu = find.byKey(ValueKey('accounts-menu-${entry.key}'));
@@ -161,10 +167,68 @@ void main() {
     final files = [
       'lib/screens/accounts/accounts_home_screen.dart',
       'lib/screens/accounts/accounts_detail_screens.dart',
+      'lib/screens/accounts/accounts_phase1_screens.dart',
       'lib/models/accounts_mock_data.dart',
     ].map((path) => File(path).readAsStringSync()).join('\n');
     expect(files, isNot(contains('CehApiClient')));
     expect(files, isNot(contains('package:http')));
     expect(files, isNot(contains('quickbooks.com')));
+  });
+
+  test('pending petty cash expense reserves available custodian balance', () {
+    final segun = AccountsMockData.pettyCashCustodians
+        .singleWhere((item) => item.name == 'Segun');
+    expect(segun.balance, 110000);
+    expect(segun.pendingApproval, 30000);
+    expect(segun.availableBalance, 80000);
+    expect(
+      AccountsMockData.pettyCashCustodians
+          .fold<double>(0, (sum, item) => sum + item.balance),
+      175000,
+    );
+  });
+
+  testWidgets('Banking demonstrates matching and duplicate states',
+      (tester) async {
+    tester.view.physicalSize = const Size(900, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester
+        .pumpWidget(app(const BankingPrototypeScreen(session: adminSession)));
+    expect(find.text('Zenith Bank'), findsOneWidget);
+    expect(find.text('Potential Match'), findsOneWidget);
+    expect(find.text('Possible Duplicate'), findsOneWidget);
+    final importButton = tester.widget<FilledButton>(
+        find.byKey(const ValueKey('import-bank-statement')));
+    expect(importButton.onPressed, isNull);
+  });
+
+  testWidgets('Petty Cash uses independent custodians and prototype forms',
+      (tester) async {
+    tester.view.physicalSize = const Size(900, 1500);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+        app(const PettyCashCustodianPrototypeScreen(session: adminSession)));
+    expect(find.byKey(const ValueKey('custodian-felix')), findsOneWidget);
+    expect(find.byKey(const ValueKey('custodian-segun')), findsOneWidget);
+    expect(find.text('₦175,000'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('fund-petty-cash')));
+    await tester.pumpAndSettle();
+    expect(find.text('Asset transfer'), findsOneWidget);
+    expect(find.text('Admin User'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('add-petty-cash-expense')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('take-receipt-photo')), findsOneWidget);
+    expect(find.byKey(const ValueKey('choose-receipt-photo')), findsOneWidget);
+    await tester.tap(find.text('No Receipt'));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('no-receipt-reason')), findsOneWidget);
   });
 }

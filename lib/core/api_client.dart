@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
 import '../models/mix_design.dart';
+import '../models/accounts.dart';
 import '../models/calibration_record.dart';
 import '../models/calibration_source.dart';
 import '../models/client.dart';
@@ -765,6 +766,163 @@ class CehApiClient {
       throw const ApiException('INVALID_PRODUCTION_REPORT_FILENAME');
     }
     return ProductionReportFile(bytes: response.bodyBytes, filename: filename);
+  }
+
+  Future<List<FinancialAccount>> financialAccounts(CehSession session) async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/accounts_chart.php'),
+            headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'ACCOUNTS_CHART_FAILED');
+    return (data['accounts'] as List? ?? const [])
+        .map((item) =>
+            FinancialAccount.fromJson(Map<String, dynamic>.from(item as Map)))
+        .toList();
+  }
+
+  Future<List<CehBankAccount>> bankAccounts(CehSession session) async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/bank_accounts.php'),
+            headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'BANK_ACCOUNTS_FAILED');
+    return (data['bank_accounts'] as List? ?? const [])
+        .map((item) =>
+            CehBankAccount.fromJson(Map<String, dynamic>.from(item as Map)))
+        .toList();
+  }
+
+  Future<List<CehBankTransaction>> bankTransactions(
+      CehSession session, int bankAccountId) async {
+    final uri = Uri.parse('$baseUrl/bank_transactions.php')
+        .replace(queryParameters: {'bank_account_id': '$bankAccountId'});
+    final response = await http
+        .get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'BANK_TRANSACTIONS_FAILED');
+    return (data['transactions'] as List? ?? const [])
+        .map((item) =>
+            CehBankTransaction.fromJson(Map<String, dynamic>.from(item as Map)))
+        .toList();
+  }
+
+  Future<PettyCashOverview> pettyCashOverview(CehSession session) async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/petty_cash_summary.php'),
+            headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'PETTY_CASH_FAILED');
+    return PettyCashOverview.fromJson(data);
+  }
+
+  Future<void> updatePettyCashCustodian(CehSession session,
+      {required int userId, required bool isActive}) async {
+    await _postJson(
+        session,
+        'petty_cash_custodian_update.php',
+        {'user_id': userId, 'is_active': isActive},
+        'PETTY_CASH_CUSTODIAN_UPDATE_FAILED');
+  }
+
+  Future<List<Map<String, dynamic>>> pettyCashTransactions(
+      CehSession session, int custodianUserId) async {
+    final uri = Uri.parse('$baseUrl/petty_cash_transactions.php')
+        .replace(queryParameters: {'custodian_user_id': '$custodianUserId'});
+    final response = await http
+        .get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'PETTY_CASH_TRANSACTIONS_FAILED');
+    return (data['transactions'] as List? ?? const [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
+  }
+
+  Future<void> fundPettyCash(
+      CehSession session, Map<String, dynamic> payload) async {
+    await _postJson(
+        session, 'petty_cash_fund.php', payload, 'PETTY_CASH_FUND_FAILED');
+  }
+
+  Future<int> createPettyCashExpense(
+      CehSession session, Map<String, dynamic> payload) async {
+    final data = await _postJson(session, 'petty_cash_expense_create.php',
+        payload, 'PETTY_CASH_EXPENSE_CREATE_FAILED');
+    return (data['expense']['id'] as num).toInt();
+  }
+
+  Future<void> submitPettyCashExpense(CehSession session, int expenseId) async {
+    await _postJson(session, 'petty_cash_expense_submit.php',
+        {'expense_id': expenseId}, 'PETTY_CASH_EXPENSE_SUBMIT_FAILED');
+  }
+
+  Future<void> reviewPettyCashExpense(CehSession session,
+      {required int expenseId,
+      required String action,
+      String reason = ''}) async {
+    await _postJson(
+        session,
+        'petty_cash_expense_review.php',
+        {'expense_id': expenseId, 'action': action, 'reason': reason},
+        'PETTY_CASH_EXPENSE_REVIEW_FAILED');
+  }
+
+  Future<List<Map<String, dynamic>>> pettyCashExpenses(
+      CehSession session) async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/petty_cash_expenses.php'),
+            headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'PETTY_CASH_EXPENSES_FAILED');
+    return (data['expenses'] as List? ?? const [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> importBankStatement(
+      CehSession session, Map<String, dynamic> payload) async {
+    return _postJson(session, 'bank_statement_import.php', payload,
+        'BANK_STATEMENT_IMPORT_FAILED');
+  }
+
+  Future<void> reconcileBankRow(CehSession session,
+      {required int statementRowId,
+      required String sourceType,
+      required int sourceRecordId}) async {
+    await _postJson(
+        session,
+        'bank_reconcile.php',
+        {
+          'statement_row_id': statementRowId,
+          'source_type': sourceType,
+          'source_record_id': sourceRecordId,
+        },
+        'BANK_RECONCILE_FAILED');
+  }
+
+  Future<void> uploadFinancialEvidence(CehSession session,
+      {required String sourceType,
+      required int sourceRecordId,
+      required String filename,
+      required String mimeType,
+      required Uint8List bytes}) async {
+    await _postJson(
+      session,
+      'financial_evidence_upload.php',
+      {
+        'source_type': sourceType,
+        'source_record_id': sourceRecordId,
+        'filename': filename,
+        'mime_type': mimeType,
+        'data_base64': base64Encode(bytes),
+      },
+      'FINANCIAL_EVIDENCE_UPLOAD_FAILED',
+    );
   }
 
   Future<Map<String, dynamic>> _postJson(
