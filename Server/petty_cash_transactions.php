@@ -6,6 +6,6 @@ accounts_endpoint(function() use($user): array {
     $target=(int)($_GET['custodian_user_id']??$user['id']); if(!accounts_can_access_custodian($user,$target)) accounts_fail('FORBIDDEN',403);
     $db=production_db(); accounts_custodian($db,$target);
     $sql="SELECT id,'FUNDING' AS transaction_type,funding_date AS transaction_date,amount,description,'POSTED' AS status,bank_reference AS reference_no FROM qbook_petty_cash_fundings WHERE custodian_user_id=?
-      UNION ALL SELECT id,'EXPENSE',expense_date,amount,description,status,NULL FROM qbook_petty_cash_expenses WHERE custodian_user_id=? ORDER BY transaction_date DESC,id DESC";
+      UNION ALL SELECT e.id,'EXPENSE',e.expense_date,e.amount,e.description,e.status,CONCAT('CEH-PC-',LPAD(r.reference_no,6,'0')) FROM qbook_petty_cash_expenses e LEFT JOIN qbook_petty_cash_expense_references r ON r.expense_id=e.id WHERE e.custodian_user_id=? ORDER BY transaction_date DESC,id DESC";
     $s=$db->prepare($sql);$s->execute([$target,$target]); return ['transactions'=>$s->fetchAll()];
 });

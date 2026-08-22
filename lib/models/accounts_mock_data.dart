@@ -220,28 +220,28 @@ class AccountsMockData {
         number: 'INV-1048',
         client: 'ABC Construction Ltd',
         project: 'Badagry Site',
-        date: '18 Aug 2026',
+        date: '18-08-2026',
         amount: 7425000,
         status: 'Outstanding'),
     MockInvoice(
         number: 'INV-1042',
         client: 'Julius Berger',
         project: 'Lekki Infrastructure',
-        date: '11 Aug 2026',
+        date: '11-08-2026',
         amount: 5180000,
         status: 'Part Paid'),
     MockInvoice(
         number: 'INV-1035',
         client: 'XYZ Engineering',
         project: 'Ibeju Yard',
-        date: '02 Aug 2026',
+        date: '02-08-2026',
         amount: 3975000,
         status: 'Paid'),
   ];
 
   static const expenses = [
     MockExpense(
-        date: '20 Aug 2026',
+        date: '20-08-2026',
         supplier: 'TotalEnergies',
         category: 'Diesel',
         amount: 685000,
@@ -251,7 +251,7 @@ class AccountsMockData {
         hasReceipt: true,
         status: 'Approved'),
     MockExpense(
-        date: '18 Aug 2026',
+        date: '18-08-2026',
         supplier: 'Prime Parts Nigeria',
         category: 'Repairs & Parts',
         amount: 248500,
@@ -261,7 +261,7 @@ class AccountsMockData {
         hasReceipt: true,
         status: 'Pending'),
     MockExpense(
-        date: '16 Aug 2026',
+        date: '16-08-2026',
         supplier: 'Ade Transport Services',
         category: 'Transport',
         amount: 175000,
@@ -283,35 +283,35 @@ class AccountsMockData {
 
   static const bankTransactions = [
     MockBankTransaction(
-      date: '21 Aug 2026',
+      date: '21-08-2026',
       description: 'Transfer to Segun — petty cash funding',
       reference: '01310',
       amount: -150000,
       status: 'Potential Match',
     ),
     MockBankTransaction(
-      date: '20 Aug 2026',
+      date: '20-08-2026',
       description: 'ABC Construction payment',
       reference: 'NIP-884921',
       amount: 7425000,
       status: 'Matched',
     ),
     MockBankTransaction(
-      date: '19 Aug 2026',
+      date: '19-08-2026',
       description: 'Transfer to Felix',
       reference: '01302',
       amount: -100000,
       status: 'Reconciled',
     ),
     MockBankTransaction(
-      date: '19 Aug 2026',
+      date: '19-08-2026',
       description: 'Repeated debit narration',
       reference: '01302',
       amount: -100000,
       status: 'Possible Duplicate',
     ),
     MockBankTransaction(
-      date: '18 Aug 2026',
+      date: '18-08-2026',
       description: 'Bank charge',
       reference: 'CHG-0826',
       amount: -2500,
@@ -339,7 +339,7 @@ class AccountsMockData {
   static const custodianCashEntries = [
     CustodianCashEntry(
       custodian: 'Felix',
-      date: '20 Aug 2026',
+      date: '20-08-2026',
       description: 'Workshop consumables',
       amount: 35000,
       type: 'Expense',
@@ -347,7 +347,7 @@ class AccountsMockData {
     ),
     CustodianCashEntry(
       custodian: 'Felix',
-      date: '17 Aug 2026',
+      date: '17-08-2026',
       description: 'Funds from Zenith Bank',
       amount: 100000,
       type: 'Funding',
@@ -355,7 +355,7 @@ class AccountsMockData {
     ),
     CustodianCashEntry(
       custodian: 'Segun',
-      date: '21 Aug 2026',
+      date: '21-08-2026',
       description: 'Diesel — Badagry / Mixer 307',
       amount: 30000,
       type: 'Expense',
@@ -363,7 +363,7 @@ class AccountsMockData {
     ),
     CustodianCashEntry(
       custodian: 'Segun',
-      date: '19 Aug 2026',
+      date: '19-08-2026',
       description: 'Site transport',
       amount: 40000,
       type: 'Expense',
@@ -371,7 +371,7 @@ class AccountsMockData {
     ),
     CustodianCashEntry(
       custodian: 'Segun',
-      date: '18 Aug 2026',
+      date: '18-08-2026',
       description: 'Funds from Zenith Bank',
       amount: 150000,
       type: 'Funding',

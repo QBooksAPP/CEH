@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/accounts_formatters.dart';
 import '../../core/internal_navigation.dart';
 import '../../core/view_mode.dart';
 import '../../models/accounts_mock_data.dart';
@@ -97,7 +98,8 @@ class BankingPrototypeScreen extends StatelessWidget {
                       key: const ValueKey('import-bank-statement'),
                       onPressed: null,
                       icon: const Icon(Icons.upload_file_outlined),
-                      label: const Text('Import Statement — format mapping pending'),
+                      label: const Text(
+                          'Import Statement — format mapping pending'),
                     ),
                     OutlinedButton.icon(
                       onPressed: () => _prototypeNotice(
@@ -335,19 +337,15 @@ class _FundPettyCashPrototypeScreenState
           ),
           const SizedBox(height: 12),
           const TextField(
-            keyboardType: TextInputType.number,
+            keyboardType: TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [NgnAmountInputFormatter()],
             decoration: InputDecoration(labelText: 'Amount (₦)'),
           ),
           const SizedBox(height: 12),
-          const TextField(
-            decoration: InputDecoration(
-                labelText: 'Date',
-                suffixIcon: Icon(Icons.calendar_today_outlined)),
-          ),
+          AccountsDatePickerField(onChanged: (_) {}),
           const SizedBox(height: 12),
           const TextField(
-              decoration:
-                  InputDecoration(labelText: 'Bank transfer / reference')),
+              decoration: InputDecoration(labelText: 'Zenith Reference')),
           const SizedBox(height: 12),
           const TextField(
               maxLines: 3,
@@ -402,6 +400,12 @@ class _AddPettyCashExpensePrototypeScreenState
             'Expense submission',
             subtitle: 'DRAFT → SUBMITTED → APPROVED / REJECTED',
           ),
+          const TextField(
+              enabled: false,
+              decoration: InputDecoration(
+                  labelText: 'CEH reference',
+                  hintText: 'Issued automatically after creation')),
+          const SizedBox(height: 12),
           DropdownButtonFormField<String>(
             initialValue: _custodian,
             decoration: const InputDecoration(labelText: 'Custodian'),
@@ -412,10 +416,11 @@ class _AddPettyCashExpensePrototypeScreenState
             onChanged: (value) => setState(() => _custodian = value ?? 'Segun'),
           ),
           const SizedBox(height: 12),
-          const TextField(decoration: InputDecoration(labelText: 'Date')),
+          AccountsDatePickerField(onChanged: (_) {}),
           const SizedBox(height: 12),
           const TextField(
-              keyboardType: TextInputType.number,
+              keyboardType: TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [NgnAmountInputFormatter()],
               decoration: InputDecoration(labelText: 'Amount (₦)')),
           const SizedBox(height: 12),
           const TextField(decoration: InputDecoration(labelText: 'Category')),

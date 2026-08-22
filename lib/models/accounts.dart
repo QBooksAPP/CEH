@@ -141,6 +141,67 @@ class PettyCashOverview {
       );
 }
 
+class CreatedPettyCashExpense {
+  const CreatedPettyCashExpense({required this.id, required this.reference});
+  final int id;
+  final String reference;
+
+  factory CreatedPettyCashExpense.fromJson(Map<String, dynamic> json) =>
+      CreatedPettyCashExpense(
+        id: _int(json['id']),
+        reference: '${json['reference_no'] ?? ''}',
+      );
+}
+
+class ConsolidatedExpense {
+  const ConsolidatedExpense({
+    required this.reference,
+    required this.date,
+    required this.amount,
+    required this.category,
+    required this.supplier,
+    required this.description,
+    required this.client,
+    required this.project,
+    required this.equipment,
+    required this.sourceType,
+    required this.sourceName,
+    required this.status,
+    required this.hasEvidence,
+  });
+
+  final String reference;
+  final String date;
+  final double amount;
+  final String category;
+  final String supplier;
+  final String description;
+  final String? client;
+  final String? project;
+  final String? equipment;
+  final String sourceType;
+  final String sourceName;
+  final String status;
+  final bool hasEvidence;
+
+  factory ConsolidatedExpense.fromJson(Map<String, dynamic> json) =>
+      ConsolidatedExpense(
+        reference: '${json['reference_no'] ?? 'Reference pending'}',
+        date: '${json['expense_date'] ?? ''}',
+        amount: _double(json['amount']),
+        category: '${json['category'] ?? ''}',
+        supplier: '${json['supplier_paid_to'] ?? ''}',
+        description: '${json['description'] ?? ''}',
+        client: json['client_name']?.toString(),
+        project: json['project_name']?.toString(),
+        equipment: json['mixer_code']?.toString(),
+        sourceType: '${json['source_type'] ?? ''}',
+        sourceName: '${json['source_name'] ?? ''}',
+        status: '${json['posting_status'] ?? ''}',
+        hasEvidence: _int(json['evidence_count']) > 0,
+      );
+}
+
 int _int(dynamic value) =>
     value is num ? value.toInt() : int.tryParse('${value ?? ''}') ?? 0;
 double _double(dynamic value) =>

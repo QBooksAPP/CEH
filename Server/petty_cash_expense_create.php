@@ -13,7 +13,10 @@ accounts_endpoint(function() use($user,$input): array {
         accounts_custodian($db,$custodian,true);accounts_validate_dimensions($db,$client,$project,$mixer);
         $s=$db->prepare("SELECT id FROM qbook_accounts_chart WHERE id=? AND account_type='EXPENSE' AND is_active=1 AND is_postable=1");$s->execute([$account]);if(!$s->fetch()) accounts_fail('EXPENSE_ACCOUNT_REQUIRED');
         $db->prepare("INSERT INTO qbook_petty_cash_expenses(custodian_user_id,expense_date,amount,expense_account_id,supplier_paid_to,description,client_id,project_id,mixer_id,no_receipt_reason,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?)")->execute([$custodian,$date,accounts_minor_decimal($minor),$account,$supplier,$description,$client,$project,$mixer,$reason?:null,(int)$user['id']]);
-        $id=(int)$db->lastInsertId();accounts_audit($db,$user,'PETTY_CASH_EXPENSE_DRAFTED','PETTY_CASH_EXPENSE',$id,['custodian_user_id'=>$custodian,'amount'=>accounts_minor_decimal($minor)]);
-        return ['expense'=>['id'=>$id,'status'=>'DRAFT']];
+        $id=(int)$db->lastInsertId();
+        $db->prepare("INSERT INTO qbook_petty_cash_expense_references(expense_id) VALUES(?)")->execute([$id]);
+        $reference=accounts_petty_cash_reference((int)$db->lastInsertId());
+        accounts_audit($db,$user,'PETTY_CASH_EXPENSE_DRAFTED','PETTY_CASH_EXPENSE',$id,['reference_no'=>$reference,'custodian_user_id'=>$custodian,'amount'=>accounts_minor_decimal($minor)]);
+        return ['expense'=>['id'=>$id,'reference_no'=>$reference,'status'=>'DRAFT']];
     });
 });

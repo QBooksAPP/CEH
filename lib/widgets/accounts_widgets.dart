@@ -1,16 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../core/accounts_formatters.dart';
 import '../core/ceh_theme.dart';
 
-String formatNaira(num value) {
-  final digits = value.round().toString();
-  final buffer = StringBuffer();
-  for (var i = 0; i < digits.length; i++) {
-    if (i > 0 && (digits.length - i) % 3 == 0) buffer.write(',');
-    buffer.write(digits[i]);
-  }
-  return '₦$buffer';
-}
+String formatNaira(num value) => formatNgn(value);
 
 class AccountsSectionTitle extends StatelessWidget {
   const AccountsSectionTitle(this.title, {super.key, this.subtitle});

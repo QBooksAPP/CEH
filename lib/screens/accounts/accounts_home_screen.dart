@@ -37,8 +37,13 @@ class AccountsHomeScreen extends StatelessWidget {
           'Production reports and client balances',
           Icons.receipt_long_outlined,
           BillingPrototypeScreen(session: session)),
-      _AccountsDestination('Expenses', 'Operating costs and receipts',
-          Icons.payments_outlined, ExpensesPrototypeScreen(session: session)),
+      _AccountsDestination(
+          'Expenses',
+          'Operating costs and receipts',
+          Icons.payments_outlined,
+          liveData
+              ? AccountsExpensesScreen(session: session)
+              : ExpensesPrototypeScreen(session: session)),
       _AccountsDestination(
           'Petty Cash',
           'Independent custodian balances',

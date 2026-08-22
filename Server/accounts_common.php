@@ -71,6 +71,13 @@ function accounts_reference(string $prefix): string {
     return $prefix . '-' . gmdate('YmdHis') . '-' . strtoupper(bin2hex(random_bytes(4)));
 }
 
+function accounts_petty_cash_reference(mixed $number): ?string {
+    if ($number === null || $number === '') return null;
+    $value = (int)$number;
+    if ($value <= 0) accounts_fail('INVALID_PETTY_CASH_REFERENCE', 500);
+    return 'CEH-PC-' . str_pad((string)$value, 6, '0', STR_PAD_LEFT);
+}
+
 function accounts_audit(PDO $db, array $user, string $event, string $sourceType, int $sourceId, array $details = []): void {
     $json = $details === [] ? null : json_encode($details, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
     if ($details !== [] && $json === false) accounts_fail('AUDIT_SERIALIZATION_FAILED', 500);

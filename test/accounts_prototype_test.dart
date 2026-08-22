@@ -214,7 +214,7 @@ void main() {
         app(const PettyCashCustodianPrototypeScreen(session: adminSession)));
     expect(find.byKey(const ValueKey('custodian-felix')), findsOneWidget);
     expect(find.byKey(const ValueKey('custodian-segun')), findsOneWidget);
-    expect(find.text('₦175,000'), findsOneWidget);
+    expect(find.text('₦175,000.00'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('fund-petty-cash')));
     await tester.pumpAndSettle();

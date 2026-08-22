@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/accounts_formatters.dart';
 import '../../core/internal_navigation.dart';
 import '../../core/view_mode.dart';
 import '../../models/accounts_mock_data.dart';
@@ -161,6 +162,7 @@ class AddExpensePrototypeScreen extends StatefulWidget {
 
 class _AddExpensePrototypeScreenState extends State<AddExpensePrototypeScreen> {
   final _form = GlobalKey<FormState>();
+  String _date = canonicalAccountsDate(DateTime.now());
   String? _supplier;
   String? _category;
   String? _payment;
@@ -175,10 +177,9 @@ class _AddExpensePrototypeScreenState extends State<AddExpensePrototypeScreen> {
           Form(
             key: _form,
             child: Column(children: [
-              const TextField(
-                  decoration: InputDecoration(
-                      labelText: 'Date',
-                      suffixIcon: Icon(Icons.calendar_today_outlined))),
+              AccountsDatePickerField(
+                  initialCanonicalDate: _date,
+                  onChanged: (value) => _date = value),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: _supplier,
@@ -207,7 +208,8 @@ class _AddExpensePrototypeScreenState extends State<AddExpensePrototypeScreen> {
               ),
               const SizedBox(height: 12),
               const TextField(
-                  keyboardType: TextInputType.number,
+                  keyboardType: TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [NgnAmountInputFormatter()],
                   decoration: InputDecoration(labelText: 'Amount (₦)')),
               const SizedBox(height: 12),
               const TextField(
@@ -355,7 +357,7 @@ class EquipmentCostingPrototypeScreen extends StatelessWidget {
           AccountsResponsiveGrid(
             tabletColumns: 2,
             desktopColumns: 3,
-            childAspectRatio: 1.1,
+            childAspectRatio: .9,
             children: [
               for (final equipment in AccountsMockData.equipment)
                 Card(

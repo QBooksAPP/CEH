@@ -842,17 +842,19 @@ class CehApiClient {
         .toList();
   }
 
-  Future<void> fundPettyCash(
+  Future<int> fundPettyCash(
       CehSession session, Map<String, dynamic> payload) async {
-    await _postJson(
+    final data = await _postJson(
         session, 'petty_cash_fund.php', payload, 'PETTY_CASH_FUND_FAILED');
+    return (data['funding']['id'] as num).toInt();
   }
 
-  Future<int> createPettyCashExpense(
+  Future<CreatedPettyCashExpense> createPettyCashExpense(
       CehSession session, Map<String, dynamic> payload) async {
     final data = await _postJson(session, 'petty_cash_expense_create.php',
         payload, 'PETTY_CASH_EXPENSE_CREATE_FAILED');
-    return (data['expense']['id'] as num).toInt();
+    return CreatedPettyCashExpense.fromJson(
+        Map<String, dynamic>.from(data['expense'] as Map));
   }
 
   Future<void> submitPettyCashExpense(CehSession session, int expenseId) async {
@@ -881,6 +883,19 @@ class CehApiClient {
     _requireOk(response, data, 'PETTY_CASH_EXPENSES_FAILED');
     return (data['expenses'] as List? ?? const [])
         .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
+  }
+
+  Future<List<ConsolidatedExpense>> consolidatedExpenses(
+      CehSession session) async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/expenses.php'), headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'EXPENSES_FAILED');
+    return (data['expenses'] as List? ?? const [])
+        .map((item) => ConsolidatedExpense.fromJson(
+            Map<String, dynamic>.from(item as Map)))
         .toList();
   }
 

@@ -6,7 +6,7 @@ accounts_endpoint(function() use($user,$input): array {
     $id=(int)($input['expense_id']??0);$action=strtoupper(trim((string)($input['action']??'')));if($id<=0||!in_array($action,['APPROVE','CORRECTION_REQUIRED','CANCELLED_NOT_SPENT'],true)) accounts_fail('INVALID_REVIEW_ACTION');
     $reason=production_clean_text($input['reason']??'',500,'REVIEW_REASON_REQUIRED',$action!=='APPROVE');$db=production_db();
     return accounts_transaction($db,function() use($db,$user,$id,$action,$reason): array {
-        $s=$db->prepare("SELECT * FROM qbook_petty_cash_expenses WHERE id=? FOR UPDATE");$s->execute([$id]);$e=$s->fetch();if(!$e) accounts_fail('EXPENSE_NOT_FOUND',404);accounts_custodian($db,(int)$e['custodian_user_id'],true);
+        $s=$db->prepare("SELECT e.*,r.reference_no FROM qbook_petty_cash_expenses e LEFT JOIN qbook_petty_cash_expense_references r ON r.expense_id=e.id WHERE e.id=? FOR UPDATE");$s->execute([$id]);$e=$s->fetch();if(!$e) accounts_fail('EXPENSE_NOT_FOUND',404);accounts_custodian($db,(int)$e['custodian_user_id'],true);
         if($action==='CORRECTION_REQUIRED'){
             if($e['status']!=='SUBMITTED') accounts_fail('EXPENSE_NOT_REVIEWABLE',409);$db->prepare("UPDATE qbook_petty_cash_expenses SET status='CORRECTION_REQUIRED',reviewed_by=?,reviewed_at=UTC_TIMESTAMP(),review_reason=? WHERE id=?")->execute([(int)$user['id'],$reason,$id]);$status='CORRECTION_REQUIRED';
         }elseif($action==='CANCELLED_NOT_SPENT'){
@@ -20,6 +20,6 @@ accounts_endpoint(function() use($user,$input): array {
             ]);
             $db->prepare("UPDATE qbook_petty_cash_expenses SET status='APPROVED',journal_id=?,reviewed_by=?,reviewed_at=UTC_TIMESTAMP(),review_reason=NULL WHERE id=? AND journal_id IS NULL")->execute([$journal['id'],(int)$user['id'],$id]);$status='APPROVED';
         }
-        accounts_audit($db,$user,'PETTY_CASH_EXPENSE_'.$status,'PETTY_CASH_EXPENSE',$id,['reason'=>$reason]);return ['expense'=>['id'=>$id,'status'=>$status],'balance'=>accounts_public_balance(accounts_custodian_balance($db,(int)$e['custodian_user_id']))];
+        accounts_audit($db,$user,'PETTY_CASH_EXPENSE_'.$status,'PETTY_CASH_EXPENSE',$id,['reference_no'=>accounts_petty_cash_reference($e['reference_no']),'reason'=>$reason]);return ['expense'=>['id'=>$id,'reference_no'=>accounts_petty_cash_reference($e['reference_no']),'status'=>$status],'balance'=>accounts_public_balance(accounts_custodian_balance($db,(int)$e['custodian_user_id']))];
     });
 });

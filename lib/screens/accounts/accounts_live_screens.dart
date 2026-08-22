@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../core/accounts_formatters.dart';
 import '../../core/api_client.dart';
 import '../../core/internal_navigation.dart';
 import '../../core/view_mode.dart';
@@ -174,7 +175,7 @@ class _AccountsBankingScreenState extends State<AccountsBankingScreen> {
                             style:
                                 const TextStyle(fontWeight: FontWeight.w800)),
                         subtitle: Text(
-                            '${row.date} • Ref ${row.reference}\n${row.status}'),
+                            '${displayAccountsDate(row.date)} • Ref ${row.reference}\n${row.status}'),
                         trailing: Text(
                           '${row.amount < 0 ? '−' : '+'}${formatNaira(row.amount.abs())}',
                           style: const TextStyle(fontWeight: FontWeight.w900),
@@ -194,6 +195,95 @@ class _AccountsBankingScreenState extends State<AccountsBankingScreen> {
                           if (row.status == 'POSSIBLE_DUPLICATE')
                             const Text(
                                 'Review this row before creating or matching any CEH transaction.'),
+                        ],
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ],
+      );
+}
+
+class AccountsExpensesScreen extends StatefulWidget {
+  const AccountsExpensesScreen({super.key, required this.session});
+  final CehSession session;
+
+  @override
+  State<AccountsExpensesScreen> createState() => _AccountsExpensesScreenState();
+}
+
+class _AccountsExpensesScreenState extends State<AccountsExpensesScreen> {
+  final _api = const CehApiClient();
+  late Future<List<ConsolidatedExpense>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  void _load() => _future = _api.consolidatedExpenses(widget.session);
+  void _retry() => setState(_load);
+
+  @override
+  Widget build(BuildContext context) => _AccountsLivePage(
+        session: widget.session,
+        title: 'Expenses',
+        children: [
+          const AccountsSectionTitle('Expense register',
+              subtitle: 'Approved accounting expenses — reporting view only'),
+          FutureBuilder<List<ConsolidatedExpense>>(
+            future: _future,
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return _AccountsLoadError(snapshot.error!, _retry);
+              }
+              if (!snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (snapshot.data!.isEmpty) {
+                return const Text('No approved expenses recorded.');
+              }
+              return Column(
+                children: [
+                  for (final expense in snapshot.data!)
+                    Card(
+                      child: ExpansionTile(
+                        childrenPadding:
+                            const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                        title: Row(children: [
+                          Expanded(
+                            child: Text(expense.reference,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w900)),
+                          ),
+                          Text(formatNaira(expense.amount),
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w900)),
+                        ]),
+                        subtitle: Text(
+                            '${expense.category} • ${displayAccountsDate(expense.date)}'),
+                        children: [
+                          AccountsMetricLine(
+                              'Supplier / Paid To', expense.supplier),
+                          AccountsMetricLine(
+                              'Description', expense.description),
+                          AccountsMetricLine(
+                              'Client', expense.client ?? 'Not allocated'),
+                          AccountsMetricLine(
+                              'Project', expense.project ?? 'Not allocated'),
+                          AccountsMetricLine('Equipment',
+                              expense.equipment ?? 'Not allocated'),
+                          AccountsMetricLine('Source',
+                              '${expense.sourceType} — ${expense.sourceName}'),
+                          AccountsMetricLine('Receipt',
+                              expense.hasEvidence ? 'Attached' : 'No receipt'),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: AccountsStatusChip(expense.status),
+                          ),
                         ],
                       ),
                     ),
@@ -359,11 +449,11 @@ class _AccountsPettyCashScreenState extends State<AccountsPettyCashScreen> {
                     Card(
                       child: ExpansionTile(
                         title: Text(
-                            '${expense['custodian_name']} • ${formatNaira(double.tryParse('${expense['amount']}') ?? 0)}',
+                            '${expense['reference_no'] ?? 'Reference pending'} • ${formatNaira(double.tryParse('${expense['amount']}') ?? 0)}',
                             style:
                                 const TextStyle(fontWeight: FontWeight.w900)),
                         subtitle: Text(
-                            '${expense['category']} • ${expense['status']}'),
+                            '${expense['custodian_name']} • ${displayAccountsDate('${expense['expense_date']}')} • ${expense['status']}'),
                         childrenPadding:
                             const EdgeInsets.fromLTRB(16, 0, 16, 14),
                         children: [
@@ -371,6 +461,11 @@ class _AccountsPettyCashScreenState extends State<AccountsPettyCashScreen> {
                               'Paid To', '${expense['supplier_paid_to']}'),
                           AccountsMetricLine(
                               'Description', '${expense['description']}'),
+                          AccountsMetricLine(
+                              'Receipt',
+                              (expense['evidence_count'] as num?)?.toInt() == 0
+                                  ? 'No receipt'
+                                  : 'Attached'),
                           AccountsMetricLine('Project',
                               '${expense['project_name'] ?? 'Not allocated'}'),
                           AccountsMetricLine('Equipment',
@@ -502,16 +597,17 @@ class AccountsFundPettyCashScreen extends StatefulWidget {
 class _AccountsFundPettyCashScreenState
     extends State<AccountsFundPettyCashScreen> {
   final _api = const CehApiClient();
+  final _picker = ImagePicker();
   final _amount = TextEditingController();
-  final _date = TextEditingController();
   final _reference = TextEditingController();
   final _description = TextEditingController();
+  String _date = canonicalAccountsDate(DateTime.now());
+  XFile? _proof;
   bool _saving = false;
 
   @override
   void dispose() {
     _amount.dispose();
-    _date.dispose();
     _reference.dispose();
     _description.dispose();
     super.dispose();
@@ -560,23 +656,44 @@ class _AccountsFundPettyCashScreenState
                 const SizedBox(height: 12),
                 TextField(
                     controller: _amount,
-                    keyboardType: TextInputType.number,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: const [NgnAmountInputFormatter()],
                     decoration: const InputDecoration(labelText: 'Amount (₦)')),
                 const SizedBox(height: 12),
-                TextField(
-                    controller: _date,
-                    decoration:
-                        const InputDecoration(labelText: 'Date (YYYY-MM-DD)')),
+                AccountsDatePickerField(
+                    initialCanonicalDate: _date,
+                    onChanged: (value) => _date = value),
                 const SizedBox(height: 12),
                 TextField(
                     controller: _reference,
-                    decoration: const InputDecoration(
-                        labelText: 'Bank transfer / reference')),
+                    decoration:
+                        const InputDecoration(labelText: 'Zenith Reference')),
                 const SizedBox(height: 12),
                 TextField(
                     controller: _description,
                     decoration: const InputDecoration(
                         labelText: 'Description / notes')),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                    onPressed: () async {
+                      final file = await _picker.pickImage(
+                          source: ImageSource.gallery,
+                          imageQuality: 90,
+                          maxWidth: 2400);
+                      if (file != null && mounted) {
+                        setState(() => _proof = file);
+                      }
+                    },
+                    icon: const Icon(Icons.attach_file),
+                    label: Text(_proof == null
+                        ? 'Optional proof'
+                        : 'Proof: ${_proof!.name}')),
+                const SizedBox(height: 12),
+                TextFormField(
+                    initialValue: widget.session.user.fullName,
+                    enabled: false,
+                    decoration: const InputDecoration(labelText: 'Entered by')),
                 const SizedBox(height: 18),
                 FilledButton(
                     onPressed: _saving
@@ -594,14 +711,26 @@ class _AccountsFundPettyCashScreenState
   Future<void> _save(int bankId, int custodianId) async {
     setState(() => _saving = true);
     try {
-      await _api.fundPettyCash(widget.session, {
+      final amount = parseNgnInput(_amount.text);
+      if (amount == null) throw const ApiException('INVALID_AMOUNT');
+      final fundingId = await _api.fundPettyCash(widget.session, {
         'bank_account_id': bankId,
         'custodian_user_id': custodianId,
-        'amount': _amount.text,
-        'funding_date': _date.text,
+        'amount': amount,
+        'funding_date': _date,
         'bank_reference': _reference.text,
         'description': _description.text,
       });
+      if (_proof != null) {
+        final bytes = await _proof!.readAsBytes();
+        final lower = _proof!.name.toLowerCase();
+        await _api.uploadFinancialEvidence(widget.session,
+            sourceType: 'PETTY_CASH_FUNDING',
+            sourceRecordId: fundingId,
+            filename: _proof!.name,
+            mimeType: lower.endsWith('.png') ? 'image/png' : 'image/jpeg',
+            bytes: bytes);
+      }
       if (mounted) {
         Navigator.pop(context);
       }
@@ -628,7 +757,6 @@ class _AccountsPettyExpenseScreenState
     extends State<AccountsPettyExpenseScreen> {
   final _api = const CehApiClient();
   final _picker = ImagePicker();
-  final _date = TextEditingController();
   final _amount = TextEditingController();
   final _supplier = TextEditingController();
   final _description = TextEditingController();
@@ -641,6 +769,8 @@ class _AccountsPettyExpenseScreenState
   XFile? _receipt;
   bool _noReceipt = false;
   bool _saving = false;
+  String _date = canonicalAccountsDate(DateTime.now());
+  String? _issuedReference;
   late Future<_ExpenseLookups> _lookups;
 
   @override
@@ -682,7 +812,6 @@ class _AccountsPettyExpenseScreenState
   @override
   void dispose() {
     for (final controller in [
-      _date,
       _amount,
       _supplier,
       _description,
@@ -719,6 +848,13 @@ class _AccountsPettyExpenseScreenState
                     'Custodian and expense accounts are required.');
               }
               return Column(children: [
+                TextFormField(
+                    initialValue: _issuedReference ??
+                        'Issued automatically after creation',
+                    enabled: false,
+                    decoration:
+                        const InputDecoration(labelText: 'CEH reference')),
+                const SizedBox(height: 12),
                 DropdownButtonFormField<int>(
                     initialValue: custodians.first.userId,
                     decoration: const InputDecoration(labelText: 'Custodian'),
@@ -728,14 +864,15 @@ class _AccountsPettyExpenseScreenState
                         .toList(),
                     onChanged: (value) => _custodian = value),
                 const SizedBox(height: 12),
-                TextField(
-                    controller: _date,
-                    decoration:
-                        const InputDecoration(labelText: 'Date (YYYY-MM-DD)')),
+                AccountsDatePickerField(
+                    initialCanonicalDate: _date,
+                    onChanged: (value) => _date = value),
                 const SizedBox(height: 12),
                 TextField(
                     controller: _amount,
-                    keyboardType: TextInputType.number,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: const [NgnAmountInputFormatter()],
                     decoration: const InputDecoration(labelText: 'Amount (₦)')),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<int>(
@@ -838,6 +975,11 @@ class _AccountsPettyExpenseScreenState
                       controller: _noReceiptReason,
                       decoration: const InputDecoration(
                           labelText: 'Reason (required)')),
+                const SizedBox(height: 12),
+                TextFormField(
+                    initialValue: widget.session.user.fullName,
+                    enabled: false,
+                    decoration: const InputDecoration(labelText: 'Entered by')),
                 const SizedBox(height: 18),
                 FilledButton(
                     onPressed: _saving
@@ -854,10 +996,12 @@ class _AccountsPettyExpenseScreenState
   Future<void> _save(int custodianId, int accountId) async {
     setState(() => _saving = true);
     try {
-      final id = await _api.createPettyCashExpense(widget.session, {
+      final amount = parseNgnInput(_amount.text);
+      if (amount == null) throw const ApiException('INVALID_AMOUNT');
+      final created = await _api.createPettyCashExpense(widget.session, {
         'custodian_user_id': custodianId,
-        'expense_date': _date.text,
-        'amount': _amount.text,
+        'expense_date': _date,
+        'amount': amount,
         'expense_account_id': accountId,
         'supplier_paid_to': _supplier.text,
         'description': _description.text,
@@ -869,18 +1013,33 @@ class _AccountsPettyExpenseScreenState
       if (!_noReceipt && _receipt == null) {
         throw const ApiException('RECEIPT_OR_REASON_REQUIRED');
       }
+      if (mounted) setState(() => _issuedReference = created.reference);
       if (_receipt != null) {
         final bytes = await _receipt!.readAsBytes();
         final lower = _receipt!.name.toLowerCase();
         final mime = lower.endsWith('.png') ? 'image/png' : 'image/jpeg';
         await _api.uploadFinancialEvidence(widget.session,
             sourceType: 'PETTY_CASH_EXPENSE',
-            sourceRecordId: id,
+            sourceRecordId: created.id,
             filename: _receipt!.name,
             mimeType: mime,
             bytes: bytes);
       }
-      await _api.submitPettyCashExpense(widget.session, id);
+      await _api.submitPettyCashExpense(widget.session, created.id);
+      if (mounted) {
+        await showDialog<void>(
+            context: context,
+            builder: (context) => AlertDialog(
+                  title: Text(created.reference),
+                  content:
+                      const Text('Petty Cash Expense created and submitted.'),
+                  actions: [
+                    FilledButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Done'))
+                  ],
+                ));
+      }
       if (mounted) {
         Navigator.pop(context);
       }
