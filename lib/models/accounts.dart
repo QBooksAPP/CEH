@@ -155,6 +155,7 @@ class CreatedPettyCashExpense {
 
 class ConsolidatedExpense {
   const ConsolidatedExpense({
+    required this.sourceRecordId,
     required this.reference,
     required this.date,
     required this.amount,
@@ -168,8 +169,21 @@ class ConsolidatedExpense {
     required this.sourceName,
     required this.status,
     required this.hasEvidence,
+    required this.lifecycleStatus,
+    required this.originalJournalId,
+    required this.originalJournalReference,
+    required this.reversalJournalId,
+    required this.reversalJournalReference,
+    required this.voidReason,
+    required this.voidedBy,
+    required this.voidedAt,
+    this.reclassificationJournalReference,
+    this.reclassificationReason,
+    this.reclassifiedBy,
+    this.reclassifiedAt,
   });
 
+  final int sourceRecordId;
   final String reference;
   final String date;
   final double amount;
@@ -183,9 +197,22 @@ class ConsolidatedExpense {
   final String sourceName;
   final String status;
   final bool hasEvidence;
+  final String lifecycleStatus;
+  final int? originalJournalId;
+  final String? originalJournalReference;
+  final int? reversalJournalId;
+  final String? reversalJournalReference;
+  final String? voidReason;
+  final String? voidedBy;
+  final String? voidedAt;
+  final String? reclassificationJournalReference;
+  final String? reclassificationReason;
+  final String? reclassifiedBy;
+  final String? reclassifiedAt;
 
   factory ConsolidatedExpense.fromJson(Map<String, dynamic> json) =>
       ConsolidatedExpense(
+        sourceRecordId: _int(json['source_record_id'] ?? json['id']),
         reference: '${json['reference_no'] ?? 'Reference pending'}',
         date: '${json['expense_date'] ?? ''}',
         amount: _double(json['amount']),
@@ -199,6 +226,24 @@ class ConsolidatedExpense {
         sourceName: '${json['source_name'] ?? ''}',
         status: '${json['posting_status'] ?? ''}',
         hasEvidence: _int(json['evidence_count']) > 0,
+        lifecycleStatus: '${json['lifecycle_status'] ?? ''}',
+        originalJournalId:
+            json['journal_id'] == null ? null : _int(json['journal_id']),
+        originalJournalReference:
+            json['original_journal_reference']?.toString(),
+        reversalJournalId: json['reversal_journal_id'] == null
+            ? null
+            : _int(json['reversal_journal_id']),
+        reversalJournalReference:
+            json['reversal_journal_reference']?.toString(),
+        voidReason: json['void_reason']?.toString(),
+        voidedBy: json['voided_by_name']?.toString(),
+        voidedAt: json['voided_at']?.toString(),
+        reclassificationJournalReference:
+            json['reclassification_journal_reference']?.toString(),
+        reclassificationReason: json['reclassification_reason']?.toString(),
+        reclassifiedBy: json['reclassified_by_name']?.toString(),
+        reclassifiedAt: json['reclassified_at']?.toString(),
       );
 }
 

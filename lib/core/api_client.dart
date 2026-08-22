@@ -886,6 +886,47 @@ class CehApiClient {
         'PETTY_CASH_EXPENSE_REVIEW_FAILED');
   }
 
+  Future<void> deleteExpense(CehSession session,
+      {required String sourceType, required int sourceRecordId}) async {
+    await _postJson(
+        session,
+        'expense_delete.php',
+        {'source_type': sourceType, 'source_record_id': sourceRecordId},
+        'EXPENSE_DELETE_FAILED');
+  }
+
+  Future<void> voidExpense(CehSession session,
+      {required String sourceType,
+      required int sourceRecordId,
+      required String reason}) async {
+    await _postJson(
+        session,
+        'expense_void.php',
+        {
+          'source_type': sourceType,
+          'source_record_id': sourceRecordId,
+          'reason': reason,
+        },
+        'EXPENSE_VOID_FAILED');
+  }
+
+  Future<void> reclassifyExpense(CehSession session,
+      {required String sourceType,
+      required int sourceRecordId,
+      required String reason,
+      required Map<String, dynamic> classification}) async {
+    await _postJson(
+        session,
+        'expense_reclassify.php',
+        {
+          'source_type': sourceType,
+          'source_record_id': sourceRecordId,
+          'reason': reason,
+          ...classification,
+        },
+        'EXPENSE_RECLASSIFY_FAILED');
+  }
+
   Future<List<Map<String, dynamic>>> pettyCashExpenses(
       CehSession session) async {
     final response = await http

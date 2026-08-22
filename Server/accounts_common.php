@@ -125,9 +125,9 @@ function accounts_can_access_custodian(array $user, int $custodianUserId): bool 
 }
 
 function accounts_custodian_balance(PDO $db, int $custodianUserId): array {
-    $funded = $db->prepare("SELECT COALESCE(SUM(amount),0) FROM qbook_petty_cash_fundings WHERE custodian_user_id=? AND journal_id IS NOT NULL");
+    $funded = $db->prepare("SELECT COALESCE(SUM(f.amount),0) FROM qbook_petty_cash_fundings f JOIN qbook_financial_journals j ON j.id=f.journal_id AND j.status='POSTED' WHERE f.custodian_user_id=?");
     $funded->execute([$custodianUserId]);
-    $accounted = $db->prepare("SELECT COALESCE(SUM(amount),0) FROM qbook_petty_cash_expenses WHERE custodian_user_id=? AND status='APPROVED'");
+    $accounted = $db->prepare("SELECT COALESCE(SUM(e.amount),0) FROM qbook_petty_cash_expenses e JOIN qbook_financial_journals j ON j.id=e.journal_id AND j.status='POSTED' WHERE e.custodian_user_id=? AND e.status IN ('APPROVED','VOIDED')");
     $accounted->execute([$custodianUserId]);
     $pending = $db->prepare("SELECT COALESCE(SUM(amount),0) FROM qbook_petty_cash_expenses WHERE custodian_user_id=? AND status IN ('SUBMITTED','CORRECTION_REQUIRED')");
     $pending->execute([$custodianUserId]);

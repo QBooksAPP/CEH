@@ -81,9 +81,9 @@ void main() {
     expect(create, isNot(contains('bank_reference')));
   });
 
-  test('approved petty cash appears in consolidated read model once', () {
-    expect(consolidated, contains("WHERE e.status='APPROVED'"));
-    expect(consolidated, contains('JOIN qbook_financial_journals'));
+  test('petty cash lifecycle appears in consolidated read model once', () {
+    expect(consolidated, contains('e.status AS lifecycle_status'));
+    expect(consolidated, contains('LEFT JOIN qbook_financial_journals'));
     expect(consolidated, contains("'PETTY_CASH' AS source_type"));
     expect(consolidated, contains('evidence_count'));
     expect(consolidated, isNot(contains('accounts_post_journal')));
@@ -105,10 +105,12 @@ void main() {
       'source_type': 'PETTY_CASH',
       'source_name': 'Segun',
       'posting_status': 'APPROVED / POSTED',
+      'lifecycle_status': 'APPROVED',
       'evidence_count': '1',
     });
     expect(expense.amount, 30000);
     expect(expense.reference, 'CEH-PC-000001');
     expect(expense.hasEvidence, isTrue);
+    expect(expense.lifecycleStatus, 'APPROVED');
   });
 }

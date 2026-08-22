@@ -53,6 +53,7 @@ PettyCashExpenseSection? pettyCashExpenseSection(Object? status) {
       return PettyCashExpenseSection.drafts;
     case 'APPROVED':
     case 'CANCELLED_NOT_SPENT':
+    case 'VOIDED':
       return PettyCashExpenseSection.history;
     default:
       return null;
@@ -256,6 +257,7 @@ class AccountsExpensesScreen extends StatefulWidget {
 class _AccountsExpensesScreenState extends State<AccountsExpensesScreen> {
   final _api = const CehApiClient();
   late Future<List<ConsolidatedExpense>> _future;
+  String _filter = 'ACTIVE';
 
   @override
   void initState() {
@@ -266,13 +268,141 @@ class _AccountsExpensesScreenState extends State<AccountsExpensesScreen> {
   void _load() => _future = _api.consolidatedExpenses(widget.session);
   void _retry() => setState(_load);
 
+  List<ConsolidatedExpense> _filtered(List<ConsolidatedExpense> expenses) {
+    switch (_filter) {
+      case 'PENDING':
+        return expenses
+            .where((expense) => const {
+                  'DRAFT',
+                  'SUBMITTED',
+                  'CORRECTION_REQUIRED'
+                }.contains(expense.lifecycleStatus))
+            .toList();
+      case 'VOIDED':
+        return expenses
+            .where((expense) => expense.lifecycleStatus == 'VOIDED')
+            .toList();
+      case 'ALL':
+        return expenses;
+      default:
+        return expenses
+            .where((expense) => expense.lifecycleStatus == 'APPROVED')
+            .toList();
+    }
+  }
+
+  String _actionSource(ConsolidatedExpense expense) =>
+      expense.sourceType == 'PETTY_CASH'
+          ? 'PETTY_CASH_EXPENSE'
+          : expense.sourceType;
+
+  Future<String?> _expenseReason(String title, String warning) async {
+    final controller = TextEditingController();
+    final value = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text(warning),
+          const SizedBox(height: 12),
+          TextField(
+              controller: controller,
+              maxLines: 3,
+              decoration:
+                  const InputDecoration(labelText: 'Reason (required)')),
+        ]),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Back')),
+          FilledButton(
+              onPressed: () {
+                final reason = controller.text.trim();
+                if (reason.isNotEmpty) Navigator.pop(context, reason);
+              },
+              child: const Text('Confirm')),
+        ],
+      ),
+    );
+    controller.dispose();
+    return value;
+  }
+
+  Future<void> _deleteExpense(ConsolidatedExpense expense) async {
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Delete Draft Expense?'),
+            content: const Text(
+                'This permanently removes the unposted draft and its evidence. Any issued reference remains retired forever.'),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Back')),
+              FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Delete Draft')),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed) return;
+    await _runExpenseAction(() => _api.deleteExpense(widget.session,
+        sourceType: _actionSource(expense),
+        sourceRecordId: expense.sourceRecordId));
+  }
+
+  Future<void> _cancelExpense(ConsolidatedExpense expense) async {
+    final reason = await _expenseReason('Cancel / Not Spent',
+        'Use only when the expense did not occur. Otherwise require correction.');
+    if (reason == null) return;
+    await _runExpenseAction(() => _api.reviewPettyCashExpense(widget.session,
+        expenseId: expense.sourceRecordId,
+        action: 'CANCELLED_NOT_SPENT',
+        reason: reason));
+  }
+
+  Future<void> _voidPostedExpense(ConsolidatedExpense expense) async {
+    final reason = await _expenseReason('Void Posted Expense?',
+        'The original record, evidence and journal remain. A linked reversing journal will be posted.');
+    if (reason == null) return;
+    await _runExpenseAction(() => _api.voidExpense(widget.session,
+        sourceType: _actionSource(expense),
+        sourceRecordId: expense.sourceRecordId,
+        reason: reason));
+  }
+
+  Future<void> _runExpenseAction(Future<void> Function() action) async {
+    try {
+      await action();
+      _retry();
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.code)));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) => _AccountsLivePage(
         session: widget.session,
         title: 'Expenses',
         children: [
           const AccountsSectionTitle('Expense register',
-              subtitle: 'Approved accounting expenses — reporting view only'),
+              subtitle: 'Active, pending and voided accounting expenses'),
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final filter in ['ACTIVE', 'PENDING', 'VOIDED', 'ALL'])
+                ChoiceChip(
+                  label: Text(filter[0] + filter.substring(1).toLowerCase()),
+                  selected: _filter == filter,
+                  onSelected: (_) => setState(() => _filter = filter),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
           FutureBuilder<List<ConsolidatedExpense>>(
             future: _future,
             builder: (context, snapshot) {
@@ -282,12 +412,13 @@ class _AccountsExpensesScreenState extends State<AccountsExpensesScreen> {
               if (!snapshot.hasData) {
                 return const Center(child: CircularProgressIndicator());
               }
-              if (snapshot.data!.isEmpty) {
-                return const Text('No approved expenses recorded.');
+              final expenses = _filtered(snapshot.data!);
+              if (expenses.isEmpty) {
+                return const Text('No expenses match this filter.');
               }
               return Column(
                 children: [
-                  for (final expense in snapshot.data!)
+                  for (final expense in expenses)
                     Card(
                       child: ExpansionTile(
                         childrenPadding:
@@ -303,7 +434,7 @@ class _AccountsExpensesScreenState extends State<AccountsExpensesScreen> {
                                   const TextStyle(fontWeight: FontWeight.w900)),
                         ]),
                         subtitle: Text(
-                            '${expense.category} • ${displayAccountsDate(expense.date)}'),
+                            '${expense.category} • ${displayAccountsDate(expense.date)} • ${expense.lifecycleStatus}'),
                         children: [
                           AccountsMetricLine(
                               'Supplier / Paid To', expense.supplier),
@@ -319,10 +450,65 @@ class _AccountsExpensesScreenState extends State<AccountsExpensesScreen> {
                               '${expense.sourceType} — ${expense.sourceName}'),
                           AccountsMetricLine('Receipt',
                               expense.hasEvidence ? 'Attached' : 'No receipt'),
+                          AccountsMetricLine('Posting status', expense.status),
+                          AccountsMetricLine('Original journal',
+                              expense.originalJournalReference ?? 'Not posted'),
+                          if (expense.reversalJournalReference != null)
+                            AccountsMetricLine('Reversal journal',
+                                expense.reversalJournalReference!),
+                          if (expense.reclassificationJournalReference !=
+                              null) ...[
+                            AccountsMetricLine(
+                                'Latest reclassification journal',
+                                expense.reclassificationJournalReference!),
+                            AccountsMetricLine('Reclassified by',
+                                expense.reclassifiedBy ?? 'Admin'),
+                            AccountsMetricLine('Reclassification date',
+                                expense.reclassifiedAt ?? 'Not recorded'),
+                            AccountsMetricLine(
+                                'Reclassification reason',
+                                expense.reclassificationReason ??
+                                    'Not recorded'),
+                          ],
+                          if (expense.lifecycleStatus == 'VOIDED') ...[
+                            AccountsMetricLine(
+                                'Voided by', expense.voidedBy ?? 'Admin'),
+                            AccountsMetricLine('Void date',
+                                expense.voidedAt ?? 'Not recorded'),
+                            AccountsMetricLine('Void reason',
+                                expense.voidReason ?? 'Not recorded'),
+                          ],
                           Align(
                             alignment: Alignment.centerRight,
                             child: AccountsStatusChip(expense.status),
                           ),
+                          if (expense.lifecycleStatus == 'DRAFT')
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton.icon(
+                                onPressed: () => _deleteExpense(expense),
+                                icon: const Icon(Icons.delete_outline),
+                                label: const Text('Delete Draft'),
+                              ),
+                            ),
+                          if (const {'SUBMITTED', 'CORRECTION_REQUIRED'}
+                              .contains(expense.lifecycleStatus))
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton(
+                                onPressed: () => _cancelExpense(expense),
+                                child: const Text('Cancel / Not Spent'),
+                              ),
+                            ),
+                          if (expense.lifecycleStatus == 'APPROVED')
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: FilledButton.icon(
+                                onPressed: () => _voidPostedExpense(expense),
+                                icon: const Icon(Icons.undo_outlined),
+                                label: const Text('Void Expense'),
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -363,16 +549,124 @@ class _AccountsPettyCashScreenState extends State<AccountsPettyCashScreen> {
 
   void _reload() => setState(_load);
 
-  Future<void> _review(int id, String action) async {
+  Future<void> _review(int id, String action, {String? reason}) async {
     try {
       await _api.reviewPettyCashExpense(widget.session,
           expenseId: id,
           action: action,
-          reason: action == 'APPROVE'
-              ? ''
-              : action == 'CORRECTION_REQUIRED'
-                  ? 'Correction required by Admin'
-                  : 'Admin confirmed money was not spent');
+          reason: reason ??
+              (action == 'APPROVE'
+                  ? ''
+                  : action == 'CORRECTION_REQUIRED'
+                      ? 'Correction required by Admin'
+                      : 'Admin confirmed money was not spent'));
+      _reload();
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.code)));
+      }
+    }
+  }
+
+  Future<String?> _reasonDialog({
+    required String title,
+    required String warning,
+    required String actionLabel,
+  }) async {
+    final controller = TextEditingController();
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(warning),
+            const SizedBox(height: 14),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              maxLines: 3,
+              decoration: const InputDecoration(labelText: 'Reason (required)'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Back')),
+          FilledButton(
+              onPressed: () {
+                final value = controller.text.trim();
+                if (value.isNotEmpty) Navigator.pop(context, value);
+              },
+              child: Text(actionLabel)),
+        ],
+      ),
+    );
+    controller.dispose();
+    return reason;
+  }
+
+  Future<void> _deleteDraft(Map<String, dynamic> expense) async {
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Delete Draft Expense?'),
+            content: const Text(
+                'This permanently removes the unposted draft and its receipt/evidence. The issued CEH-PC reference will remain retired and will never be reused.'),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Keep Draft')),
+              FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Delete Draft')),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed) return;
+    try {
+      await _api.deleteExpense(widget.session,
+          sourceType: 'PETTY_CASH_EXPENSE',
+          sourceRecordId: (expense['id'] as num).toInt());
+      _reload();
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.code)));
+      }
+    }
+  }
+
+  Future<void> _cancelNotSpent(Map<String, dynamic> expense) async {
+    final reason = await _reasonDialog(
+      title: 'Cancel / Not Spent',
+      warning:
+          'Use this only when the money was not spent. If the expense occurred but paperwork is wrong, choose Correction Required instead.',
+      actionLabel: 'Confirm Not Spent',
+    );
+    if (reason == null) return;
+    await _review((expense['id'] as num).toInt(), 'CANCELLED_NOT_SPENT',
+        reason: reason);
+  }
+
+  Future<void> _voidExpense(Map<String, dynamic> expense) async {
+    final reason = await _reasonDialog(
+      title: 'Void Posted Expense?',
+      warning:
+          'Use Void only when the transaction should not exist, such as a duplicate, mistaken entry, or money genuinely returned. This restores Petty Cash. For wrong coding when money was genuinely spent, use Correct / Reclassify instead.',
+      actionLabel: 'Void Expense',
+    );
+    if (reason == null) return;
+    try {
+      await _api.voidExpense(widget.session,
+          sourceType: 'PETTY_CASH_EXPENSE',
+          sourceRecordId: (expense['id'] as num).toInt(),
+          reason: reason);
       _reload();
     } on ApiException catch (e) {
       if (mounted) {
@@ -407,6 +701,20 @@ class _AccountsPettyCashScreenState extends State<AccountsPettyCashScreen> {
     _reload();
   }
 
+  Future<void> _openReclassification(Map<String, dynamic> expense) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AccountsPettyExpenseScreen(
+          session: widget.session,
+          expense: expense,
+          reclassifyPosted: true,
+        ),
+      ),
+    );
+    _reload();
+  }
+
   Widget _expenseCard(
     Map<String, dynamic> expense, {
     required bool isAdmin,
@@ -420,11 +728,13 @@ class _AccountsPettyCashScreenState extends State<AccountsPettyCashScreen> {
     );
     final evidenceCount = (expense['evidence_count'] as num?)?.toInt() ?? 0;
     final reference = expense['reference_no'] ?? 'Reference pending';
-    final postingStatus = status == 'APPROVED'
-        ? 'APPROVED / POSTED'
-        : status == 'CANCELLED_NOT_SPENT'
-            ? 'CANCELLED / NOT POSTED'
-            : status;
+    final postingStatus = status == 'VOIDED'
+        ? 'VOIDED / REVERSED'
+        : status == 'APPROVED'
+            ? 'APPROVED / POSTED'
+            : status == 'CANCELLED_NOT_SPENT'
+                ? 'CANCELLED / NOT POSTED'
+                : status;
     return Card(
       child: ExpansionTile(
         title: Text(
@@ -453,6 +763,30 @@ class _AccountsPettyCashScreenState extends State<AccountsPettyCashScreen> {
           AccountsMetricLine('Receipt / evidence',
               evidenceCount == 0 ? 'No receipt' : 'Attached'),
           AccountsMetricLine('Approval / posting status', postingStatus),
+          if (expense['original_journal_reference'] != null)
+            AccountsMetricLine(
+                'Original journal', '${expense['original_journal_reference']}'),
+          if (expense['reversal_journal_reference'] != null)
+            AccountsMetricLine(
+                'Reversal journal', '${expense['reversal_journal_reference']}'),
+          if (expense['reclassification_journal_reference'] != null) ...[
+            AccountsMetricLine('Latest reclassification journal',
+                '${expense['reclassification_journal_reference']}'),
+            AccountsMetricLine('Reclassified by',
+                '${expense['reclassified_by_name'] ?? 'Admin'}'),
+            AccountsMetricLine('Reclassification date',
+                '${expense['reclassified_at'] ?? 'Not recorded'}'),
+            AccountsMetricLine('Reclassification reason',
+                '${expense['reclassification_reason'] ?? 'Not recorded'}'),
+          ],
+          if (status == 'VOIDED') ...[
+            AccountsMetricLine(
+                'Voided by', '${expense['voided_by_name'] ?? 'Admin'}'),
+            AccountsMetricLine(
+                'Void date', '${expense['voided_at'] ?? 'Not recorded'}'),
+            AccountsMetricLine(
+                'Void reason', '${expense['void_reason'] ?? 'Not recorded'}'),
+          ],
           if (section == PettyCashExpenseSection.needsApproval && isAdmin)
             Wrap(spacing: 8, runSpacing: 8, children: [
               FilledButton(
@@ -464,6 +798,10 @@ class _AccountsPettyCashScreenState extends State<AccountsPettyCashScreen> {
                 onPressed: () => _review(
                     (expense['id'] as num).toInt(), 'CORRECTION_REQUIRED'),
                 child: const Text('Correction Required'),
+              ),
+              TextButton(
+                onPressed: () => _cancelNotSpent(expense),
+                child: const Text('Cancel / Not Spent'),
               ),
             ]),
           if (section == PettyCashExpenseSection.drafts && canManageDraft)
@@ -479,6 +817,32 @@ class _AccountsPettyCashScreenState extends State<AccountsPettyCashScreen> {
                 onPressed: () => _submit((expense['id'] as num).toInt()),
                 icon: const Icon(Icons.send_outlined),
                 label: const Text('Submit Expense'),
+              ),
+              if (isAdmin && status == 'DRAFT')
+                TextButton.icon(
+                  onPressed: () => _deleteDraft(expense),
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('Delete Draft'),
+                ),
+              if (isAdmin && status == 'CORRECTION_REQUIRED')
+                TextButton(
+                  onPressed: () => _cancelNotSpent(expense),
+                  child: const Text('Cancel / Not Spent'),
+                ),
+            ]),
+          if (section == PettyCashExpenseSection.history &&
+              isAdmin &&
+              status == 'APPROVED')
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              FilledButton.icon(
+                onPressed: () => _openReclassification(expense),
+                icon: const Icon(Icons.swap_horiz_outlined),
+                label: const Text('Correct / Reclassify'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _voidExpense(expense),
+                icon: const Icon(Icons.undo_outlined),
+                label: const Text('Void Expense'),
               ),
             ]),
         ],
@@ -891,9 +1255,11 @@ class AccountsPettyExpenseScreen extends StatefulWidget {
     super.key,
     required this.session,
     this.expense,
+    this.reclassifyPosted = false,
   });
   final CehSession session;
   final Map<String, dynamic>? expense;
+  final bool reclassifyPosted;
   @override
   State<AccountsPettyExpenseScreen> createState() =>
       _AccountsPettyExpenseScreenState();
@@ -907,6 +1273,7 @@ class _AccountsPettyExpenseScreenState
   final _supplier = TextEditingController();
   final _description = TextEditingController();
   final _noReceiptReason = TextEditingController();
+  final _reclassificationReason = TextEditingController();
   int? _custodian;
   int? _account;
   int? _client;
@@ -977,7 +1344,8 @@ class _AccountsPettyExpenseScreenState
       _amount,
       _supplier,
       _description,
-      _noReceiptReason
+      _noReceiptReason,
+      _reclassificationReason,
     ]) {
       controller.dispose();
     }
@@ -987,11 +1355,13 @@ class _AccountsPettyExpenseScreenState
   @override
   Widget build(BuildContext context) => _AccountsLivePage(
         session: widget.session,
-        title: widget.expense == null
-            ? 'Add Petty Cash Expense'
-            : widget.expense!['status'] == 'CORRECTION_REQUIRED'
-                ? 'Correct Petty Cash Expense'
-                : 'Continue Petty Cash Draft',
+        title: widget.reclassifyPosted
+            ? 'Correct / Reclassify Expense'
+            : widget.expense == null
+                ? 'Add Petty Cash Expense'
+                : widget.expense!['status'] == 'CORRECTION_REQUIRED'
+                    ? 'Correct Petty Cash Expense'
+                    : 'Continue Petty Cash Draft',
         requireAdmin: false,
         children: [
           FutureBuilder<_ExpenseLookups>(
@@ -1033,12 +1403,20 @@ class _AccountsPettyExpenseScreenState
                         ? (value) => _custodian = value
                         : null),
                 const SizedBox(height: 12),
-                AccountsDatePickerField(
-                    initialCanonicalDate: _date,
-                    onChanged: (value) => _date = value),
+                if (widget.reclassifyPosted)
+                  TextFormField(
+                      initialValue: displayAccountsDate(_date),
+                      enabled: false,
+                      decoration: const InputDecoration(
+                          labelText: 'Original expense date'))
+                else
+                  AccountsDatePickerField(
+                      initialCanonicalDate: _date,
+                      onChanged: (value) => _date = value),
                 const SizedBox(height: 12),
                 TextField(
                     controller: _amount,
+                    enabled: !widget.reclassifyPosted,
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true),
                     inputFormatters: const [NgnAmountInputFormatter()],
@@ -1109,53 +1487,68 @@ class _AccountsPettyExpenseScreenState
                               '${mixer['code'] ?? mixer['name'] ?? mixer['id']}')))
                     ],
                     onChanged: (value) => setState(() => _mixer = value)),
-                const SizedBox(height: 18),
-                const AccountsSectionTitle('Receipt / evidence'),
-                if (widget.expense != null &&
-                    ((widget.expense!['evidence_count'] as num?)?.toInt() ??
-                            0) >
-                        0 &&
-                    _receipt == null)
-                  const ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(Icons.verified_outlined),
-                    title: Text('Existing receipt attached'),
-                    subtitle:
-                        Text('The existing private evidence remains attached.'),
-                  ),
-                Wrap(spacing: 10, runSpacing: 8, children: [
-                  OutlinedButton.icon(
-                      onPressed: _noReceipt
-                          ? null
-                          : () => _pickReceipt(ImageSource.camera),
-                      icon: const Icon(Icons.photo_camera_outlined),
-                      label: const Text('Take Photo')),
-                  OutlinedButton.icon(
-                      onPressed: _noReceipt
-                          ? null
-                          : () => _pickReceipt(ImageSource.gallery),
-                      icon: const Icon(Icons.photo_library_outlined),
-                      label: const Text('Choose Existing Photo')),
-                ]),
-                if (_receipt != null)
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.verified_outlined),
-                    title: const Text('Receipt selected'),
-                    subtitle: Text(_receipt!.name),
-                  ),
-                CheckboxListTile(
-                    value: _noReceipt,
-                    title: const Text('No Receipt'),
-                    onChanged: (value) => setState(() {
-                          _noReceipt = value ?? false;
-                          if (_noReceipt) _receipt = null;
-                        })),
-                if (_noReceipt)
+                if (widget.reclassifyPosted) ...[
+                  const SizedBox(height: 12),
                   TextField(
-                      controller: _noReceiptReason,
-                      decoration: const InputDecoration(
-                          labelText: 'Reason (required)')),
+                    controller: _reclassificationReason,
+                    maxLines: 2,
+                    decoration: const InputDecoration(
+                        labelText: 'Correction reason (required)'),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'This posts expense-to-expense correction lines only. The amount, receipt, CEH-PC reference and Petty Cash balance remain unchanged.',
+                  ),
+                ],
+                if (!widget.reclassifyPosted) ...[
+                  const SizedBox(height: 18),
+                  const AccountsSectionTitle('Receipt / evidence'),
+                  if (widget.expense != null &&
+                      ((widget.expense!['evidence_count'] as num?)?.toInt() ??
+                              0) >
+                          0 &&
+                      _receipt == null)
+                    const ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.verified_outlined),
+                      title: Text('Existing receipt attached'),
+                      subtitle: Text(
+                          'The existing private evidence remains attached.'),
+                    ),
+                  Wrap(spacing: 10, runSpacing: 8, children: [
+                    OutlinedButton.icon(
+                        onPressed: _noReceipt
+                            ? null
+                            : () => _pickReceipt(ImageSource.camera),
+                        icon: const Icon(Icons.photo_camera_outlined),
+                        label: const Text('Take Photo')),
+                    OutlinedButton.icon(
+                        onPressed: _noReceipt
+                            ? null
+                            : () => _pickReceipt(ImageSource.gallery),
+                        icon: const Icon(Icons.photo_library_outlined),
+                        label: const Text('Choose Existing Photo')),
+                  ]),
+                  if (_receipt != null)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.verified_outlined),
+                      title: const Text('Receipt selected'),
+                      subtitle: Text(_receipt!.name),
+                    ),
+                  CheckboxListTile(
+                      value: _noReceipt,
+                      title: const Text('No Receipt'),
+                      onChanged: (value) => setState(() {
+                            _noReceipt = value ?? false;
+                            if (_noReceipt) _receipt = null;
+                          })),
+                  if (_noReceipt)
+                    TextField(
+                        controller: _noReceiptReason,
+                        decoration: const InputDecoration(
+                            labelText: 'Reason (required)')),
+                ],
                 const SizedBox(height: 12),
                 TextFormField(
                     initialValue: widget.session.user.fullName,
@@ -1169,9 +1562,11 @@ class _AccountsPettyExpenseScreenState
                             _account ?? accounts.first.id),
                     child: Text(_saving
                         ? 'Saving…'
-                        : widget.expense?['status'] == 'CORRECTION_REQUIRED'
-                            ? 'Correct & Resubmit'
-                            : 'Submit Expense')),
+                        : widget.reclassifyPosted
+                            ? 'Post Reclassification'
+                            : widget.expense?['status'] == 'CORRECTION_REQUIRED'
+                                ? 'Correct & Resubmit'
+                                : 'Submit Expense')),
               ]);
             },
           ),
@@ -1195,6 +1590,19 @@ class _AccountsPettyExpenseScreenState
         if (_mixer != null) 'mixer_id': _mixer,
         if (_noReceipt) 'no_receipt_reason': _noReceiptReason.text,
       };
+      if (widget.reclassifyPosted) {
+        final reason = _reclassificationReason.text.trim();
+        if (reason.isEmpty) {
+          throw const ApiException('RECLASSIFICATION_REASON_REQUIRED');
+        }
+        await _api.reclassifyExpense(widget.session,
+            sourceType: 'PETTY_CASH_EXPENSE',
+            sourceRecordId: (widget.expense!['id'] as num).toInt(),
+            reason: reason,
+            classification: payload);
+        if (mounted) Navigator.pop(context);
+        return;
+      }
       if (!_noReceipt && _receipt == null) {
         final evidenceCount =
             (widget.expense?['evidence_count'] as num?)?.toInt() ?? 0;

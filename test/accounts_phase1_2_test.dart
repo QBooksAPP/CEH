@@ -46,17 +46,19 @@ void main() {
         drafts.map((row) => row['status']), ['DRAFT', 'CORRECTION_REQUIRED']);
   });
 
-  test('APPROVED and CANCELLED_NOT_SPENT enter Transaction History', () {
+  test('APPROVED, CANCELLED_NOT_SPENT and VOIDED enter Transaction History',
+      () {
     final rows = [
       expense('APPROVED'),
       expense('CANCELLED_NOT_SPENT'),
+      expense('VOIDED'),
       expense('SUBMITTED'),
     ];
     final history =
         pettyCashExpensesForSection(rows, PettyCashExpenseSection.history);
 
     expect(history.map((row) => row['status']),
-        ['APPROVED', 'CANCELLED_NOT_SPENT']);
+        ['APPROVED', 'CANCELLED_NOT_SPENT', 'VOIDED']);
   });
 
   test('approval moves a record from Needs Approval to History', () {
