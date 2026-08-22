@@ -68,6 +68,17 @@ List<Map<String, dynamic>> pettyCashExpensesForSection(
             (expense) => pettyCashExpenseSection(expense['status']) == section)
         .toList(growable: false);
 
+bool canManagePettyCashDraft({
+  required bool isAdmin,
+  required int currentUserId,
+  required Object? custodianUserId,
+}) =>
+    isAdmin ||
+    (custodianUserId is num
+            ? custodianUserId.toInt()
+            : int.tryParse('${custodianUserId ?? ''}')) ==
+        currentUserId;
+
 class _AccountsLoadError extends StatelessWidget {
   const _AccountsLoadError(this.error, this.retry);
   final Object error;
@@ -402,8 +413,11 @@ class _AccountsPettyCashScreenState extends State<AccountsPettyCashScreen> {
     required PettyCashExpenseSection section,
   }) {
     final status = '${expense['status']}';
-    final owner = (expense['custodian_user_id'] as num?)?.toInt() ==
-        widget.session.user.id;
+    final canManageDraft = canManagePettyCashDraft(
+      isAdmin: isAdmin,
+      currentUserId: widget.session.user.id,
+      custodianUserId: expense['custodian_user_id'],
+    );
     final evidenceCount = (expense['evidence_count'] as num?)?.toInt() ?? 0;
     final reference = expense['reference_no'] ?? 'Reference pending';
     final postingStatus = status == 'APPROVED'
@@ -452,7 +466,7 @@ class _AccountsPettyCashScreenState extends State<AccountsPettyCashScreen> {
                 child: const Text('Correction Required'),
               ),
             ]),
-          if (section == PettyCashExpenseSection.drafts && owner)
+          if (section == PettyCashExpenseSection.drafts && canManageDraft)
             Wrap(spacing: 8, runSpacing: 8, children: [
               FilledButton.icon(
                 onPressed: () => _openDraft(expense),
@@ -1031,7 +1045,7 @@ class _AccountsPettyExpenseScreenState
                     decoration: const InputDecoration(labelText: 'Amount (₦)')),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<int>(
-                    initialValue: accounts.first.id,
+                    initialValue: _account ?? accounts.first.id,
                     decoration: const InputDecoration(labelText: 'Category'),
                     items: accounts
                         .map((a) => DropdownMenuItem(
@@ -1097,6 +1111,18 @@ class _AccountsPettyExpenseScreenState
                     onChanged: (value) => setState(() => _mixer = value)),
                 const SizedBox(height: 18),
                 const AccountsSectionTitle('Receipt / evidence'),
+                if (widget.expense != null &&
+                    ((widget.expense!['evidence_count'] as num?)?.toInt() ??
+                            0) >
+                        0 &&
+                    _receipt == null)
+                  const ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.verified_outlined),
+                    title: Text('Existing receipt attached'),
+                    subtitle:
+                        Text('The existing private evidence remains attached.'),
+                  ),
                 Wrap(spacing: 10, runSpacing: 8, children: [
                   OutlinedButton.icon(
                       onPressed: _noReceipt

@@ -89,6 +89,42 @@ void main() {
     expect(submit, contains("SET status='SUBMITTED'"));
   });
 
+  test('Admin and owner both receive draft management controls', () {
+    expect(
+      canManagePettyCashDraft(
+          isAdmin: true, currentUserId: 1, custodianUserId: 3),
+      isTrue,
+    );
+    expect(
+      canManagePettyCashDraft(
+          isAdmin: false, currentUserId: 3, custodianUserId: 3),
+      isTrue,
+    );
+    expect(
+      canManagePettyCashDraft(
+          isAdmin: false, currentUserId: 4, custodianUserId: 3),
+      isFalse,
+    );
+    expect(ui, contains('PettyCashExpenseSection.drafts && canManageDraft'));
+  });
+
+  test('draft edit form pre-populates category and evidence state', () {
+    expect(ui, contains('initialValue: _account ?? accounts.first.id'));
+    expect(ui, contains('Existing receipt attached'));
+    for (final field in [
+      "expense['expense_date']",
+      "expense['amount']",
+      "expense['supplier_paid_to']",
+      "expense['description']",
+      "expense['client_id']",
+      "expense['project_id']",
+      "expense['mixer_id']",
+      "expense['no_receipt_reason']",
+    ]) {
+      expect(ui, contains(field));
+    }
+  });
+
   test('Admin cannot approve a DRAFT directly', () {
     expect(review, contains("if(\$e['status']!=='SUBMITTED')"));
     expect(review, contains("accounts_fail('EXPENSE_NOT_REVIEWABLE',409)"));
@@ -125,6 +161,8 @@ void main() {
     expect(update, contains("\$old['status']==='CORRECTION_REQUIRED'"));
     expect(submit, contains("\$e['status']==='CORRECTION_REQUIRED'"));
     expect(submit, contains("SET status='SUBMITTED'"));
+    expect(ui, contains("status == 'CORRECTION_REQUIRED'"));
+    expect(ui, contains("'Correct & Resubmit'"));
   });
 
   test('pre-v1.11 Reference pending does not block legitimate submission', () {
