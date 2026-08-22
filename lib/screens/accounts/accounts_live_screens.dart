@@ -16,14 +16,16 @@ class _AccountsLivePage extends StatelessWidget {
     required this.session,
     required this.title,
     required this.children,
+    this.requireAdmin = true,
   });
   final CehSession session;
   final String title;
   final List<Widget> children;
+  final bool requireAdmin;
 
   @override
   Widget build(BuildContext context) {
-    if (!isUiAdmin(context, session)) {
+    if (requireAdmin && !isUiAdmin(context, session)) {
       return const Scaffold(
           body: Center(child: Text('Administrator access required.')));
     }
@@ -39,6 +41,32 @@ class _AccountsLivePage extends StatelessWidget {
     );
   }
 }
+
+enum PettyCashExpenseSection { needsApproval, drafts, history }
+
+PettyCashExpenseSection? pettyCashExpenseSection(Object? status) {
+  switch ('$status'.toUpperCase()) {
+    case 'SUBMITTED':
+      return PettyCashExpenseSection.needsApproval;
+    case 'DRAFT':
+    case 'CORRECTION_REQUIRED':
+      return PettyCashExpenseSection.drafts;
+    case 'APPROVED':
+    case 'CANCELLED_NOT_SPENT':
+      return PettyCashExpenseSection.history;
+    default:
+      return null;
+  }
+}
+
+List<Map<String, dynamic>> pettyCashExpensesForSection(
+  Iterable<Map<String, dynamic>> expenses,
+  PettyCashExpenseSection section,
+) =>
+    expenses
+        .where(
+            (expense) => pettyCashExpenseSection(expense['status']) == section)
+        .toList(growable: false);
 
 class _AccountsLoadError extends StatelessWidget {
   const _AccountsLoadError(this.error, this.retry);
@@ -343,10 +371,112 @@ class _AccountsPettyCashScreenState extends State<AccountsPettyCashScreen> {
     }
   }
 
+  Future<void> _submit(int id) async {
+    try {
+      await _api.submitPettyCashExpense(widget.session, id);
+      _reload();
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.code)));
+      }
+    }
+  }
+
+  Future<void> _openDraft(Map<String, dynamic> expense) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AccountsPettyExpenseScreen(
+          session: widget.session,
+          expense: expense,
+        ),
+      ),
+    );
+    _reload();
+  }
+
+  Widget _expenseCard(
+    Map<String, dynamic> expense, {
+    required bool isAdmin,
+    required PettyCashExpenseSection section,
+  }) {
+    final status = '${expense['status']}';
+    final owner = (expense['custodian_user_id'] as num?)?.toInt() ==
+        widget.session.user.id;
+    final evidenceCount = (expense['evidence_count'] as num?)?.toInt() ?? 0;
+    final reference = expense['reference_no'] ?? 'Reference pending';
+    final postingStatus = status == 'APPROVED'
+        ? 'APPROVED / POSTED'
+        : status == 'CANCELLED_NOT_SPENT'
+            ? 'CANCELLED / NOT POSTED'
+            : status;
+    return Card(
+      child: ExpansionTile(
+        title: Text(
+          '$reference • ${formatNaira(double.tryParse('${expense['amount']}') ?? 0)}',
+          style: const TextStyle(fontWeight: FontWeight.w900),
+        ),
+        subtitle: Text(
+          '${expense['custodian_name']} • ${displayAccountsDate('${expense['expense_date']}')} • $status',
+        ),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+        children: [
+          AccountsMetricLine('CEH-PC reference', '$reference'),
+          AccountsMetricLine(
+              'Date', displayAccountsDate('${expense['expense_date']}')),
+          AccountsMetricLine('Amount',
+              formatNaira(double.tryParse('${expense['amount']}') ?? 0)),
+          AccountsMetricLine('Custodian', '${expense['custodian_name']}'),
+          AccountsMetricLine('Paid To', '${expense['supplier_paid_to']}'),
+          AccountsMetricLine('Description', '${expense['description']}'),
+          AccountsMetricLine(
+              'Client', '${expense['client_name'] ?? 'Not allocated'}'),
+          AccountsMetricLine(
+              'Project', '${expense['project_name'] ?? 'Not allocated'}'),
+          AccountsMetricLine(
+              'Equipment', '${expense['mixer_code'] ?? 'Not allocated'}'),
+          AccountsMetricLine('Receipt / evidence',
+              evidenceCount == 0 ? 'No receipt' : 'Attached'),
+          AccountsMetricLine('Approval / posting status', postingStatus),
+          if (section == PettyCashExpenseSection.needsApproval && isAdmin)
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              FilledButton(
+                onPressed: () =>
+                    _review((expense['id'] as num).toInt(), 'APPROVE'),
+                child: const Text('Approve'),
+              ),
+              OutlinedButton(
+                onPressed: () => _review(
+                    (expense['id'] as num).toInt(), 'CORRECTION_REQUIRED'),
+                child: const Text('Correction Required'),
+              ),
+            ]),
+          if (section == PettyCashExpenseSection.drafts && owner)
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              FilledButton.icon(
+                onPressed: () => _openDraft(expense),
+                icon: const Icon(Icons.edit_outlined),
+                label: Text(status == 'CORRECTION_REQUIRED'
+                    ? 'Correct & Resubmit'
+                    : 'Continue Draft'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _submit((expense['id'] as num).toInt()),
+                icon: const Icon(Icons.send_outlined),
+                label: const Text('Submit Expense'),
+              ),
+            ]),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => _AccountsLivePage(
         session: widget.session,
         title: 'Petty Cash',
+        requireAdmin: false,
         children: [
           FutureBuilder<(PettyCashOverview, List<Map<String, dynamic>>)>(
             future: _future,
@@ -359,46 +489,56 @@ class _AccountsPettyCashScreenState extends State<AccountsPettyCashScreen> {
               }
               final overview = snapshot.data!.$1;
               final expenses = snapshot.data!.$2;
+              final isAdmin = isUiAdmin(context, widget.session);
+              final needsApproval = pettyCashExpensesForSection(
+                  expenses, PettyCashExpenseSection.needsApproval);
+              final drafts = pettyCashExpensesForSection(
+                  expenses, PettyCashExpenseSection.drafts);
+              final history = pettyCashExpensesForSection(
+                  expenses, PettyCashExpenseSection.history);
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  SizedBox(
-                    height: 190,
-                    child: AccountsSummaryCard(
-                      label: 'TOTAL PETTY CASH',
-                      value: overview.totalPettyCash,
-                      detail:
-                          'Across ${overview.custodians.length} active custodians',
-                      emphasized: true,
+                  if (isAdmin)
+                    SizedBox(
+                      height: 190,
+                      child: AccountsSummaryCard(
+                        label: 'TOTAL PETTY CASH',
+                        value: overview.totalPettyCash,
+                        detail:
+                            'Across ${overview.custodians.length} active custodians',
+                        emphasized: true,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 14),
+                  if (isAdmin) const SizedBox(height: 14),
                   Wrap(spacing: 10, runSpacing: 8, children: [
-                    OutlinedButton.icon(
-                      onPressed: () async {
-                        await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) =>
-                                    AccountsCustodianManagementScreen(
-                                        session: widget.session)));
-                        _reload();
-                      },
-                      icon: const Icon(Icons.manage_accounts_outlined),
-                      label: const Text('Manage Custodians'),
-                    ),
-                    FilledButton.icon(
-                      onPressed: () async {
-                        await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => AccountsFundPettyCashScreen(
-                                    session: widget.session)));
-                        _reload();
-                      },
-                      icon: const Icon(Icons.account_balance_outlined),
-                      label: const Text('Fund Petty Cash'),
-                    ),
+                    if (isAdmin)
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) =>
+                                      AccountsCustodianManagementScreen(
+                                          session: widget.session)));
+                          _reload();
+                        },
+                        icon: const Icon(Icons.manage_accounts_outlined),
+                        label: const Text('Manage Custodians'),
+                      ),
+                    if (isAdmin)
+                      FilledButton.icon(
+                        onPressed: () async {
+                          await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => AccountsFundPettyCashScreen(
+                                      session: widget.session)));
+                          _reload();
+                        },
+                        icon: const Icon(Icons.account_balance_outlined),
+                        label: const Text('Fund Petty Cash'),
+                      ),
                     OutlinedButton.icon(
                       onPressed: () async {
                         await Navigator.push(
@@ -413,7 +553,8 @@ class _AccountsPettyCashScreenState extends State<AccountsPettyCashScreen> {
                     ),
                   ]),
                   const SizedBox(height: 20),
-                  const AccountsSectionTitle('Custodian balances'),
+                  AccountsSectionTitle(
+                      isAdmin ? 'Custodian balances' : 'My Balance'),
                   for (final custodian in overview.custodians)
                     Card(
                       child: Padding(
@@ -426,71 +567,57 @@ class _AccountsPettyCashScreenState extends State<AccountsPettyCashScreen> {
                                     fontSize: 18, fontWeight: FontWeight.w900)),
                             Text(custodian.role),
                             const Divider(),
-                            AccountsMetricLine('Funds Received',
-                                formatNaira(custodian.fundsReceived)),
-                            AccountsMetricLine('Accounted / Spent',
-                                formatNaira(custodian.accounted)),
-                            AccountsMetricLine('Pending Approval',
-                                formatNaira(custodian.pending)),
+                            if (isAdmin)
+                              AccountsMetricLine('Funds Received',
+                                  formatNaira(custodian.fundsReceived)),
+                            if (isAdmin)
+                              AccountsMetricLine('Accounted / Spent',
+                                  formatNaira(custodian.accounted)),
+                            if (isAdmin)
+                              AccountsMetricLine('Pending Approval',
+                                  formatNaira(custodian.pending)),
                             AccountsMetricLine(
                                 'Balance', formatNaira(custodian.balance),
                                 prominent: true),
-                            AccountsMetricLine('Available to spend',
+                            AccountsMetricLine('Available to Spend',
                                 formatNaira(custodian.available)),
+                            if (!isAdmin)
+                              AccountsMetricLine('Pending Approval',
+                                  formatNaira(custodian.pending)),
                           ],
                         ),
                       ),
                     ),
                   const SizedBox(height: 20),
-                  const AccountsSectionTitle('Expense approval queue'),
-                  if (expenses.isEmpty)
-                    const Text('No petty cash expenses recorded.'),
-                  for (final expense in expenses)
-                    Card(
-                      child: ExpansionTile(
-                        title: Text(
-                            '${expense['reference_no'] ?? 'Reference pending'} • ${formatNaira(double.tryParse('${expense['amount']}') ?? 0)}',
-                            style:
-                                const TextStyle(fontWeight: FontWeight.w900)),
-                        subtitle: Text(
-                            '${expense['custodian_name']} • ${displayAccountsDate('${expense['expense_date']}')} • ${expense['status']}'),
-                        childrenPadding:
-                            const EdgeInsets.fromLTRB(16, 0, 16, 14),
-                        children: [
-                          AccountsMetricLine(
-                              'Paid To', '${expense['supplier_paid_to']}'),
-                          AccountsMetricLine(
-                              'Description', '${expense['description']}'),
-                          AccountsMetricLine(
-                              'Receipt',
-                              (expense['evidence_count'] as num?)?.toInt() == 0
-                                  ? 'No receipt'
-                                  : 'Attached'),
-                          AccountsMetricLine('Project',
-                              '${expense['project_name'] ?? 'Not allocated'}'),
-                          AccountsMetricLine('Equipment',
-                              '${expense['mixer_code'] ?? 'Not allocated'}'),
-                          if (expense['status'] == 'SUBMITTED')
-                            Wrap(spacing: 8, children: [
-                              FilledButton(
-                                  onPressed: () => _review(
-                                      (expense['id'] as num).toInt(),
-                                      'APPROVE'),
-                                  child: const Text('Approve')),
-                              OutlinedButton(
-                                  onPressed: () => _review(
-                                      (expense['id'] as num).toInt(),
-                                      'CORRECTION_REQUIRED'),
-                                  child: const Text('Needs Correction')),
-                              TextButton(
-                                  onPressed: () => _review(
-                                      (expense['id'] as num).toInt(),
-                                      'CANCELLED_NOT_SPENT'),
-                                  child: const Text('Not Spent / Cancel')),
-                            ]),
-                        ],
-                      ),
-                    ),
+                  if (isAdmin) ...[
+                    const AccountsSectionTitle('Needs Approval'),
+                    if (needsApproval.isEmpty)
+                      const Text('No expenses awaiting approval'),
+                    for (final expense in needsApproval)
+                      _expenseCard(expense,
+                          isAdmin: true,
+                          section: PettyCashExpenseSection.needsApproval),
+                    const SizedBox(height: 20),
+                  ],
+                  AccountsSectionTitle(isAdmin
+                      ? 'Drafts / Needs Correction'
+                      : 'My Drafts / Corrections'),
+                  if (drafts.isEmpty)
+                    const Text('No drafts or corrections requiring action.'),
+                  for (final expense in drafts)
+                    _expenseCard(expense,
+                        isAdmin: isAdmin,
+                        section: PettyCashExpenseSection.drafts),
+                  const SizedBox(height: 20),
+                  AccountsSectionTitle(isAdmin
+                      ? 'Transaction History'
+                      : 'My Transaction History'),
+                  if (history.isEmpty)
+                    const Text('No completed petty cash transactions.'),
+                  for (final expense in history)
+                    _expenseCard(expense,
+                        isAdmin: isAdmin,
+                        section: PettyCashExpenseSection.history),
                 ],
               );
             },
@@ -746,8 +873,13 @@ class _AccountsFundPettyCashScreenState
 }
 
 class AccountsPettyExpenseScreen extends StatefulWidget {
-  const AccountsPettyExpenseScreen({super.key, required this.session});
+  const AccountsPettyExpenseScreen({
+    super.key,
+    required this.session,
+    this.expense,
+  });
   final CehSession session;
+  final Map<String, dynamic>? expense;
   @override
   State<AccountsPettyExpenseScreen> createState() =>
       _AccountsPettyExpenseScreenState();
@@ -776,6 +908,22 @@ class _AccountsPettyExpenseScreenState
   @override
   void initState() {
     super.initState();
+    final expense = widget.expense;
+    if (expense != null) {
+      _amount.text = formatNgn(double.tryParse('${expense['amount']}') ?? 0)
+          .replaceFirst('₦', '');
+      _supplier.text = '${expense['supplier_paid_to'] ?? ''}';
+      _description.text = '${expense['description'] ?? ''}';
+      _noReceiptReason.text = '${expense['no_receipt_reason'] ?? ''}';
+      _custodian = (expense['custodian_user_id'] as num?)?.toInt();
+      _account = (expense['expense_account_id'] as num?)?.toInt();
+      _client = (expense['client_id'] as num?)?.toInt();
+      _project = (expense['project_id'] as num?)?.toInt();
+      _mixer = (expense['mixer_id'] as num?)?.toInt();
+      _date = '${expense['expense_date']}';
+      _issuedReference = expense['reference_no']?.toString();
+      _noReceipt = _noReceiptReason.text.trim().isNotEmpty;
+    }
     _lookups = _loadLookups();
   }
 
@@ -825,7 +973,12 @@ class _AccountsPettyExpenseScreenState
   @override
   Widget build(BuildContext context) => _AccountsLivePage(
         session: widget.session,
-        title: 'Add Petty Cash Expense',
+        title: widget.expense == null
+            ? 'Add Petty Cash Expense'
+            : widget.expense!['status'] == 'CORRECTION_REQUIRED'
+                ? 'Correct Petty Cash Expense'
+                : 'Continue Petty Cash Draft',
+        requireAdmin: false,
         children: [
           FutureBuilder<_ExpenseLookups>(
             future: _lookups,
@@ -856,13 +1009,15 @@ class _AccountsPettyExpenseScreenState
                         const InputDecoration(labelText: 'CEH reference')),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<int>(
-                    initialValue: custodians.first.userId,
+                    initialValue: _custodian ?? custodians.first.userId,
                     decoration: const InputDecoration(labelText: 'Custodian'),
                     items: custodians
                         .map((c) => DropdownMenuItem(
                             value: c.userId, child: Text(c.name)))
                         .toList(),
-                    onChanged: (value) => _custodian = value),
+                    onChanged: widget.expense == null
+                        ? (value) => _custodian = value
+                        : null),
                 const SizedBox(height: 12),
                 AccountsDatePickerField(
                     initialCanonicalDate: _date,
@@ -986,7 +1141,11 @@ class _AccountsPettyExpenseScreenState
                         ? null
                         : () => _save(_custodian ?? custodians.first.userId,
                             _account ?? accounts.first.id),
-                    child: Text(_saving ? 'Saving…' : 'Save and Submit')),
+                    child: Text(_saving
+                        ? 'Saving…'
+                        : widget.expense?['status'] == 'CORRECTION_REQUIRED'
+                            ? 'Correct & Resubmit'
+                            : 'Submit Expense')),
               ]);
             },
           ),
@@ -998,7 +1157,7 @@ class _AccountsPettyExpenseScreenState
     try {
       final amount = parseNgnInput(_amount.text);
       if (amount == null) throw const ApiException('INVALID_AMOUNT');
-      final created = await _api.createPettyCashExpense(widget.session, {
+      final payload = <String, dynamic>{
         'custodian_user_id': custodianId,
         'expense_date': _date,
         'amount': amount,
@@ -1009,9 +1168,26 @@ class _AccountsPettyExpenseScreenState
         if (_project != null) 'project_id': _project,
         if (_mixer != null) 'mixer_id': _mixer,
         if (_noReceipt) 'no_receipt_reason': _noReceiptReason.text,
-      });
+      };
       if (!_noReceipt && _receipt == null) {
-        throw const ApiException('RECEIPT_OR_REASON_REQUIRED');
+        final evidenceCount =
+            (widget.expense?['evidence_count'] as num?)?.toInt() ?? 0;
+        if (evidenceCount == 0) {
+          throw const ApiException('RECEIPT_OR_REASON_REQUIRED');
+        }
+      }
+      final CreatedPettyCashExpense created;
+      if (widget.expense == null) {
+        created = await _api.createPettyCashExpense(widget.session, payload);
+      } else {
+        final id = (widget.expense!['id'] as num).toInt();
+        await _api.updatePettyCashExpense(widget.session,
+            expenseId: id, payload: payload);
+        created = CreatedPettyCashExpense(
+          id: id,
+          reference: widget.expense!['reference_no']?.toString() ??
+              'Reference pending',
+        );
       }
       if (mounted) setState(() => _issuedReference = created.reference);
       if (_receipt != null) {

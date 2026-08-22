@@ -7,6 +7,7 @@ import '../core/update_service.dart';
 import '../core/view_mode.dart';
 import '../models/session.dart';
 import 'accounts/accounts_home_screen.dart';
+import 'accounts/accounts_live_screens.dart';
 import 'concrete_operations_screen.dart';
 import 'module_placeholder_screen.dart';
 import 'user_management_screen.dart';
@@ -115,6 +116,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
         {
           't': 'Accounts',
           's': 'Expenses, income, petty cash and reports',
+          'i': Icons.account_balance_wallet_outlined,
+          'e': true,
+        },
+      if (!admin && (user.isOperator || user.isSupervisor))
+        {
+          't': 'Petty Cash',
+          's': 'My balance, expenses and approval status',
           'i': Icons.account_balance_wallet_outlined,
           'e': true,
         },
@@ -282,6 +290,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       context,
                       MaterialPageRoute(
                         builder: (_) => AccountsHomeScreen(session: session),
+                      ),
+                    );
+                  } else if (m['t'] == 'Petty Cash') {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            AccountsPettyCashScreen(session: session),
                       ),
                     );
                   } else {

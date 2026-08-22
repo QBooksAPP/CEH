@@ -862,6 +862,19 @@ class CehApiClient {
         {'expense_id': expenseId}, 'PETTY_CASH_EXPENSE_SUBMIT_FAILED');
   }
 
+  Future<void> updatePettyCashExpense(
+    CehSession session, {
+    required int expenseId,
+    required Map<String, dynamic> payload,
+  }) async {
+    await _postJson(
+      session,
+      'petty_cash_expense_update.php',
+      {'expense_id': expenseId, ...payload},
+      'PETTY_CASH_EXPENSE_UPDATE_FAILED',
+    );
+  }
+
   Future<void> reviewPettyCashExpense(CehSession session,
       {required int expenseId,
       required String action,
