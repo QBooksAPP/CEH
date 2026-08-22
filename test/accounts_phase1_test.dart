@@ -145,7 +145,8 @@ void main() {
 
   test('statement import UI stays disabled pending real Zenith mapping', () {
     expect(liveUi, contains('onPressed: null'));
-    final prototype = source('lib/screens/accounts/accounts_phase1_screens.dart');
+    final prototype =
+        source('lib/screens/accounts/accounts_phase1_screens.dart');
     expect(prototype, contains("ValueKey('import-bank-statement')"));
     expect(
       prototype,
@@ -205,13 +206,19 @@ void main() {
             'pending': '30000.00',
             'balance': '150000.00',
             'available': '120000.00',
-          }
+          },
+          'this_month': {
+            'funds_received': '400000.00',
+            'accounted': '230000.00',
+          },
         }
       ]
     });
     expect(overview.totalPettyCash, 175000);
     expect(overview.custodians.single.pending, 30000);
     expect(overview.custodians.single.available, 120000);
+    expect(overview.custodians.single.thisMonthFundsReceived, 400000);
+    expect(overview.custodians.single.thisMonthAccounted, 230000);
   });
 
   test('ready Phase 1 screens use authenticated APIs and protected evidence',

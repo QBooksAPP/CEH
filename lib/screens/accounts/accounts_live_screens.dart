@@ -881,7 +881,7 @@ class _AccountsPettyCashScreenState extends State<AccountsPettyCashScreen> {
                     SizedBox(
                       height: 190,
                       child: AccountsSummaryCard(
-                        label: 'TOTAL PETTY CASH',
+                        label: 'TOTAL PETTY CASH OUTSTANDING',
                         value: overview.totalPettyCash,
                         detail:
                             'Across ${overview.custodians.length} active custodians',
@@ -945,23 +945,28 @@ class _AccountsPettyCashScreenState extends State<AccountsPettyCashScreen> {
                                     fontSize: 18, fontWeight: FontWeight.w900)),
                             Text(custodian.role),
                             const Divider(),
-                            if (isAdmin)
-                              AccountsMetricLine('Funds Received',
-                                  formatNaira(custodian.fundsReceived)),
-                            if (isAdmin)
-                              AccountsMetricLine('Accounted / Spent',
-                                  formatNaira(custodian.accounted)),
-                            if (isAdmin)
-                              AccountsMetricLine('Pending Approval',
-                                  formatNaira(custodian.pending)),
-                            AccountsMetricLine(
-                                'Balance', formatNaira(custodian.balance),
+                            AccountsMetricLine('Current Balance',
+                                formatNaira(custodian.balance),
                                 prominent: true),
                             AccountsMetricLine('Available to Spend',
                                 formatNaira(custodian.available)),
                             if (!isAdmin)
                               AccountsMetricLine('Pending Approval',
                                   formatNaira(custodian.pending)),
+                            if (isAdmin) ...[
+                              AccountsMetricLine('Pending Approval',
+                                  formatNaira(custodian.pending)),
+                              const Divider(),
+                              const Text('This Month',
+                                  style:
+                                      TextStyle(fontWeight: FontWeight.w900)),
+                              AccountsMetricLine(
+                                  'Funds Received',
+                                  formatNaira(
+                                      custodian.thisMonthFundsReceived)),
+                              AccountsMetricLine('Accounted / Spent',
+                                  formatNaira(custodian.thisMonthAccounted)),
+                            ],
                           ],
                         ),
                       ),

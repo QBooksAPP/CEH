@@ -98,6 +98,8 @@ class PettyCashCustodianBalance {
     required this.pending,
     required this.balance,
     required this.available,
+    required this.thisMonthFundsReceived,
+    required this.thisMonthAccounted,
   });
   final int userId;
   final String name;
@@ -107,9 +109,13 @@ class PettyCashCustodianBalance {
   final double pending;
   final double balance;
   final double available;
+  final double thisMonthFundsReceived;
+  final double thisMonthAccounted;
 
   factory PettyCashCustodianBalance.fromJson(Map<String, dynamic> json) {
     final balance = Map<String, dynamic>.from(json['balance'] as Map? ?? {});
+    final thisMonth =
+        Map<String, dynamic>.from(json['this_month'] as Map? ?? {});
     return PettyCashCustodianBalance(
       userId: _int(json['user_id']),
       name: '${json['name'] ?? ''}',
@@ -119,6 +125,8 @@ class PettyCashCustodianBalance {
       pending: _double(balance['pending']),
       balance: _double(balance['balance']),
       available: _double(balance['available']),
+      thisMonthFundsReceived: _double(thisMonth['funds_received']),
+      thisMonthAccounted: _double(thisMonth['accounted']),
     );
   }
 }
@@ -133,7 +141,8 @@ class PettyCashOverview {
 
   factory PettyCashOverview.fromJson(Map<String, dynamic> json) =>
       PettyCashOverview(
-        totalPettyCash: _double(json['total_petty_cash']),
+        totalPettyCash: _double(
+            json['total_petty_cash_outstanding'] ?? json['total_petty_cash']),
         custodians: (json['custodians'] as List? ?? const [])
             .map((item) => PettyCashCustodianBalance.fromJson(
                 Map<String, dynamic>.from(item as Map)))
