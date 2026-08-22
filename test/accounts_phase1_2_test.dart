@@ -91,6 +91,29 @@ void main() {
     expect(submit, contains("SET status='SUBMITTED'"));
   });
 
+  test('Save Draft persists without submission reservation or journal', () {
+    expect(ui, contains("label: const Text('Save Draft')"));
+    expect(ui, contains('submit: false'));
+    expect(ui, contains('if (submit) {'));
+    expect(ui, contains('saved as a draft'));
+    expect(submit, contains("SET status='SUBMITTED'"));
+    expect(common, contains("status IN ('SUBMITTED','CORRECTION_REQUIRED')"));
+    expect(common, isNot(contains("status IN ('DRAFT','SUBMITTED'")));
+  });
+
+  test('draft receipt is optional until Submit and remains uploadable', () {
+    expect(ui, contains('submit && !_noReceipt && _receipt == null'));
+    expect(ui, contains('uploadFinancialEvidence'));
+    expect(submit, contains('RECEIPT_OR_REASON_REQUIRED'));
+  });
+
+  test('new and existing DRAFT forms expose Save Draft and Submit Expense', () {
+    expect(ui, contains("widget.expense?['status'] == 'CORRECTION_REQUIRED'"));
+    expect(ui, contains('submit: false'));
+    expect(ui, contains('submit: true'));
+    expect(ui, contains("label: const Text('Submit Expense')"));
+  });
+
   test('Admin and owner both receive draft management controls', () {
     expect(
       canManagePettyCashDraft(

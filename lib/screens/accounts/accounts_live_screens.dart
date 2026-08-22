@@ -1555,25 +1555,48 @@ class _AccountsPettyExpenseScreenState
                     enabled: false,
                     decoration: const InputDecoration(labelText: 'Entered by')),
                 const SizedBox(height: 18),
-                FilledButton(
-                    onPressed: _saving
-                        ? null
-                        : () => _save(_custodian ?? custodians.first.userId,
-                            _account ?? accounts.first.id),
-                    child: Text(_saving
-                        ? 'Saving…'
-                        : widget.reclassifyPosted
-                            ? 'Post Reclassification'
-                            : widget.expense?['status'] == 'CORRECTION_REQUIRED'
-                                ? 'Correct & Resubmit'
-                                : 'Submit Expense')),
+                if (widget.reclassifyPosted ||
+                    widget.expense?['status'] == 'CORRECTION_REQUIRED')
+                  FilledButton(
+                      onPressed: _saving
+                          ? null
+                          : () => _save(_custodian ?? custodians.first.userId,
+                              _account ?? accounts.first.id,
+                              submit: true),
+                      child: Text(_saving
+                          ? 'Saving…'
+                          : widget.reclassifyPosted
+                              ? 'Post Reclassification'
+                              : 'Correct & Resubmit'))
+                else
+                  Wrap(spacing: 10, runSpacing: 8, children: [
+                    OutlinedButton.icon(
+                      onPressed: _saving
+                          ? null
+                          : () => _save(_custodian ?? custodians.first.userId,
+                              _account ?? accounts.first.id,
+                              submit: false),
+                      icon: const Icon(Icons.save_outlined),
+                      label: const Text('Save Draft'),
+                    ),
+                    FilledButton.icon(
+                      onPressed: _saving
+                          ? null
+                          : () => _save(_custodian ?? custodians.first.userId,
+                              _account ?? accounts.first.id,
+                              submit: true),
+                      icon: const Icon(Icons.send_outlined),
+                      label: const Text('Submit Expense'),
+                    ),
+                  ]),
               ]);
             },
           ),
         ],
       );
 
-  Future<void> _save(int custodianId, int accountId) async {
+  Future<void> _save(int custodianId, int accountId,
+      {required bool submit}) async {
     setState(() => _saving = true);
     try {
       final amount = parseNgnInput(_amount.text);
@@ -1603,7 +1626,7 @@ class _AccountsPettyExpenseScreenState
         if (mounted) Navigator.pop(context);
         return;
       }
-      if (!_noReceipt && _receipt == null) {
+      if (submit && !_noReceipt && _receipt == null) {
         final evidenceCount =
             (widget.expense?['evidence_count'] as num?)?.toInt() ?? 0;
         if (evidenceCount == 0) {
@@ -1635,14 +1658,17 @@ class _AccountsPettyExpenseScreenState
             mimeType: mime,
             bytes: bytes);
       }
-      await _api.submitPettyCashExpense(widget.session, created.id);
+      if (submit) {
+        await _api.submitPettyCashExpense(widget.session, created.id);
+      }
       if (mounted) {
         await showDialog<void>(
             context: context,
             builder: (context) => AlertDialog(
                   title: Text(created.reference),
-                  content:
-                      const Text('Petty Cash Expense created and submitted.'),
+                  content: Text(submit
+                      ? 'Petty Cash Expense created and submitted.'
+                      : 'Petty Cash Expense saved as a draft.'),
                   actions: [
                     FilledButton(
                         onPressed: () => Navigator.pop(context),
