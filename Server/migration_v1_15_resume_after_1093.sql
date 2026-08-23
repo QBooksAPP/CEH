@@ -1,34 +1,53 @@
 -- CEH Accounts Phase 3 controlled resume after the original first statement
 -- failed with MySQL error 1093. This script performs no financial postings.
 --
--- STEP 1 (read-only): inspect the result sets below. The expected state is:
---   v1_15_object_count = 0
---   no rows returned by the account inspection query
--- Stop for review if either expectation is false.
+-- STEP 1: capture and validate the currently selected CEH schema before
+-- querying any CEH table. information_schema is used only for table existence.
+SET @ceh_v115_selected_schema := DATABASE();
+SET @ceh_v115_accounts_chart_exists := (
+  SELECT COUNT(*)
+  FROM information_schema.tables
+  WHERE table_schema=@ceh_v115_selected_schema
+    AND table_name='qbook_accounts_chart'
+);
+SET @ceh_v115_existing_object_count := (
+  SELECT COUNT(*)
+  FROM information_schema.tables
+  WHERE table_schema=@ceh_v115_selected_schema
+    AND table_name IN (
+      'qbook_financial_account_roles','qbook_tax_codes','qbook_invoice_settings',
+      'qbook_invoice_references','qbook_customer_receipt_references',
+      'qbook_credit_note_references','qbook_invoices','qbook_invoice_lines',
+      'qbook_invoice_production_allocations','qbook_customer_receipts',
+      'qbook_customer_receipt_allocations','qbook_wht_deductions',
+      'qbook_advance_applications','qbook_credit_notes',
+      'qbook_credit_note_lines','qbook_credit_note_production_releases',
+      'qbook_credit_note_allocations'
+    )
+);
 
-SELECT COUNT(*) AS v1_15_object_count
-FROM information_schema.tables
-WHERE table_schema = DATABASE()
-  AND table_name IN (
-    'qbook_financial_account_roles',
-    'qbook_tax_codes',
-    'qbook_invoice_settings',
-    'qbook_invoice_references',
-    'qbook_customer_receipt_references',
-    'qbook_credit_note_references',
-    'qbook_invoices',
-    'qbook_invoice_lines',
-    'qbook_invoice_production_allocations',
-    'qbook_customer_receipts',
-    'qbook_customer_receipt_allocations',
-    'qbook_wht_deductions',
-    'qbook_advance_applications',
-    'qbook_credit_notes',
-    'qbook_credit_note_lines',
-    'qbook_credit_note_production_releases',
-    'qbook_credit_note_allocations'
-  );
+SELECT @ceh_v115_selected_schema AS selected_ceh_schema,
+       @ceh_v115_accounts_chart_exists AS accounts_chart_exists,
+       @ceh_v115_existing_object_count AS v1_15_object_count;
 
+DROP TEMPORARY TABLE IF EXISTS ceh_v115_schema_guard;
+CREATE TEMPORARY TABLE ceh_v115_schema_guard (
+  ok TINYINT NOT NULL,
+  CONSTRAINT chk_ceh_v115_schema_guard CHECK(ok=1)
+);
+INSERT INTO ceh_v115_schema_guard(ok)
+VALUES(IF(
+  @ceh_v115_selected_schema IS NOT NULL
+  AND LOWER(@ceh_v115_selected_schema) NOT IN
+      ('information_schema','mysql','performance_schema','sys')
+  AND @ceh_v115_accounts_chart_exists=1
+  AND @ceh_v115_existing_object_count=0,
+  1,0
+));
+DROP TEMPORARY TABLE ceh_v115_schema_guard;
+
+-- STEP 2 (read-only CEH checks): these unqualified table references resolve
+-- against the selected database already validated above.
 SELECT code,name,account_type,parent_id,is_postable
 FROM qbook_accounts_chart
 WHERE code IN ('1150','2310','2400')
@@ -45,24 +64,6 @@ LEFT JOIN qbook_accounts_chart parent ON parent.id=child.parent_id
 WHERE child.code IN ('1000','2000','2300')
 ORDER BY child.code;
 
--- STEP 2: executable guard. This deliberately fails before any persistent write
--- if a v1.15 table already exists, a required parent is missing, or an existing
--- 1150/2310/2400 row conflicts with the approved mapping.
-SET @ceh_v115_existing_object_count := (
-  SELECT COUNT(*)
-  FROM information_schema.tables
-  WHERE table_schema = DATABASE()
-    AND table_name IN (
-      'qbook_financial_account_roles','qbook_tax_codes','qbook_invoice_settings',
-      'qbook_invoice_references','qbook_customer_receipt_references',
-      'qbook_credit_note_references','qbook_invoices','qbook_invoice_lines',
-      'qbook_invoice_production_allocations','qbook_customer_receipts',
-      'qbook_customer_receipt_allocations','qbook_wht_deductions',
-      'qbook_advance_applications','qbook_credit_notes',
-      'qbook_credit_note_lines','qbook_credit_note_production_releases',
-      'qbook_credit_note_allocations'
-    )
-);
 SET @ceh_v115_parent_count := (
   SELECT COUNT(DISTINCT code)
   FROM qbook_accounts_chart
@@ -93,20 +94,19 @@ SET @ceh_v115_conflicting_account_count := (
     )
 );
 
-DROP TEMPORARY TABLE IF EXISTS ceh_v115_resume_guard;
-CREATE TEMPORARY TABLE ceh_v115_resume_guard (
+DROP TEMPORARY TABLE IF EXISTS ceh_v115_account_guard;
+CREATE TEMPORARY TABLE ceh_v115_account_guard (
   ok TINYINT NOT NULL,
-  CONSTRAINT chk_ceh_v115_resume_guard CHECK(ok=1)
+  CONSTRAINT chk_ceh_v115_account_guard CHECK(ok=1)
 );
-INSERT INTO ceh_v115_resume_guard(ok)
+INSERT INTO ceh_v115_account_guard(ok)
 VALUES(IF(
-  @ceh_v115_existing_object_count=0
-  AND @ceh_v115_parent_count=3
+  @ceh_v115_parent_count=3
   AND @ceh_v115_existing_seed_account_count=0
   AND @ceh_v115_conflicting_account_count=0,
   1,0
 ));
-DROP TEMPORARY TABLE ceh_v115_resume_guard;
+DROP TEMPORARY TABLE ceh_v115_account_guard;
 
 -- STEP 3 (write): guarded, MySQL-safe, duplicate-resistant account seeds.
 SET @ceh_v115_assets_parent_id := (

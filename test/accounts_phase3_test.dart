@@ -100,12 +100,19 @@ void main() {
 
       final resume = File('Server/migration_v1_15_resume_after_1093.sql')
           .readAsStringSync();
+      expect(resume, contains('@ceh_v115_selected_schema := DATABASE()'));
+      expect(resume, contains('table_schema=@ceh_v115_selected_schema'));
+      expect(resume, contains("table_name='qbook_accounts_chart'"));
+      expect(resume, contains('@ceh_v115_accounts_chart_exists=1'));
+      expect(resume, contains('chk_ceh_v115_schema_guard'));
+      expect(
+          resume, isNot(contains('information_schema.qbook_accounts_chart')));
       expect(resume, contains('v1_15_object_count'));
       expect(resume, contains('@ceh_v115_existing_object_count=0'));
       expect(resume, contains('@ceh_v115_parent_count=3'));
       expect(resume, contains('@ceh_v115_existing_seed_account_count=0'));
       expect(resume, contains('@ceh_v115_conflicting_account_count=0'));
-      expect(resume, contains('chk_ceh_v115_resume_guard'));
+      expect(resume, contains('chk_ceh_v115_account_guard'));
       expect(resume, contains('CREATE TABLE qbook_financial_account_roles'));
       expect(resume, contains('CREATE TABLE qbook_credit_note_allocations'));
       expect(resume, contains('ALTER TABLE qbook_financial_evidence'));
