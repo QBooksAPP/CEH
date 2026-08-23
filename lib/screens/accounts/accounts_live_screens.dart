@@ -1678,9 +1678,6 @@ class _AccountsPettyExpenseScreenState
                 return const Text(
                     'Custodian, Cost Centre and expense accounts are required.');
               }
-              _costCentre ??= lookup.costCentres.isEmpty
-                  ? null
-                  : lookup.costCentres.first.id;
               return Column(children: [
                 TextFormField(
                     initialValue: _issuedReference ??
@@ -1723,6 +1720,7 @@ class _AccountsPettyExpenseScreenState
                 DropdownButtonFormField<int>(
                     initialValue: _costCentre,
                     decoration: const InputDecoration(labelText: 'Cost Centre'),
+                    hint: const Text('Select Cost Centre'),
                     items: lookup.costCentres
                         .where((centre) => centre.isActive)
                         .map((centre) => DropdownMenuItem(
@@ -1731,8 +1729,10 @@ class _AccountsPettyExpenseScreenState
                     onChanged: (value) => _costCentre = value),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<int>(
-                    initialValue: _account ?? accounts.first.id,
-                    decoration: const InputDecoration(labelText: 'Category'),
+                    initialValue: _account,
+                    decoration:
+                        const InputDecoration(labelText: 'Account / Category'),
+                    hint: const Text('Select Category'),
                     items: accounts
                         .map((a) => DropdownMenuItem(
                             value: a.id, child: Text('${a.code} • ${a.name}')))
@@ -1946,8 +1946,8 @@ class _AccountsPettyExpenseScreenState
                   FilledButton(
                       onPressed: _saving
                           ? null
-                          : () => _save(_custodian ?? custodians.first.userId,
-                              _account ?? accounts.first.id,
+                          : () => _save(
+                              _custodian ?? custodians.first.userId, _account,
                               submit: true),
                       child: Text(_saving
                           ? 'Saving…'
@@ -1959,8 +1959,8 @@ class _AccountsPettyExpenseScreenState
                     OutlinedButton.icon(
                       onPressed: _saving
                           ? null
-                          : () => _save(_custodian ?? custodians.first.userId,
-                              _account ?? accounts.first.id,
+                          : () => _save(
+                              _custodian ?? custodians.first.userId, _account,
                               submit: false),
                       icon: const Icon(Icons.save_outlined),
                       label: const Text('Save Draft'),
@@ -1968,8 +1968,8 @@ class _AccountsPettyExpenseScreenState
                     FilledButton.icon(
                       onPressed: _saving
                           ? null
-                          : () => _save(_custodian ?? custodians.first.userId,
-                              _account ?? accounts.first.id,
+                          : () => _save(
+                              _custodian ?? custodians.first.userId, _account,
                               submit: true),
                       icon: const Icon(Icons.send_outlined),
                       label: const Text('Submit Expense'),
@@ -1994,10 +1994,13 @@ class _AccountsPettyExpenseScreenState
     _amount.text = total > 0 ? total.toStringAsFixed(2) : '';
   }
 
-  Future<void> _save(int custodianId, int accountId,
+  Future<void> _save(int custodianId, int? accountId,
       {required bool submit}) async {
     setState(() => _saving = true);
     try {
+      if (submit && (accountId == null || _costCentre == null)) {
+        throw const ApiException('COST_CENTRE_AND_CATEGORY_REQUIRED');
+      }
       _refreshPettyHeaderTotal();
       final amount = parseNgnInput(_amount.text);
       if (amount == null) throw const ApiException('INVALID_AMOUNT');
@@ -2109,9 +2112,8 @@ class _AccountsPettyExpenseScreenState
     final amount = TextEditingController();
     final quantity = TextEditingController();
     final unitPrice = TextEditingController();
-    int account = accounts.first.id;
-    int? costCentre =
-        lookup.costCentres.isEmpty ? null : lookup.costCentres.first.id;
+    int? account;
+    int? costCentre;
     int? client;
     int? project;
     int? mixer;
@@ -2131,6 +2133,7 @@ class _AccountsPettyExpenseScreenState
                         initialValue: costCentre,
                         decoration:
                             const InputDecoration(labelText: 'Cost Centre'),
+                        hint: const Text('Select Cost Centre'),
                         items: lookup.costCentres
                             .where((centre) => centre.isActive)
                             .map((centre) => DropdownMenuItem(
@@ -2142,11 +2145,12 @@ class _AccountsPettyExpenseScreenState
                         initialValue: account,
                         decoration: const InputDecoration(
                             labelText: 'Expense category'),
+                        hint: const Text('Select Category'),
                         items: accounts
                             .map((a) => DropdownMenuItem(
                                 value: a.id, child: Text(a.name)))
                             .toList(),
-                        onChanged: (v) => account = v ?? account),
+                        onChanged: (v) => account = v),
                     const SizedBox(height: 10),
                     TextField(
                         controller: amount,
@@ -2227,6 +2231,7 @@ class _AccountsPettyExpenseScreenState
                               parseNgnInput(amount.text);
                           if (description.text.trim().isEmpty ||
                               costCentre == null ||
+                              account == null ||
                               parsed == null) {
                             return;
                           }

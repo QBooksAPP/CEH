@@ -223,6 +223,11 @@ class _AccountsGeneralExpenseScreenState
   Future<void> _save(bool submit) async {
     setState(() => _saving = true);
     try {
+      if (submit &&
+          _lines.any(
+              (line) => line.costCentreId == null || line.accountId == null)) {
+        throw const ApiException('COST_CENTRE_AND_CATEGORY_REQUIRED');
+      }
       final lines = _lines
           .where((line) => line.isPersistable)
           .map((line) => line.toPayload())
@@ -326,6 +331,9 @@ class _AccountsGeneralExpenseScreenState
                           _supplier = null;
                           _oneOff = false;
                           _noReceipt = false;
+                          for (final line in _lines) {
+                            line.accountId = null;
+                          }
                         }
                       })),
               if (!_bankCharge) ...[
@@ -372,10 +380,13 @@ class _AccountsGeneralExpenseScreenState
                   subtitle: 'Header Total: ${formatNaira(_headerTotal)}'),
               for (var index = 0; index < _lines.length; index++)
                 _CompactExpenseLine(
-                    key: ValueKey(_lines[index].identity),
+                    key: ValueKey(
+                        Object.hash(_lines[index].identity, _bankCharge)),
                     index: index,
                     line: _lines[index],
-                    accounts: data.accounts,
+                    accounts: _bankCharge
+                        ? bankChargeExpenseAccounts(data.accounts)
+                        : data.accounts,
                     costCentres: data.costCentres,
                     clients: data.clients,
                     projects: data.projects,
@@ -500,10 +511,6 @@ class _CompactExpenseLineState extends State<_CompactExpenseLine> {
 
   @override
   Widget build(BuildContext context) {
-    widget.line.accountId ??=
-        widget.accounts.isEmpty ? null : widget.accounts.first.id;
-    widget.line.costCentreId ??=
-        widget.costCentres.isEmpty ? null : widget.costCentres.first.id;
     final calculated = widget.line.usesQuantityPrice;
     return Card(
         child: Padding(
@@ -521,6 +528,7 @@ class _CompactExpenseLineState extends State<_CompactExpenseLine> {
               DropdownButtonFormField<int>(
                   initialValue: widget.line.costCentreId,
                   decoration: const InputDecoration(labelText: 'Cost Centre'),
+                  hint: const Text('Select Cost Centre'),
                   items: widget.costCentres
                       .where((centre) => centre.isActive)
                       .map((centre) => DropdownMenuItem(
@@ -534,6 +542,7 @@ class _CompactExpenseLineState extends State<_CompactExpenseLine> {
                   initialValue: widget.line.accountId,
                   decoration:
                       const InputDecoration(labelText: 'Account / Category'),
+                  hint: const Text('Select Category'),
                   items: widget.accounts
                       .map((account) => DropdownMenuItem(
                           value: account.id,
@@ -626,6 +635,23 @@ class _CompactExpenseLineState extends State<_CompactExpenseLine> {
               ]
             ])));
   }
+}
+
+List<FinancialAccount> bankChargeExpenseAccounts(
+    List<FinancialAccount> accounts) {
+  final matches = accounts.where((account) {
+    final searchable = '${account.code} ${account.name}'.toLowerCase();
+    return const [
+      'bank',
+      'charge',
+      'stamp',
+      'nip',
+      'transfer fee',
+      'sms',
+      'alert fee',
+    ].any(searchable.contains);
+  }).toList();
+  return matches.isEmpty ? accounts : matches;
 }
 
 class _ExpenseLineDraft {

@@ -31,47 +31,68 @@ class AccountsSummaryCard extends StatelessWidget {
     required this.detail,
     this.icon = Icons.account_balance_wallet_outlined,
     this.emphasized = false,
+    this.showValue = true,
+    this.compact = false,
   });
   final String label;
   final double value;
   final String detail;
   final IconData icon;
   final bool emphasized;
+  final bool showValue;
+  final bool compact;
 
   @override
-  Widget build(BuildContext context) => Card(
-        color: emphasized ? CehTheme.navy : Colors.white,
-        child: Padding(
-          padding: const EdgeInsets.all(18),
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Icon(icon,
-                color: emphasized ? Colors.white : CehTheme.blue, size: 30),
-            const Spacer(),
-            Text(label,
-                style: TextStyle(
-                    color: emphasized ? Colors.white70 : Colors.black54,
-                    fontWeight: FontWeight.w700)),
-            const SizedBox(height: 4),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: Text(formatNaira(value),
-                  style: TextStyle(
-                      color: emphasized ? Colors.white : CehTheme.text,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900)),
-            ),
-            const SizedBox(height: 5),
-            Text(detail,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    color: emphasized ? Colors.white70 : Colors.black54,
-                    fontSize: 12)),
-          ]),
+  Widget build(BuildContext context) {
+    final iconWidget = Icon(icon,
+        color: emphasized ? Colors.white : CehTheme.blue,
+        size: compact ? 20 : 30);
+    final figures = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+                color: emphasized ? Colors.white70 : Colors.black54,
+                fontWeight: FontWeight.w700)),
+        SizedBox(height: compact ? 2 : 4),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(showValue ? formatNaira(value) : '₦••••••',
+              style: TextStyle(
+                  color: emphasized ? Colors.white : CehTheme.text,
+                  fontSize: compact ? 19 : 22,
+                  fontWeight: FontWeight.w900)),
         ),
-      );
+        SizedBox(height: compact ? 2 : 5),
+        Text(detail,
+            maxLines: compact ? 1 : 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+                color: emphasized ? Colors.white70 : Colors.black54,
+                fontSize: 12)),
+      ],
+    );
+    return Card(
+      color: emphasized ? CehTheme.navy : Colors.white,
+      child: Padding(
+        padding: EdgeInsets.all(compact ? 12 : 18),
+        child: compact
+            ? Row(children: [
+                iconWidget,
+                const SizedBox(width: 10),
+                Expanded(child: figures),
+              ])
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [iconWidget, const Spacer(), figures],
+              ),
+      ),
+    );
+  }
 }
 
 class AccountsResponsiveGrid extends StatelessWidget {
@@ -82,12 +103,18 @@ class AccountsResponsiveGrid extends StatelessWidget {
     this.tabletColumns = 2,
     this.desktopColumns = 4,
     this.childAspectRatio = 1.6,
+    this.mobileChildAspectRatio,
+    this.tabletChildAspectRatio,
+    this.desktopChildAspectRatio,
   });
   final List<Widget> children;
   final int mobileColumns;
   final int tabletColumns;
   final int desktopColumns;
   final double childAspectRatio;
+  final double? mobileChildAspectRatio;
+  final double? tabletChildAspectRatio;
+  final double? desktopChildAspectRatio;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
@@ -96,11 +123,16 @@ class AccountsResponsiveGrid extends StatelessWidget {
             : box.maxWidth >= 650
                 ? tabletColumns
                 : mobileColumns;
+        final aspectRatio = box.maxWidth >= 1100
+            ? desktopChildAspectRatio ?? childAspectRatio
+            : box.maxWidth >= 650
+                ? tabletChildAspectRatio ?? childAspectRatio
+                : mobileChildAspectRatio ?? childAspectRatio;
         return GridView.count(
           crossAxisCount: columns,
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
-          childAspectRatio: childAspectRatio,
+          childAspectRatio: aspectRatio,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           children: children,

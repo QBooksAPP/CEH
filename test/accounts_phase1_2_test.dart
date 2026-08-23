@@ -134,7 +134,10 @@ void main() {
   });
 
   test('draft edit form pre-populates category and evidence state', () {
-    expect(ui, contains('initialValue: _account ?? accounts.first.id'));
+    expect(ui,
+        contains("_account = (first['expense_account_id'] as num?)?.toInt()"));
+    expect(ui, contains('initialValue: _account'));
+    expect(ui, isNot(contains('_account ?? accounts.first.id')));
     expect(ui, contains('Existing receipt attached'));
     for (final field in [
       "expense['expense_date']",

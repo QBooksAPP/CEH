@@ -67,11 +67,35 @@ void main() {
     expect(generalCreate, isNot(contains('FAKE_BANK_REFERENCE')));
   });
 
+  test('new bank lines cannot silently submit a default classification', () {
+    expect(bankForm, contains("hint: const Text('Select Cost Centre')"));
+    expect(bankForm, contains("hint: const Text('Select Category')"));
+    expect(bankForm, isNot(contains('widget.line.accountId ??=')));
+    expect(bankForm, isNot(contains('widget.line.costCentreId ??=')));
+    expect(bankForm, contains('COST_CENTRE_AND_CATEGORY_REQUIRED'));
+  });
+
+  test('bank charge mode clears defaults and prefers charge accounts', () {
+    expect(bankForm, contains('bankChargeExpenseAccounts(data.accounts)'));
+    expect(bankForm, contains('line.accountId = null'));
+    expect(bankForm, contains("'stamp'"));
+    expect(bankForm, contains("'nip'"));
+    expect(bankForm, contains("'sms'"));
+  });
+
   test('petty cash uses calculated header and add-another-line language', () {
     expect(pettyForm, contains("labelText: 'Header Total (calculated)'"));
     expect(pettyForm, contains("label: const Text('Add another line')"));
     expect(pettyForm, contains('calculateExpenseLineTotal('));
     expect(pettyForm, contains('sumExpenseLineTotals('));
+  });
+
+  test('new petty cash lines require deliberate classification on submit', () {
+    expect(pettyForm, contains("hint: const Text('Select Cost Centre')"));
+    expect(pettyForm, contains("hint: const Text('Select Category')"));
+    expect(pettyForm, isNot(contains('_account ?? accounts.first.id')));
+    expect(pettyForm, isNot(contains('lookup.costCentres.first.id')));
+    expect(pettyForm, contains('COST_CENTRE_AND_CATEGORY_REQUIRED'));
   });
 
   test('accounting endpoints and migrations remain untouched by UX tests', () {

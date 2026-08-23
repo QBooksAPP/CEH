@@ -7,6 +7,7 @@ import 'package:ceh/models/session.dart';
 import 'package:ceh/screens/accounts/accounts_home_screen.dart';
 import 'package:ceh/screens/accounts/accounts_phase1_screens.dart';
 import 'package:ceh/screens/dashboard_screen.dart';
+import 'package:ceh/widgets/accounts_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -43,6 +44,21 @@ Widget app(Widget home, {bool viewAsOperator = false}) {
     controller: controller,
     child: MaterialApp(theme: CehTheme.light(), home: home),
   );
+}
+
+class MemoryAccountsFiguresPreference implements AccountsFiguresPreference {
+  MemoryAccountsFiguresPreference([this.value]);
+  bool? value;
+  int writes = 0;
+
+  @override
+  Future<bool?> read(int userId) async => value;
+
+  @override
+  Future<void> write(int userId, bool showFigures) async {
+    value = showFigures;
+    writes++;
+  }
 }
 
 DashboardScreen dashboard(CehSession session) => DashboardScreen(
@@ -129,6 +145,112 @@ void main() {
         scrollable: find.byType(Scrollable).first);
     expect(reports, findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Financial overview is compact on phone without overflow',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(app(AccountsHomeScreen(
+      session: adminSession,
+      liveData: false,
+      figuresPreference: MemoryAccountsFiguresPreference(true),
+    )));
+    await tester.pumpAndSettle();
+
+    final cards = find.byType(AccountsSummaryCard);
+    expect(cards, findsNWidgets(4));
+    expect(tester.getSize(cards.first).height, lessThan(150));
+    expect(find.text('Show figures'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Financial overview uses four efficient columns when wide',
+      (tester) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(app(AccountsHomeScreen(
+      session: adminSession,
+      liveData: false,
+      figuresPreference: MemoryAccountsFiguresPreference(true),
+    )));
+    await tester.pumpAndSettle();
+
+    final cards = find.byType(AccountsSummaryCard);
+    final tops =
+        List.generate(4, (index) => tester.getTopLeft(cards.at(index)));
+    expect(tops.map((point) => point.dy).toSet().length, 1);
+    expect(tops.map((point) => point.dx).toSet().length, 4);
+    expect(tester.getSize(cards.first).height, lessThan(150));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Show figures masks display but preserves underlying values',
+      (tester) async {
+    final preference = MemoryAccountsFiguresPreference(true);
+    await tester.pumpWidget(app(AccountsHomeScreen(
+      session: adminSession,
+      liveData: false,
+      figuresPreference: preference,
+    )));
+    await tester.pumpAndSettle();
+    expect(find.text(formatNaira(AccountsMockData.summaries.first.value)),
+        findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('accounts-show-figures')));
+    await tester.pumpAndSettle();
+    expect(find.text('₦••••••'), findsNWidgets(4));
+    expect(find.text(formatNaira(AccountsMockData.summaries.first.value)),
+        findsNothing);
+    final cards = tester
+        .widgetList<AccountsSummaryCard>(find.byType(AccountsSummaryCard))
+        .toList();
+    expect(cards.map((card) => card.value),
+        AccountsMockData.summaries.map((summary) => summary.value));
+    expect(preference.value, isFalse);
+    expect(preference.writes, 1);
+  });
+
+  testWidgets('Show figures choice is restored from local preference',
+      (tester) async {
+    final preference = MemoryAccountsFiguresPreference(false);
+    await tester.pumpWidget(app(AccountsHomeScreen(
+      session: adminSession,
+      liveData: false,
+      figuresPreference: preference,
+    )));
+    await tester.pumpAndSettle();
+    expect(find.text('₦••••••'), findsNWidgets(4));
+
+    await tester.tap(find.byKey(const ValueKey('accounts-show-figures')));
+    await tester.pumpAndSettle();
+    expect(preference.value, isTrue);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    await tester.pumpWidget(app(AccountsHomeScreen(
+      session: adminSession,
+      liveData: false,
+      figuresPreference: preference,
+    )));
+    await tester.pumpAndSettle();
+    expect(find.text(formatNaira(AccountsMockData.summaries.first.value)),
+        findsOneWidget);
+  });
+
+  testWidgets('sample overview remains clearly identified', (tester) async {
+    await tester.pumpWidget(app(AccountsHomeScreen(
+      session: adminSession,
+      liveData: true,
+      figuresPreference: MemoryAccountsFiguresPreference(false),
+    )));
+    await tester.pumpAndSettle();
+    expect(find.text('Prototype • sample data only'), findsOneWidget);
+    expect(find.text('Sample overview figures — not live balances'),
+        findsOneWidget);
   });
 
   testWidgets('navigation opens every Accounts prototype area', (tester) async {
