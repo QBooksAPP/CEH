@@ -78,6 +78,95 @@ function accounts_petty_cash_reference(mixed $number): ?string {
     return 'CEH-PC-' . str_pad((string)$value, 6, '0', STR_PAD_LEFT);
 }
 
+function accounts_general_expense_reference(mixed $number): ?string {
+    if ($number === null || $number === '') return null;
+    $value = (int)$number;
+    if ($value <= 0) accounts_fail('INVALID_GENERAL_EXPENSE_REFERENCE', 500);
+    return 'CEH-EX-' . str_pad((string)$value, 6, '0', STR_PAD_LEFT);
+}
+
+function accounts_normalized_name(mixed $value): string {
+    $name = production_clean_text($value, 200, 'SUPPLIER_REQUIRED');
+    $normalized = mb_strtolower(trim((string)preg_replace('/\s+/u', ' ', $name)), 'UTF-8');
+    if ($normalized === '') accounts_fail('SUPPLIER_REQUIRED');
+    return $normalized;
+}
+
+function accounts_supplier(PDO $db, mixed $supplierId, bool $active = true): array {
+    $id = (int)$supplierId;
+    if ($id <= 0) accounts_fail('SUPPLIER_REQUIRED');
+    $sql = "SELECT * FROM qbook_suppliers WHERE id=?" . ($active ? " AND is_active=1" : "");
+    $stmt = $db->prepare($sql);
+    $stmt->execute([$id]);
+    $supplier = $stmt->fetch();
+    if (!$supplier) accounts_fail('ACTIVE_SUPPLIER_REQUIRED', 409);
+    return $supplier;
+}
+
+/** Validate and normalize submitted expense lines. Monetary calculations use minor units. */
+function accounts_expense_lines(PDO $db, mixed $value, bool $require = true): array {
+    if (!is_array($value) || ($require && $value === [])) accounts_fail('EXPENSE_LINES_REQUIRED');
+    if (count($value) > 100) accounts_fail('TOO_MANY_EXPENSE_LINES');
+    $result = [];
+    foreach (array_values($value) as $index => $line) {
+        if (!is_array($line)) accounts_fail('INVALID_EXPENSE_LINE');
+        $amount = accounts_money_minor($line['amount'] ?? '');
+        $accountId = (int)($line['expense_account_id'] ?? 0);
+        $account = $db->prepare("SELECT id FROM qbook_accounts_chart WHERE id=? AND account_type='EXPENSE' AND is_active=1 AND is_postable=1");
+        $account->execute([$accountId]);
+        if (!$account->fetch()) accounts_fail('EXPENSE_ACCOUNT_REQUIRED');
+        $quantityRaw = trim((string)($line['quantity'] ?? ''));
+        $unitRaw = trim((string)($line['unit_price'] ?? ''));
+        if (($quantityRaw === '') !== ($unitRaw === '')) accounts_fail('QUANTITY_UNIT_PRICE_PAIR_REQUIRED');
+        $quantity = null; $unitPrice = null;
+        if ($quantityRaw !== '') {
+            if (!preg_match('/\A\d{1,12}(?:\.\d{1,4})?\z/', $quantityRaw) || (float)$quantityRaw <= 0) accounts_fail('INVALID_QUANTITY');
+            $quantity = number_format((float)$quantityRaw, 4, '.', '');
+            $unitPrice = accounts_money_minor($unitRaw);
+            $calculated = (int)round((float)$quantity * $unitPrice);
+            if ($calculated !== $amount) accounts_fail('LINE_QUANTITY_TOTAL_MISMATCH');
+        }
+        $client = accounts_nullable_id($line['client_id'] ?? null);
+        $project = accounts_nullable_id($line['project_id'] ?? null);
+        $mixer = accounts_nullable_id($line['mixer_id'] ?? null);
+        accounts_validate_dimensions($db, $client, $project, $mixer);
+        $result[] = [
+            'line_no' => $index + 1,
+            'item_description' => production_clean_text($line['description'] ?? $line['item_description'] ?? '', 500, 'LINE_DESCRIPTION_REQUIRED'),
+            'expense_account_id' => $accountId,
+            'amount_minor' => $amount,
+            'quantity' => $quantity,
+            'unit_price_minor' => $unitPrice,
+            'client_id' => $client, 'project_id' => $project, 'mixer_id' => $mixer,
+        ];
+    }
+    return $result;
+}
+
+function accounts_expense_lines_total(array $lines): int {
+    return array_reduce($lines, fn(int $sum, array $line): int => $sum + (int)$line['amount_minor'], 0);
+}
+
+function accounts_require_line_total(array $lines, int $headerMinor): void {
+    if ($lines === [] || accounts_expense_lines_total($lines) !== $headerMinor) accounts_fail('EXPENSE_LINE_TOTAL_MISMATCH');
+}
+
+function accounts_replace_expense_lines(PDO $db, string $table, int $expenseId, array $lines): void {
+    if (!in_array($table, ['qbook_petty_cash_expense_lines','qbook_general_expense_lines'], true)) accounts_fail('INVALID_LINE_TABLE', 500);
+    $db->prepare("DELETE FROM {$table} WHERE expense_id=?")->execute([$expenseId]);
+    $insert = $db->prepare("INSERT INTO {$table}(expense_id,line_no,item_description,expense_account_id,amount,quantity,unit_price,client_id,project_id,mixer_id) VALUES(?,?,?,?,?,?,?,?,?,?)");
+    foreach ($lines as $line) {
+        $insert->execute([$expenseId,$line['line_no'],$line['item_description'],$line['expense_account_id'],accounts_minor_decimal($line['amount_minor']),$line['quantity'],$line['unit_price_minor']===null?null:accounts_minor_decimal($line['unit_price_minor']),$line['client_id'],$line['project_id'],$line['mixer_id']]);
+    }
+}
+
+function accounts_load_expense_lines(PDO $db, string $table, int $expenseId, bool $lock = false): array {
+    if (!in_array($table, ['qbook_petty_cash_expense_lines','qbook_general_expense_lines'], true)) accounts_fail('INVALID_LINE_TABLE', 500);
+    $stmt=$db->prepare("SELECT * FROM {$table} WHERE expense_id=? ORDER BY line_no" . ($lock ? " FOR UPDATE" : ""));
+    $stmt->execute([$expenseId]);
+    return $stmt->fetchAll();
+}
+
 function accounts_audit(PDO $db, array $user, string $event, string $sourceType, int $sourceId, array $details = []): void {
     $json = $details === [] ? null : json_encode($details, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
     if ($details !== [] && $json === false) accounts_fail('AUDIT_SERIALIZATION_FAILED', 500);

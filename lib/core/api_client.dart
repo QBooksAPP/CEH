@@ -857,6 +857,90 @@ class CehApiClient {
         Map<String, dynamic>.from(data['expense'] as Map));
   }
 
+  Future<List<ExpenseSupplier>> expenseSuppliers(CehSession session) async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/suppliers.php'), headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'SUPPLIERS_FAILED');
+    return (data['suppliers'] as List? ?? const [])
+        .map((item) =>
+            ExpenseSupplier.fromJson(Map<String, dynamic>.from(item as Map)))
+        .toList();
+  }
+
+  Future<ExpenseSupplier> createExpenseSupplier(
+      CehSession session, Map<String, dynamic> payload) async {
+    final data = await _postJson(
+        session, 'supplier_create.php', payload, 'SUPPLIER_CREATE_FAILED');
+    return ExpenseSupplier.fromJson(
+        Map<String, dynamic>.from(data['supplier'] as Map));
+  }
+
+  Future<CreatedPettyCashExpense> createGeneralExpense(
+      CehSession session, Map<String, dynamic> payload) async {
+    final data = await _postJson(session, 'general_expense_create.php', payload,
+        'GENERAL_EXPENSE_CREATE_FAILED');
+    return CreatedPettyCashExpense.fromJson(
+        Map<String, dynamic>.from(data['expense'] as Map));
+  }
+
+  Future<void> updateGeneralExpense(
+          CehSession session, int expenseId, Map<String, dynamic> payload) =>
+      _postJson(
+              session,
+              'general_expense_update.php',
+              {'expense_id': expenseId, ...payload},
+              'GENERAL_EXPENSE_UPDATE_FAILED')
+          .then((_) {});
+
+  Future<void> submitGeneralExpense(CehSession session, int expenseId) =>
+      _postJson(session, 'general_expense_submit.php',
+              {'expense_id': expenseId}, 'GENERAL_EXPENSE_SUBMIT_FAILED')
+          .then((_) {});
+
+  Future<void> reviewGeneralExpense(CehSession session,
+          {required int expenseId,
+          required String action,
+          String reason = ''}) =>
+      _postJson(
+              session,
+              'general_expense_review.php',
+              {'expense_id': expenseId, 'action': action, 'reason': reason},
+              'GENERAL_EXPENSE_REVIEW_FAILED')
+          .then((_) {});
+
+  Future<List<Map<String, dynamic>>> generalExpenses(CehSession session) async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/general_expenses.php'),
+            headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'GENERAL_EXPENSES_FAILED');
+    return (data['expenses'] as List? ?? const [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
+  }
+
+  Future<void> reclassifyExpenseLine(CehSession session,
+          {required String sourceType,
+          required int sourceRecordId,
+          required int lineId,
+          required String reason,
+          required Map<String, dynamic> classification}) =>
+      _postJson(
+              session,
+              'expense_line_reclassify.php',
+              {
+                'source_type': sourceType,
+                'source_record_id': sourceRecordId,
+                'line_id': lineId,
+                'reason': reason,
+                ...classification
+              },
+              'EXPENSE_LINE_RECLASSIFY_FAILED')
+          .then((_) {});
+
   Future<void> submitPettyCashExpense(CehSession session, int expenseId) async {
     await _postJson(session, 'petty_cash_expense_submit.php',
         {'expense_id': expenseId}, 'PETTY_CASH_EXPENSE_SUBMIT_FAILED');
@@ -898,7 +982,8 @@ class CehApiClient {
   Future<void> voidExpense(CehSession session,
       {required String sourceType,
       required int sourceRecordId,
-      required String reason}) async {
+      required String reason,
+      String? voidBasis}) async {
     await _postJson(
         session,
         'expense_void.php',
@@ -906,6 +991,7 @@ class CehApiClient {
           'source_type': sourceType,
           'source_record_id': sourceRecordId,
           'reason': reason,
+          if (voidBasis != null) 'void_basis': voidBasis,
         },
         'EXPENSE_VOID_FAILED');
   }

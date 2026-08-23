@@ -10,6 +10,7 @@ import '../../models/client.dart';
 import '../../models/project.dart';
 import '../../models/session.dart';
 import '../../widgets/accounts_widgets.dart';
+import 'accounts_general_expense_screen.dart';
 
 class _AccountsLivePage extends StatelessWidget {
   const _AccountsLivePage({
@@ -235,6 +236,29 @@ class _AccountsBankingScreenState extends State<AccountsBankingScreen> {
                           if (row.status == 'POSSIBLE_DUPLICATE')
                             const Text(
                                 'Review this row before creating or matching any CEH transaction.'),
+                          if (row.amount < 0 &&
+                              const {'UNMATCHED', 'POSSIBLE_DUPLICATE'}
+                                  .contains(row.status))
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: OutlinedButton.icon(
+                                onPressed: row.status == 'POSSIBLE_DUPLICATE'
+                                    ? null
+                                    : () async {
+                                        await Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                                builder: (_) =>
+                                                    AccountsGeneralExpenseScreen(
+                                                        session: widget.session,
+                                                        statement: row)));
+                                        _retry();
+                                      },
+                                icon: const Icon(Icons.add_card_outlined),
+                                label:
+                                    const Text('Create Expense from Statement'),
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -270,6 +294,14 @@ class _AccountsExpensesScreenState extends State<AccountsExpensesScreen> {
 
   List<ConsolidatedExpense> _filtered(List<ConsolidatedExpense> expenses) {
     switch (_filter) {
+      case 'PETTY_CASH':
+        return expenses
+            .where((expense) => expense.sourceType == 'PETTY_CASH')
+            .toList();
+      case 'BANK':
+        return expenses
+            .where((expense) => expense.sourceType == 'BANK')
+            .toList();
       case 'PENDING':
         return expenses
             .where((expense) => const {
@@ -294,7 +326,9 @@ class _AccountsExpensesScreenState extends State<AccountsExpensesScreen> {
   String _actionSource(ConsolidatedExpense expense) =>
       expense.sourceType == 'PETTY_CASH'
           ? 'PETTY_CASH_EXPENSE'
-          : expense.sourceType;
+          : expense.sourceType == 'BANK'
+              ? 'GENERAL_EXPENSE'
+              : expense.sourceType;
 
   Future<String?> _expenseReason(String title, String warning) async {
     final controller = TextEditingController();
@@ -352,24 +386,145 @@ class _AccountsExpensesScreenState extends State<AccountsExpensesScreen> {
         sourceRecordId: expense.sourceRecordId));
   }
 
+  Future<void> _openGeneralDraft(ConsolidatedExpense expense) async {
+    try {
+      final rows = await _api.generalExpenses(widget.session);
+      final record = rows.cast<Map<String, dynamic>>().firstWhere(
+          (row) => (row['id'] as num).toInt() == expense.sourceRecordId);
+      if (!mounted) return;
+      await Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (_) => AccountsGeneralExpenseScreen(
+                  session: widget.session, expense: record)));
+      _retry();
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.code)));
+      }
+    }
+  }
+
   Future<void> _cancelExpense(ConsolidatedExpense expense) async {
     final reason = await _expenseReason('Cancel / Not Spent',
         'Use only when the expense did not occur. Otherwise require correction.');
     if (reason == null) return;
-    await _runExpenseAction(() => _api.reviewPettyCashExpense(widget.session,
-        expenseId: expense.sourceRecordId,
-        action: 'CANCELLED_NOT_SPENT',
-        reason: reason));
+    await _runExpenseAction(() => expense.sourceType == 'BANK'
+        ? _api.reviewGeneralExpense(widget.session,
+            expenseId: expense.sourceRecordId,
+            action: 'CANCELLED_NOT_SPENT',
+            reason: reason)
+        : _api.reviewPettyCashExpense(widget.session,
+            expenseId: expense.sourceRecordId,
+            action: 'CANCELLED_NOT_SPENT',
+            reason: reason));
   }
 
   Future<void> _voidPostedExpense(ConsolidatedExpense expense) async {
-    final reason = await _expenseReason('Void Posted Expense?',
-        'The original record, evidence and journal remain. A linked reversing journal will be posted.');
+    String? basis;
+    if (expense.sourceType == 'BANK') {
+      basis = await showDialog<String>(
+        context: context,
+        builder: (context) => SimpleDialog(
+          title: const Text('Bank expense Void basis'),
+          children: [
+            SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, 'DUPLICATE_ACCOUNTING'),
+                child: const Text('Duplicate accounting record')),
+            SimpleDialogOption(
+                onPressed: () =>
+                    Navigator.pop(context, 'ECONOMICALLY_NEVER_EXISTED'),
+                child: const Text('Transaction economically never existed')),
+            SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, 'ACTUAL_LINKED_REFUND'),
+                child: const Text('Actual bank refund already linked')),
+          ],
+        ),
+      );
+      if (basis == null) return;
+    }
+    final reason = await _expenseReason(
+        'Void Posted Expense?',
+        expense.sourceType == 'BANK'
+            ? 'Wrong coding must use Reclassify. A matched Zenith debit cannot be voided unless a valid duplicate or actual-refund rule is satisfied.'
+            : 'The original record, evidence and journal remain. A linked reversing journal will be posted.');
     if (reason == null) return;
     await _runExpenseAction(() => _api.voidExpense(widget.session,
         sourceType: _actionSource(expense),
         sourceRecordId: expense.sourceRecordId,
-        reason: reason));
+        reason: reason,
+        voidBasis: basis));
+  }
+
+  Future<void> _reclassifyLine(
+      ConsolidatedExpense expense, ExpenseLine line) async {
+    if (line.id == null) return;
+    final accounts = (await _api.financialAccounts(widget.session))
+        .where((account) =>
+            account.accountType == 'EXPENSE' &&
+            account.isActive &&
+            account.isPostable)
+        .toList();
+    if (!mounted || accounts.isEmpty) return;
+    var accountId =
+        accounts.any((account) => account.id == line.expenseAccountId)
+            ? line.expenseAccountId
+            : accounts.first.id;
+    final description = TextEditingController(text: line.description);
+    final reason = TextEditingController();
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text('Correct line ${line.lineNo}'),
+            content: Column(mainAxisSize: MainAxisSize.min, children: [
+              DropdownButtonFormField<int>(
+                  initialValue: accountId,
+                  decoration:
+                      const InputDecoration(labelText: 'Correct category'),
+                  items: accounts
+                      .map((account) => DropdownMenuItem(
+                          value: account.id, child: Text(account.name)))
+                      .toList(),
+                  onChanged: (value) => accountId = value ?? accountId),
+              TextField(
+                  controller: description,
+                  decoration:
+                      const InputDecoration(labelText: 'Line description')),
+              TextField(
+                  controller: reason,
+                  maxLines: 2,
+                  decoration:
+                      const InputDecoration(labelText: 'Reason (required)')),
+            ]),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Back')),
+              FilledButton(
+                  onPressed: () {
+                    if (reason.text.trim().isNotEmpty) {
+                      Navigator.pop(context, true);
+                    }
+                  },
+                  child: const Text('Post Reclassification')),
+            ],
+          ),
+        ) ??
+        false;
+    if (confirmed) {
+      await _runExpenseAction(() => _api.reclassifyExpenseLine(widget.session,
+              sourceType: _actionSource(expense),
+              sourceRecordId: expense.sourceRecordId,
+              lineId: line.id!,
+              reason: reason.text.trim(),
+              classification: {
+                'expense_account_id': accountId,
+                'description': description.text.trim(),
+              }));
+    }
+    description.dispose();
+    reason.dispose();
   }
 
   Future<void> _runExpenseAction(Future<void> Function() action) async {
@@ -391,10 +546,33 @@ class _AccountsExpensesScreenState extends State<AccountsExpensesScreen> {
         children: [
           const AccountsSectionTitle('Expense register',
               subtitle: 'Active, pending and voided accounting expenses'),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton.icon(
+              onPressed: () async {
+                await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => AccountsGeneralExpenseScreen(
+                            session: widget.session)));
+                _retry();
+              },
+              icon: const Icon(Icons.account_balance_outlined),
+              label: const Text('Add Bank-Paid Expense'),
+            ),
+          ),
+          const SizedBox(height: 12),
           Wrap(
             spacing: 8,
             children: [
-              for (final filter in ['ACTIVE', 'PENDING', 'VOIDED', 'ALL'])
+              for (final filter in [
+                'ACTIVE',
+                'PENDING',
+                'VOIDED',
+                'ALL',
+                'PETTY_CASH',
+                'BANK'
+              ])
                 ChoiceChip(
                   label: Text(filter[0] + filter.substring(1).toLowerCase()),
                   selected: _filter == filter,
@@ -440,6 +618,24 @@ class _AccountsExpensesScreenState extends State<AccountsExpensesScreen> {
                               'Supplier / Paid To', expense.supplier),
                           AccountsMetricLine(
                               'Description', expense.description),
+                          if (expense.lines.isNotEmpty) ...[
+                            const Divider(),
+                            for (final line in expense.lines)
+                              ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title:
+                                    Text('${line.lineNo}. ${line.description}'),
+                                subtitle: Text(
+                                    '${line.category}${line.client == null ? '' : ' • ${line.client}'}${line.project == null ? '' : ' • ${line.project}'}${line.equipment == null ? '' : ' • ${line.equipment}'}'),
+                                trailing: Text(formatNaira(line.amount),
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w800)),
+                                onTap: expense.lifecycleStatus == 'APPROVED' &&
+                                        line.id != null
+                                    ? () => _reclassifyLine(expense, line)
+                                    : null,
+                              ),
+                          ],
                           AccountsMetricLine(
                               'Client', expense.client ?? 'Not allocated'),
                           AccountsMetricLine(
@@ -483,22 +679,68 @@ class _AccountsExpensesScreenState extends State<AccountsExpensesScreen> {
                             child: AccountsStatusChip(expense.status),
                           ),
                           if (expense.lifecycleStatus == 'DRAFT')
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: TextButton.icon(
-                                onPressed: () => _deleteExpense(expense),
-                                icon: const Icon(Icons.delete_outline),
-                                label: const Text('Delete Draft'),
-                              ),
+                            Wrap(
+                              alignment: WrapAlignment.end,
+                              spacing: 8,
+                              children: [
+                                if (expense.sourceType == 'BANK')
+                                  OutlinedButton.icon(
+                                    onPressed: () => _openGeneralDraft(expense),
+                                    icon: const Icon(Icons.edit_outlined),
+                                    label: const Text('Continue Draft'),
+                                  ),
+                                TextButton.icon(
+                                  onPressed: () => _deleteExpense(expense),
+                                  icon: const Icon(Icons.delete_outline),
+                                  label: const Text('Delete Draft'),
+                                ),
+                              ],
                             ),
                           if (const {'SUBMITTED', 'CORRECTION_REQUIRED'}
                               .contains(expense.lifecycleStatus))
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: TextButton(
-                                onPressed: () => _cancelExpense(expense),
-                                child: const Text('Cancel / Not Spent'),
-                              ),
+                            Wrap(
+                              alignment: WrapAlignment.end,
+                              spacing: 8,
+                              children: [
+                                if (expense.sourceType == 'BANK' &&
+                                    expense.lifecycleStatus ==
+                                        'CORRECTION_REQUIRED')
+                                  OutlinedButton.icon(
+                                    onPressed: () => _openGeneralDraft(expense),
+                                    icon: const Icon(Icons.edit_outlined),
+                                    label: const Text('Correct & Resubmit'),
+                                  ),
+                                if (expense.sourceType == 'BANK' &&
+                                    expense.lifecycleStatus == 'SUBMITTED') ...[
+                                  FilledButton(
+                                      onPressed: () => _runExpenseAction(() =>
+                                          _api.reviewGeneralExpense(
+                                              widget.session,
+                                              expenseId: expense.sourceRecordId,
+                                              action: 'APPROVE')),
+                                      child: const Text('Approve')),
+                                  OutlinedButton(
+                                      onPressed: () async {
+                                        final reason = await _expenseReason(
+                                            'Correction Required',
+                                            'Return this expense for correction without posting it.');
+                                        if (reason != null) {
+                                          await _runExpenseAction(() =>
+                                              _api.reviewGeneralExpense(
+                                                  widget.session,
+                                                  expenseId:
+                                                      expense.sourceRecordId,
+                                                  action: 'CORRECTION_REQUIRED',
+                                                  reason: reason));
+                                        }
+                                      },
+                                      child: const Text('Correction Required')),
+                                ],
+                                TextButton(
+                                  onPressed: () => _cancelExpense(expense),
+                                  child: const Text('Cancel / Not Spent'),
+                                ),
+                              ],
                             ),
                           if (expense.lifecycleStatus == 'APPROVED')
                             Align(
@@ -1275,16 +1517,19 @@ class _AccountsPettyExpenseScreenState
   final _api = const CehApiClient();
   final _picker = ImagePicker();
   final _amount = TextEditingController();
+  final _firstLineAmount = TextEditingController();
   final _supplier = TextEditingController();
   final _description = TextEditingController();
   final _noReceiptReason = TextEditingController();
   final _reclassificationReason = TextEditingController();
   int? _custodian;
   int? _account;
+  int? _supplierId;
   int? _client;
   int? _project;
   int? _mixer;
   XFile? _receipt;
+  final List<Map<String, dynamic>> _additionalLines = [];
   bool _noReceipt = false;
   bool _saving = false;
   String _date = canonicalAccountsDate(DateTime.now());
@@ -1299,6 +1544,7 @@ class _AccountsPettyExpenseScreenState
       _amount.text = formatNgn(double.tryParse('${expense['amount']}') ?? 0)
           .replaceFirst('₦', '');
       _supplier.text = '${expense['supplier_paid_to'] ?? ''}';
+      _supplierId = (expense['supplier_id'] as num?)?.toInt();
       _description.text = '${expense['description'] ?? ''}';
       _noReceiptReason.text = '${expense['no_receipt_reason'] ?? ''}';
       _custodian = (expense['custodian_user_id'] as num?)?.toInt();
@@ -1309,6 +1555,20 @@ class _AccountsPettyExpenseScreenState
       _date = '${expense['expense_date']}';
       _issuedReference = expense['reference_no']?.toString();
       _noReceipt = _noReceiptReason.text.trim().isNotEmpty;
+      final existingLines = (expense['lines'] as List? ?? const [])
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .toList();
+      if (existingLines.isNotEmpty) {
+        final first = existingLines.first;
+        _firstLineAmount.text = '${first['amount'] ?? ''}';
+        _account = (first['expense_account_id'] as num?)?.toInt() ?? _account;
+        _client = (first['client_id'] as num?)?.toInt();
+        _project = (first['project_id'] as num?)?.toInt();
+        _mixer = (first['mixer_id'] as num?)?.toInt();
+        _additionalLines.addAll(existingLines.skip(1));
+      } else {
+        _firstLineAmount.text = '${expense['amount'] ?? ''}';
+      }
     }
     _lookups = _loadLookups();
   }
@@ -1320,12 +1580,14 @@ class _AccountsPettyExpenseScreenState
     final projectGroups = await Future.wait(
         clients.map((client) => _api.projects(widget.session, client.id)));
     final mixers = await _api.mixers(widget.session);
+    final suppliers = await _api.expenseSuppliers(widget.session);
     return _ExpenseLookups(
       overview: overview,
       accounts: accounts,
       clients: clients,
       projects: projectGroups.expand((items) => items).toList(),
       mixers: mixers,
+      suppliers: suppliers,
     );
   }
 
@@ -1347,6 +1609,7 @@ class _AccountsPettyExpenseScreenState
   void dispose() {
     for (final controller in [
       _amount,
+      _firstLineAmount,
       _supplier,
       _description,
       _noReceiptReason,
@@ -1437,9 +1700,44 @@ class _AccountsPettyExpenseScreenState
                     onChanged: (value) => _account = value),
                 const SizedBox(height: 12),
                 TextField(
-                    controller: _supplier,
+                    controller: _firstLineAmount,
+                    enabled: !widget.reclassifyPosted,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: const [NgnAmountInputFormatter()],
                     decoration:
-                        const InputDecoration(labelText: 'Supplier / Paid To')),
+                        const InputDecoration(labelText: 'Line 1 amount (₦)')),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int?>(
+                    initialValue: _supplierId,
+                    decoration: const InputDecoration(
+                        labelText: 'Supplier Master (preferred)'),
+                    items: [
+                      const DropdownMenuItem<int?>(
+                          value: null, child: Text('One-off / Other Payee')),
+                      ...lookup.suppliers
+                          .where((supplier) => supplier.isActive)
+                          .map((supplier) => DropdownMenuItem<int?>(
+                              value: supplier.id, child: Text(supplier.name)))
+                    ],
+                    onChanged: (value) => setState(() {
+                          _supplierId = value;
+                          if (value != null) {
+                            _supplier.text = lookup.suppliers
+                                .firstWhere((item) => item.id == value)
+                                .name;
+                          }
+                        })),
+                if (_supplierId == null)
+                  TextField(
+                      controller: _supplier,
+                      enabled: isUiAdmin(context, widget.session) ||
+                          widget.expense != null,
+                      decoration: InputDecoration(
+                          labelText: 'One-off / Other Payee',
+                          helperText: isUiAdmin(context, widget.session)
+                              ? 'Admin-only; no Supplier Master record is created'
+                              : 'Select a Supplier Master record')),
                 const SizedBox(height: 12),
                 TextField(
                     controller: _description,
@@ -1492,6 +1790,29 @@ class _AccountsPettyExpenseScreenState
                               '${mixer['code'] ?? mixer['name'] ?? mixer['id']}')))
                     ],
                     onChanged: (value) => setState(() => _mixer = value)),
+                if (!widget.reclassifyPosted) ...[
+                  const SizedBox(height: 16),
+                  const AccountsSectionTitle('Expense lines',
+                      subtitle: 'Header total must equal all line amounts'),
+                  for (var index = 0; index < _additionalLines.length; index++)
+                    Card(
+                        child: ListTile(
+                      title: Text(
+                          'Line ${index + 2} • ${_additionalLines[index]['description']}'),
+                      subtitle: Text(formatNaira(double.tryParse(
+                              '${_additionalLines[index]['amount']}') ??
+                          0)),
+                      trailing: IconButton(
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () =>
+                              setState(() => _additionalLines.removeAt(index))),
+                    )),
+                  OutlinedButton.icon(
+                    onPressed: () => _addExpenseLine(lookup, accounts),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Add Expense Line'),
+                  ),
+                ],
                 if (widget.reclassifyPosted) ...[
                   const SizedBox(height: 12),
                   TextField(
@@ -1611,11 +1932,20 @@ class _AccountsPettyExpenseScreenState
         'expense_date': _date,
         'amount': amount,
         'expense_account_id': accountId,
+        'supplier_id': _supplierId,
         'supplier_paid_to': _supplier.text,
         'description': _description.text,
-        if (_client != null) 'client_id': _client,
-        if (_project != null) 'project_id': _project,
-        if (_mixer != null) 'mixer_id': _mixer,
+        'lines': [
+          {
+            'description': _description.text,
+            'amount': parseNgnInput(_firstLineAmount.text) ?? amount,
+            'expense_account_id': accountId,
+            if (_client != null) 'client_id': _client,
+            if (_project != null) 'project_id': _project,
+            if (_mixer != null) 'mixer_id': _mixer,
+          },
+          ..._additionalLines,
+        ],
         if (_noReceipt) 'no_receipt_reason': _noReceiptReason.text,
       };
       if (widget.reclassifyPosted) {
@@ -1693,6 +2023,140 @@ class _AccountsPettyExpenseScreenState
       if (mounted) setState(() => _saving = false);
     }
   }
+
+  Future<void> _addExpenseLine(
+      _ExpenseLookups lookup, List<FinancialAccount> accounts) async {
+    final description = TextEditingController();
+    final amount = TextEditingController();
+    final quantity = TextEditingController();
+    final unitPrice = TextEditingController();
+    int account = accounts.first.id;
+    int? client;
+    int? project;
+    int? mixer;
+    final line = await showDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (context) => StatefulBuilder(
+            builder: (context, setDialogState) => AlertDialog(
+                  title: const Text('Add Expense Line'),
+                  content: SingleChildScrollView(
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    TextField(
+                        controller: description,
+                        decoration: const InputDecoration(
+                            labelText: 'Item / description')),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<int>(
+                        initialValue: account,
+                        decoration: const InputDecoration(
+                            labelText: 'Expense category'),
+                        items: accounts
+                            .map((a) => DropdownMenuItem(
+                                value: a.id, child: Text(a.name)))
+                            .toList(),
+                        onChanged: (v) => account = v ?? account),
+                    const SizedBox(height: 10),
+                    TextField(
+                        controller: amount,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        inputFormatters: const [NgnAmountInputFormatter()],
+                        decoration: const InputDecoration(
+                            labelText: 'Line amount (₦)')),
+                    const SizedBox(height: 10),
+                    TextField(
+                        controller: quantity,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        decoration: const InputDecoration(
+                            labelText: 'Quantity (optional)')),
+                    const SizedBox(height: 10),
+                    TextField(
+                        controller: unitPrice,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        inputFormatters: const [NgnAmountInputFormatter()],
+                        decoration: const InputDecoration(
+                            labelText: 'Unit price (optional)')),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<int?>(
+                        initialValue: client,
+                        decoration: const InputDecoration(
+                            labelText: 'Client (optional)'),
+                        items: [
+                          const DropdownMenuItem<int?>(
+                              value: null, child: Text('Not allocated')),
+                          ...lookup.clients.map((c) => DropdownMenuItem<int?>(
+                              value: c.id, child: Text(c.name)))
+                        ],
+                        onChanged: (v) => setDialogState(() {
+                              client = v;
+                              project = null;
+                            })),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<int?>(
+                        key: ValueKey('line-project-${client ?? 0}'),
+                        initialValue: project,
+                        decoration: const InputDecoration(
+                            labelText: 'Project (optional)'),
+                        items: [
+                          const DropdownMenuItem<int?>(
+                              value: null, child: Text('Not allocated')),
+                          ...lookup.projects
+                              .where((p) => p.clientId == client)
+                              .map((p) => DropdownMenuItem<int?>(
+                                  value: p.id, child: Text(p.name)))
+                        ],
+                        onChanged: client == null
+                            ? null
+                            : (v) => setDialogState(() => project = v)),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<int?>(
+                        initialValue: mixer,
+                        decoration: const InputDecoration(
+                            labelText: 'Equipment (optional)'),
+                        items: [
+                          const DropdownMenuItem<int?>(
+                              value: null, child: Text('Not allocated')),
+                          ...lookup.mixers.map((m) => DropdownMenuItem<int?>(
+                              value: (m['id'] as num).toInt(),
+                              child: Text('${m['code'] ?? m['name']}')))
+                        ],
+                        onChanged: (v) => mixer = v),
+                  ])),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Back')),
+                    FilledButton(
+                        onPressed: () {
+                          final parsed = parseNgnInput(amount.text);
+                          if (description.text.trim().isEmpty ||
+                              parsed == null) {
+                            return;
+                          }
+                          Navigator.pop(context, {
+                            'description': description.text.trim(),
+                            'amount': parsed,
+                            'expense_account_id': account,
+                            if (quantity.text.trim().isNotEmpty)
+                              'quantity': quantity.text.trim(),
+                            if (unitPrice.text.trim().isNotEmpty)
+                              'unit_price': parseNgnInput(unitPrice.text),
+                            if (client != null) 'client_id': client,
+                            if (project != null) 'project_id': project,
+                            if (mixer != null) 'mixer_id': mixer
+                          });
+                        },
+                        child: const Text('Add Line'))
+                  ],
+                )));
+    description.dispose();
+    amount.dispose();
+    quantity.dispose();
+    unitPrice.dispose();
+    if (line != null && mounted) setState(() => _additionalLines.add(line));
+  }
 }
 
 class _ExpenseLookups {
@@ -1702,10 +2166,12 @@ class _ExpenseLookups {
     required this.clients,
     required this.projects,
     required this.mixers,
+    required this.suppliers,
   });
   final PettyCashOverview overview;
   final List<FinancialAccount> accounts;
   final List<CehClient> clients;
   final List<CehProject> projects;
   final List<Map<String, dynamic>> mixers;
+  final List<ExpenseSupplier> suppliers;
 }

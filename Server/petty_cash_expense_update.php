@@ -7,15 +7,21 @@ accounts_endpoint(function() use($user,$input): array {
     return accounts_transaction($db,function() use($db,$user,$input,$id): array {
         $s=$db->prepare("SELECT * FROM qbook_petty_cash_expenses WHERE id=? FOR UPDATE");$s->execute([$id]);$old=$s->fetch();if(!$old) accounts_fail('EXPENSE_NOT_FOUND',404);
         $custodian=(int)$old['custodian_user_id'];if(!accounts_can_access_custodian($user,$custodian)) accounts_fail('FORBIDDEN',403);
-        if(!in_array($old['status'],['DRAFT','CORRECTION_REQUIRED'],true)) accounts_fail('EXPENSE_LOCKED',409);
-        accounts_custodian($db,$custodian,true);$minor=accounts_money_minor($input['amount']??$old['amount']);$account=(int)($input['expense_account_id']??$old['expense_account_id']);
-        $accountCheck=$db->prepare("SELECT id FROM qbook_accounts_chart WHERE id=? AND account_type='EXPENSE' AND is_active=1 AND is_postable=1");$accountCheck->execute([$account]);if(!$accountCheck->fetch()) accounts_fail('EXPENSE_ACCOUNT_REQUIRED');
-        $client=accounts_nullable_id($input['client_id']??$old['client_id']);$project=accounts_nullable_id($input['project_id']??$old['project_id']);$mixer=accounts_nullable_id($input['mixer_id']??$old['mixer_id']);accounts_validate_dimensions($db,$client,$project,$mixer);
-        if($old['status']==='CORRECTION_REQUIRED'){$available=accounts_custodian_balance($db,$custodian)['_available_minor']+accounts_money_minor($old['amount'],false);if($minor>$available) accounts_fail('INSUFFICIENT_PETTY_CASH',409);}
-        $db->prepare("UPDATE qbook_petty_cash_expenses SET expense_date=?,amount=?,expense_account_id=?,supplier_paid_to=?,description=?,client_id=?,project_id=?,mixer_id=?,no_receipt_reason=? WHERE id=?")->execute([
-          accounts_date($input['expense_date']??$old['expense_date']),accounts_minor_decimal($minor),$account,
-          production_clean_text($input['supplier_paid_to']??$old['supplier_paid_to'],200,'SUPPLIER_REQUIRED'),production_clean_text($input['description']??$old['description'],500,'DESCRIPTION_REQUIRED'),$client,$project,$mixer,
-          production_clean_text($input['no_receipt_reason']??($old['no_receipt_reason']??''),500,'INVALID_NO_RECEIPT_REASON',false)?:null,$id]);
-        accounts_audit($db,$user,'PETTY_CASH_EXPENSE_UPDATED','PETTY_CASH_EXPENSE',$id,['previous_status'=>$old['status'],'amount'=>accounts_minor_decimal($minor)]);return ['expense'=>['id'=>$id,'status'=>$old['status']]];
+        if(!in_array($old['status'],['DRAFT','CORRECTION_REQUIRED'],true)) accounts_fail('EXPENSE_LOCKED',409); accounts_custodian($db,$custodian,true);
+        $dateRaw=trim((string)($input['expense_date']??($old['expense_date']??'')));$date=$dateRaw===''?null:accounts_date($dateRaw);
+        $amountRaw=trim((string)($input['amount']??($old['amount']??'')));$minor=$amountRaw===''?null:accounts_money_minor($amountRaw);
+        $supplierId=accounts_nullable_id($input['supplier_id']??$old['supplier_id']);$supplier=$supplierId===null?null:accounts_supplier($db,$supplierId);
+        $supplierSnapshot=$supplier?$supplier['canonical_name']:production_clean_text($input['supplier_paid_to']??($old['supplier_paid_to']??''),200,'INVALID_SUPPLIER',false);
+        if($supplierId===null&&$supplierSnapshot!==''&&strtoupper((string)$user['role'])!=='ADMIN'&&(int)$old['line_model_version']===1) accounts_fail('ONE_OFF_PAYEE_ADMIN_ONLY',403);
+        $description=production_clean_text($input['description']??($old['description']??''),500,'INVALID_DESCRIPTION',false);
+        $lines=accounts_expense_lines($db,$input['lines']??[],false);
+        if($minor!==null&&$lines!==[]) accounts_require_line_total($lines,$minor);
+        if($old['status']==='CORRECTION_REQUIRED'&&$minor!==null){$available=accounts_custodian_balance($db,$custodian)['_available_minor']+accounts_money_minor($old['amount'],false);if($minor>$available) accounts_fail('INSUFFICIENT_PETTY_CASH',409);}
+        $legacyAccount=$lines[0]['expense_account_id']??$old['expense_account_id'];
+        $db->prepare("UPDATE qbook_petty_cash_expenses SET expense_date=?,amount=?,line_model_version=1,expense_account_id=?,supplier_id=?,supplier_paid_to=?,description=?,client_id=NULL,project_id=NULL,mixer_id=NULL,no_receipt_reason=? WHERE id=?")
+           ->execute([$date,$minor===null?null:accounts_minor_decimal($minor),$legacyAccount,$supplierId,$supplierSnapshot?:null,$description?:null,production_clean_text($input['no_receipt_reason']??($old['no_receipt_reason']??''),500,'INVALID_NO_RECEIPT_REASON',false)?:null,$id]);
+        accounts_replace_expense_lines($db,'qbook_petty_cash_expense_lines',$id,$lines);
+        accounts_audit($db,$user,'PETTY_CASH_EXPENSE_UPDATED','PETTY_CASH_EXPENSE',$id,['previous_status'=>$old['status'],'amount'=>$minor===null?null:accounts_minor_decimal($minor),'line_count'=>count($lines)]);
+        return ['expense'=>['id'=>$id,'status'=>$old['status']]];
     });
 });

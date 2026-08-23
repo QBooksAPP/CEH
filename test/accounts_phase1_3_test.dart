@@ -46,9 +46,11 @@ void main() {
     expect(delete, contains("qbook_require_role(\$user,['ADMIN'])"));
     expect(delete, contains("\$expense['status']!=='DRAFT'"));
     expect(delete, contains("\$expense['journal_id']!==null"));
-    expect(delete, contains("source_module='PETTY_CASH_EXPENSE'"));
+    expect(delete, contains('source_module=? AND source_record_id=?'));
+    expect(delete, contains("'PETTY_CASH_EXPENSE'"));
     expect(delete, contains('POSTED_EXPENSE_NOT_DELETABLE'));
-    expect(delete, contains("DELETE FROM qbook_petty_cash_expenses"));
+    expect(delete, contains("'qbook_petty_cash_expenses'"));
+    expect(delete, contains(r'DELETE FROM {$table}'));
   });
 
   test('SUBMITTED and CORRECTION_REQUIRED cannot be hard-deleted', () {
@@ -155,7 +157,9 @@ void main() {
     expect(expenses, contains('reversal_journal_reference'));
     expect(pettyExpenses, contains('voided_by_name'));
     expect(pettyExpenses, contains('void_reason'));
-    expect(ui, contains("['ACTIVE', 'PENDING', 'VOIDED', 'ALL']"));
+    for (final filter in ['ACTIVE', 'PENDING', 'VOIDED', 'ALL']) {
+      expect(ui, contains("'$filter'"));
+    }
     expect(ui, contains('Void Expense'));
   });
 
@@ -171,7 +175,7 @@ void main() {
     expect(review, contains('accounts_audit'));
     expect(voidExpense, contains("'EXPENSE_VOIDED'"));
     expect(voidExpense, contains('original_journal_reference'));
-    expect(voidExpense, contains('reversal_journal_reference'));
+    expect(voidExpense, contains("'reversal_journal_id'=>\$reversal['id']"));
   });
 
   test('reclassification never posts a Petty Cash or bank asset line', () {

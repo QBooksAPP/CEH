@@ -162,6 +162,51 @@ class CreatedPettyCashExpense {
       );
 }
 
+class ExpenseSupplier {
+  const ExpenseSupplier(
+      {required this.id, required this.name, required this.isActive});
+  final int id;
+  final String name;
+  final bool isActive;
+  factory ExpenseSupplier.fromJson(Map<String, dynamic> json) =>
+      ExpenseSupplier(
+          id: _int(json['id']),
+          name: '${json['canonical_name'] ?? ''}',
+          isActive: _bool(json['is_active']));
+}
+
+class ExpenseLine {
+  const ExpenseLine(
+      {required this.id,
+      required this.lineNo,
+      required this.description,
+      required this.amount,
+      required this.category,
+      required this.expenseAccountId,
+      this.client,
+      this.project,
+      this.equipment});
+  final int? id;
+  final int lineNo;
+  final String description;
+  final double amount;
+  final String category;
+  final int expenseAccountId;
+  final String? client;
+  final String? project;
+  final String? equipment;
+  factory ExpenseLine.fromJson(Map<String, dynamic> json) => ExpenseLine(
+      id: json['id'] == null ? null : _int(json['id']),
+      lineNo: _int(json['line_no']),
+      description: '${json['item_description'] ?? ''}',
+      amount: _double(json['amount']),
+      category: '${json['category'] ?? ''}',
+      expenseAccountId: _int(json['expense_account_id']),
+      client: json['client_name']?.toString(),
+      project: json['project_name']?.toString(),
+      equipment: json['mixer_code']?.toString());
+}
+
 class ConsolidatedExpense {
   const ConsolidatedExpense({
     required this.sourceRecordId,
@@ -169,6 +214,7 @@ class ConsolidatedExpense {
     required this.date,
     required this.amount,
     required this.category,
+    required this.expenseAccountId,
     required this.supplier,
     required this.description,
     required this.client,
@@ -190,6 +236,7 @@ class ConsolidatedExpense {
     this.reclassificationReason,
     this.reclassifiedBy,
     this.reclassifiedAt,
+    this.lines = const [],
   });
 
   final int sourceRecordId;
@@ -197,6 +244,7 @@ class ConsolidatedExpense {
   final String date;
   final double amount;
   final String category;
+  final int expenseAccountId;
   final String supplier;
   final String description;
   final String? client;
@@ -218,6 +266,7 @@ class ConsolidatedExpense {
   final String? reclassificationReason;
   final String? reclassifiedBy;
   final String? reclassifiedAt;
+  final List<ExpenseLine> lines;
 
   factory ConsolidatedExpense.fromJson(Map<String, dynamic> json) =>
       ConsolidatedExpense(
@@ -226,6 +275,7 @@ class ConsolidatedExpense {
         date: '${json['expense_date'] ?? ''}',
         amount: _double(json['amount']),
         category: '${json['category'] ?? ''}',
+        expenseAccountId: _int(json['expense_account_id']),
         supplier: '${json['supplier_paid_to'] ?? ''}',
         description: '${json['description'] ?? ''}',
         client: json['client_name']?.toString(),
@@ -253,6 +303,10 @@ class ConsolidatedExpense {
         reclassificationReason: json['reclassification_reason']?.toString(),
         reclassifiedBy: json['reclassified_by_name']?.toString(),
         reclassifiedAt: json['reclassified_at']?.toString(),
+        lines: (json['lines'] as List? ?? const [])
+            .map((line) =>
+                ExpenseLine.fromJson(Map<String, dynamic>.from(line as Map)))
+            .toList(),
       );
 }
 
