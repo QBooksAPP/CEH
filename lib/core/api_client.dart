@@ -781,6 +781,74 @@ class CehApiClient {
         .toList();
   }
 
+  Future<List<BillingInvoice>> invoices(CehSession session) async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/invoices.php'), headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'INVOICES_FAILED');
+    return (data['invoices'] as List? ?? const [])
+        .map((value) =>
+            BillingInvoice.fromJson(Map<String, dynamic>.from(value as Map)))
+        .toList();
+  }
+
+  Future<List<BillableProductionReport>> billableProductionReports(
+      CehSession session, int clientId) async {
+    final uri = Uri.parse('$baseUrl/billable_production_reports.php')
+        .replace(queryParameters: {'client_id': '$clientId'});
+    final response = await http
+        .get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'BILLABLE_REPORTS_FAILED');
+    return (data['reports'] as List? ?? const [])
+        .map((value) => BillableProductionReport.fromJson(
+            Map<String, dynamic>.from(value as Map)))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> saveInvoice(
+      CehSession session, Map<String, dynamic> payload) async {
+    final data = await _postJson(
+        session, 'invoice_save.php', payload, 'INVOICE_SAVE_FAILED');
+    return Map<String, dynamic>.from(data['invoice'] as Map);
+  }
+
+  Future<void> issueInvoice(CehSession session, int invoiceId) => _postJson(
+          session,
+          'invoice_issue.php',
+          {'invoice_id': invoiceId},
+          'INVOICE_ISSUE_FAILED')
+      .then((_) {});
+
+  Future<Map<String, dynamic>> saveCustomerReceipt(
+      CehSession session, Map<String, dynamic> payload) async {
+    final data = await _postJson(session, 'customer_receipt_save.php', payload,
+        'CUSTOMER_RECEIPT_SAVE_FAILED');
+    return Map<String, dynamic>.from(data['receipt'] as Map);
+  }
+
+  Future<Map<String, dynamic>> taxConfiguration(CehSession session) async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/tax_configuration.php'),
+            headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'TAX_CONFIGURATION_FAILED');
+    return data;
+  }
+
+  Future<Map<String, dynamic>> receivablesAgeing(CehSession session) async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/receivables_ageing.php'),
+            headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'RECEIVABLES_AGEING_FAILED');
+    return data;
+  }
+
   Future<List<CehBankAccount>> bankAccounts(CehSession session) async {
     final response = await http
         .get(Uri.parse('$baseUrl/bank_accounts.php'),

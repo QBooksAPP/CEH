@@ -156,7 +156,10 @@ void main() {
 
   test('bank reconciliation matches funding without reposting it', () {
     expect(bankMatch, contains('qbook_bank_matches'));
-    expect(bankMatch, contains("['PETTY_CASH_FUNDING','GENERAL_EXPENSE']"));
+    expect(
+        bankMatch,
+        contains(
+            "['PETTY_CASH_FUNDING','GENERAL_EXPENSE','CUSTOMER_RECEIPT']"));
     expect(bankMatch, contains("SET status='RECONCILED'"));
     expect(bankMatch, isNot(contains('accounts_post_journal')));
   });

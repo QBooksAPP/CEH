@@ -9,6 +9,7 @@ import '../../widgets/accounts_widgets.dart';
 import 'accounts_detail_screens.dart';
 import 'accounts_live_screens.dart';
 import 'accounts_phase1_screens.dart';
+import 'accounts_billing_screen.dart';
 
 abstract interface class AccountsFiguresPreference {
   Future<bool?> read(int userId);
@@ -97,7 +98,9 @@ class _AccountsHomeScreenState extends State<AccountsHomeScreen> {
           'Billing & Receivables',
           'Production reports and client balances',
           Icons.receipt_long_outlined,
-          BillingPrototypeScreen(session: session)),
+          liveData
+              ? AccountsBillingScreen(session: session)
+              : BillingPrototypeScreen(session: session)),
       _AccountsDestination(
           'Expenses',
           'Operating costs and receipts',

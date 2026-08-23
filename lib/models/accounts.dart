@@ -192,6 +192,66 @@ class CostCentre {
       isActive: _bool(json['is_active']));
 }
 
+class BillingInvoice {
+  const BillingInvoice(
+      {required this.id,
+      required this.reference,
+      required this.client,
+      required this.status,
+      required this.total,
+      required this.outstanding,
+      this.invoiceDate,
+      this.dueDate});
+  final int id;
+  final String reference;
+  final String client;
+  final String status;
+  final double total;
+  final double outstanding;
+  final String? invoiceDate;
+  final String? dueDate;
+  factory BillingInvoice.fromJson(Map<String, dynamic> json) => BillingInvoice(
+      id: _int(json['id']),
+      reference: '${json['reference'] ?? ''}',
+      client: '${json['client_name_snapshot'] ?? ''}',
+      status: '${json['display_status'] ?? json['status'] ?? ''}',
+      total: _double(json['total_amount']),
+      outstanding: _double(json['outstanding']),
+      invoiceDate: json['invoice_date']?.toString(),
+      dueDate: json['due_date']?.toString());
+}
+
+class BillableProductionReport {
+  const BillableProductionReport(
+      {required this.sessionId,
+      required this.reference,
+      required this.projectId,
+      required this.project,
+      required this.mixer,
+      required this.signedM3,
+      required this.billedM3,
+      required this.availableM3});
+  final int sessionId;
+  final String reference;
+  final int? projectId;
+  final String project;
+  final String mixer;
+  final double signedM3;
+  final double billedM3;
+  final double availableM3;
+  factory BillableProductionReport.fromJson(Map<String, dynamic> json) =>
+      BillableProductionReport(
+          sessionId: _int(json['production_session_id']),
+          reference: '${json['reference'] ?? ''}',
+          projectId:
+              json['project_id'] == null ? null : _int(json['project_id']),
+          project: '${json['project_site'] ?? ''}',
+          mixer: '${json['mixer'] ?? ''}',
+          signedM3: _double(json['signed_m3']),
+          billedM3: _double(json['billed_m3']),
+          availableM3: _double(json['available_m3']));
+}
+
 class ExpenseLine {
   const ExpenseLine(
       {required this.id,
