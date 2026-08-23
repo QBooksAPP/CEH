@@ -88,6 +88,29 @@ void main() {
       expect(migration, contains("'CUSTOMER_ADVANCES'"));
     });
 
+    test('account seeds resolve parents before MySQL-safe inserts', () {
+      expect(migration, contains('@ceh_v115_assets_parent_id'));
+      expect(migration, contains('@ceh_v115_tax_liabilities_parent_id'));
+      expect(migration, contains('@ceh_v115_liabilities_parent_id'));
+      expect(migration, contains('ON DUPLICATE KEY UPDATE code=VALUES(code)'));
+      expect(
+          migration,
+          isNot(contains(
+              "('1150','WHT Receivable','ASSET',(SELECT id FROM qbook_accounts_chart")));
+
+      final resume = File('Server/migration_v1_15_resume_after_1093.sql')
+          .readAsStringSync();
+      expect(resume, contains('v1_15_object_count'));
+      expect(resume, contains('@ceh_v115_existing_object_count=0'));
+      expect(resume, contains('@ceh_v115_parent_count=3'));
+      expect(resume, contains('@ceh_v115_existing_seed_account_count=0'));
+      expect(resume, contains('@ceh_v115_conflicting_account_count=0'));
+      expect(resume, contains('chk_ceh_v115_resume_guard'));
+      expect(resume, contains('CREATE TABLE qbook_financial_account_roles'));
+      expect(resume, contains('CREATE TABLE qbook_credit_note_allocations'));
+      expect(resume, contains('ALTER TABLE qbook_financial_evidence'));
+    });
+
     test('no statutory tax rate is seeded', () {
       expect(migration, isNot(contains('INSERT INTO qbook_tax_codes')));
       expect(server('invoice_issue.php'), contains('billing_account_role'));
@@ -147,8 +170,7 @@ void main() {
       expect(migration,
           contains('CREATE TABLE qbook_credit_note_production_releases'));
       expect(migration, contains('invoice_production_allocation_id'));
-      expect(migration,
-          contains('uq_credit_release_line_allocation'));
+      expect(migration, contains('uq_credit_release_line_allocation'));
       expect(migration, contains('released_m3 > 0'));
       expect(server('billable_production_reports.php'),
           contains('pa2.id=cr.invoice_production_allocation_id'));
@@ -157,11 +179,16 @@ void main() {
     });
 
     test('credit notes expose no incomplete void lifecycle', () {
-      expect(migration,
-          contains("qbook_credit_notes (\n  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT"));
-      final creditNotesStart = migration.indexOf('CREATE TABLE qbook_credit_notes');
-      final creditLinesStart = migration.indexOf('CREATE TABLE qbook_credit_note_lines');
-      final creditNotes = migration.substring(creditNotesStart, creditLinesStart);
+      expect(
+          migration,
+          contains(
+              "qbook_credit_notes (\n  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT"));
+      final creditNotesStart =
+          migration.indexOf('CREATE TABLE qbook_credit_notes');
+      final creditLinesStart =
+          migration.indexOf('CREATE TABLE qbook_credit_note_lines');
+      final creditNotes =
+          migration.substring(creditNotesStart, creditLinesStart);
       expect(creditNotes, contains("ENUM('DRAFT','ISSUED')"));
       expect(creditNotes, isNot(contains("'VOID'")));
     });

@@ -1,6 +1,114 @@
--- CEH Accounts Phase 3: Billing & Receivables (incremental, no postings/backfill).
--- Resolve parents before writing to qbook_accounts_chart. MySQL rejects selecting
--- the target table from a subquery inside the INSERT VALUES clause (error 1093).
+-- CEH Accounts Phase 3 controlled resume after the original first statement
+-- failed with MySQL error 1093. This script performs no financial postings.
+--
+-- STEP 1 (read-only): inspect the result sets below. The expected state is:
+--   v1_15_object_count = 0
+--   no rows returned by the account inspection query
+-- Stop for review if either expectation is false.
+
+SELECT COUNT(*) AS v1_15_object_count
+FROM information_schema.tables
+WHERE table_schema = DATABASE()
+  AND table_name IN (
+    'qbook_financial_account_roles',
+    'qbook_tax_codes',
+    'qbook_invoice_settings',
+    'qbook_invoice_references',
+    'qbook_customer_receipt_references',
+    'qbook_credit_note_references',
+    'qbook_invoices',
+    'qbook_invoice_lines',
+    'qbook_invoice_production_allocations',
+    'qbook_customer_receipts',
+    'qbook_customer_receipt_allocations',
+    'qbook_wht_deductions',
+    'qbook_advance_applications',
+    'qbook_credit_notes',
+    'qbook_credit_note_lines',
+    'qbook_credit_note_production_releases',
+    'qbook_credit_note_allocations'
+  );
+
+SELECT code,name,account_type,parent_id,is_postable
+FROM qbook_accounts_chart
+WHERE code IN ('1150','2310','2400')
+ORDER BY code;
+
+SELECT child.code AS child_code,
+       child.name AS child_name,
+       child.account_type,
+       child.is_postable,
+       parent.code AS parent_code,
+       parent.name AS parent_name
+FROM qbook_accounts_chart child
+LEFT JOIN qbook_accounts_chart parent ON parent.id=child.parent_id
+WHERE child.code IN ('1000','2000','2300')
+ORDER BY child.code;
+
+-- STEP 2: executable guard. This deliberately fails before any persistent write
+-- if a v1.15 table already exists, a required parent is missing, or an existing
+-- 1150/2310/2400 row conflicts with the approved mapping.
+SET @ceh_v115_existing_object_count := (
+  SELECT COUNT(*)
+  FROM information_schema.tables
+  WHERE table_schema = DATABASE()
+    AND table_name IN (
+      'qbook_financial_account_roles','qbook_tax_codes','qbook_invoice_settings',
+      'qbook_invoice_references','qbook_customer_receipt_references',
+      'qbook_credit_note_references','qbook_invoices','qbook_invoice_lines',
+      'qbook_invoice_production_allocations','qbook_customer_receipts',
+      'qbook_customer_receipt_allocations','qbook_wht_deductions',
+      'qbook_advance_applications','qbook_credit_notes',
+      'qbook_credit_note_lines','qbook_credit_note_production_releases',
+      'qbook_credit_note_allocations'
+    )
+);
+SET @ceh_v115_parent_count := (
+  SELECT COUNT(DISTINCT code)
+  FROM qbook_accounts_chart
+  WHERE code IN ('1000','2000','2300')
+);
+SET @ceh_v115_existing_seed_account_count := (
+  SELECT COUNT(*)
+  FROM qbook_accounts_chart
+  WHERE code IN ('1150','2310','2400')
+);
+SET @ceh_v115_conflicting_account_count := (
+  SELECT COUNT(*)
+  FROM qbook_accounts_chart child
+  LEFT JOIN qbook_accounts_chart parent ON parent.id=child.parent_id
+  WHERE child.code IN ('1150','2310','2400')
+    AND NOT (
+      (child.code='1150' AND child.name='WHT Receivable'
+       AND child.account_type='ASSET' AND child.is_postable=1
+       AND parent.code='1000')
+      OR
+      (child.code='2310' AND child.name='Output VAT Payable'
+       AND child.account_type='LIABILITY' AND child.is_postable=1
+       AND parent.code='2300')
+      OR
+      (child.code='2400' AND child.name='Customer Advances / Deposits'
+       AND child.account_type='LIABILITY' AND child.is_postable=1
+       AND parent.code='2000')
+    )
+);
+
+DROP TEMPORARY TABLE IF EXISTS ceh_v115_resume_guard;
+CREATE TEMPORARY TABLE ceh_v115_resume_guard (
+  ok TINYINT NOT NULL,
+  CONSTRAINT chk_ceh_v115_resume_guard CHECK(ok=1)
+);
+INSERT INTO ceh_v115_resume_guard(ok)
+VALUES(IF(
+  @ceh_v115_existing_object_count=0
+  AND @ceh_v115_parent_count=3
+  AND @ceh_v115_existing_seed_account_count=0
+  AND @ceh_v115_conflicting_account_count=0,
+  1,0
+));
+DROP TEMPORARY TABLE ceh_v115_resume_guard;
+
+-- STEP 3 (write): guarded, MySQL-safe, duplicate-resistant account seeds.
 SET @ceh_v115_assets_parent_id := (
   SELECT id FROM qbook_accounts_chart WHERE code='1000' LIMIT 1
 );
@@ -23,10 +131,20 @@ INSERT INTO qbook_accounts_chart(code,name,account_type,parent_id,is_postable)
 VALUES('2400','Customer Advances / Deposits','LIABILITY',@ceh_v115_liabilities_parent_id,1)
 ON DUPLICATE KEY UPDATE code=VALUES(code);
 
--- RESUME POINT AFTER FAILED ORIGINAL ACCOUNT SEED:
--- migration_v1_15_resume_after_1093.sql embeds the guarded account recovery and
--- the complete sequence from the CREATE TABLE below through the end of v1.15.
+-- STEP 4 (read-only): all three rows must be returned exactly once with these
+-- parent codes: 1150->1000, 2310->2300, 2400->2000.
+SELECT child.code AS child_code,
+       child.name AS child_name,
+       child.account_type,
+       child.is_postable,
+       parent.code AS parent_code
+FROM qbook_accounts_chart child
+JOIN qbook_accounts_chart parent ON parent.id=child.parent_id
+WHERE child.code IN ('1150','2310','2400')
+ORDER BY child.code;
 
+-- STEP 5: complete remaining v1.15 sequence. This is embedded here so the
+-- guarded recovery is fully self-contained for one phpMyAdmin execution.
 CREATE TABLE qbook_financial_account_roles (
   role_code VARCHAR(50) NOT NULL,
   account_id BIGINT UNSIGNED NOT NULL,
