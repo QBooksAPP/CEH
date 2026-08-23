@@ -138,15 +138,32 @@ void main() {
 
     test('credit-note production quantity release is explicit and bounded', () {
       final credit = server('credit_note_issue.php');
-      expect(credit, contains("'NO_QUANTITY_RELEASE'"));
-      expect(credit, contains("'RELEASE_QUANTITY'"));
+      expect(credit, contains("'production_releases'"));
+      expect(credit, contains("'invoice_production_allocation_id'"));
+      expect(credit, contains('ALLOCATION_SPECIFIC_RELEASE_REQUIRED'));
       expect(credit, contains('INVALID_RELEASED_M3'));
-      expect(credit, contains('QUANTITY_RELEASE_EXCEEDS_BILLED_M3'));
+      expect(credit, contains('QUANTITY_RELEASE_EXCEEDS_ALLOCATION_M3'));
       expect(credit, contains("'production_quantity'=>\$quantityAudit"));
-      expect(migration, contains("DEFAULT 'NO_QUANTITY_RELEASE'"));
+      expect(migration,
+          contains('CREATE TABLE qbook_credit_note_production_releases'));
+      expect(migration, contains('invoice_production_allocation_id'));
+      expect(migration,
+          contains('uq_credit_release_line_allocation'));
       expect(migration, contains('released_m3 > 0'));
       expect(server('billable_production_reports.php'),
-          contains("cl.quantity_treatment='RELEASE_QUANTITY'"));
+          contains('pa2.id=cr.invoice_production_allocation_id'));
+      expect(server('invoice_issue.php'),
+          contains('WHERE production_session_id=? ORDER BY id FOR UPDATE'));
+    });
+
+    test('credit notes expose no incomplete void lifecycle', () {
+      expect(migration,
+          contains("qbook_credit_notes (\n  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT"));
+      final creditNotesStart = migration.indexOf('CREATE TABLE qbook_credit_notes');
+      final creditLinesStart = migration.indexOf('CREATE TABLE qbook_credit_note_lines');
+      final creditNotes = migration.substring(creditNotesStart, creditLinesStart);
+      expect(creditNotes, contains("ENUM('DRAFT','ISSUED')"));
+      expect(creditNotes, isNot(contains("'VOID'")));
     });
 
     test('bank matching supports receipts without duplicate posting', () {

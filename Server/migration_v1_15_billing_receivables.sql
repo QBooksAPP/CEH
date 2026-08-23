@@ -169,7 +169,7 @@ CREATE TABLE qbook_advance_applications (
 CREATE TABLE qbook_credit_notes (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, reference_no BIGINT UNSIGNED NOT NULL, invoice_id BIGINT UNSIGNED NOT NULL,
   credit_date DATE NOT NULL, reason VARCHAR(500) NOT NULL, net_amount DECIMAL(18,2) NOT NULL, vat_amount DECIMAL(18,2) NOT NULL, total_amount DECIMAL(18,2) NOT NULL,
-  status ENUM('DRAFT','ISSUED','VOID') NOT NULL DEFAULT 'DRAFT', journal_id BIGINT UNSIGNED NULL, created_by BIGINT UNSIGNED NOT NULL, issued_by BIGINT UNSIGNED NULL,
+  status ENUM('DRAFT','ISSUED') NOT NULL DEFAULT 'DRAFT', journal_id BIGINT UNSIGNED NULL, created_by BIGINT UNSIGNED NOT NULL, issued_by BIGINT UNSIGNED NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, issued_at DATETIME NULL,
   PRIMARY KEY(id), UNIQUE KEY uq_credit_reference(reference_no), UNIQUE KEY uq_credit_journal(journal_id), KEY idx_credit_invoice(invoice_id,status),
   CONSTRAINT fk_credit_reference FOREIGN KEY(reference_no) REFERENCES qbook_credit_note_references(reference_no) ON UPDATE RESTRICT ON DELETE RESTRICT,
@@ -185,20 +185,30 @@ CREATE TABLE qbook_credit_note_lines (
   line_no INT UNSIGNED NOT NULL, description VARCHAR(500) NOT NULL, revenue_account_id BIGINT UNSIGNED NOT NULL,
   net_amount DECIMAL(18,2) NOT NULL, vat_amount DECIMAL(18,2) NOT NULL, gross_amount DECIMAL(18,2) NOT NULL,
   project_id BIGINT UNSIGNED NULL, mixer_id BIGINT UNSIGNED NULL,
-  quantity_treatment ENUM('NO_QUANTITY_RELEASE','RELEASE_QUANTITY') NOT NULL DEFAULT 'NO_QUANTITY_RELEASE',
-  released_m3 DECIMAL(10,2) NULL,
   PRIMARY KEY(id), UNIQUE KEY uq_credit_line(credit_note_id,line_no),
-  KEY idx_credit_line_quantity_release(invoice_line_id,quantity_treatment),
+  KEY idx_credit_line_invoice_line(invoice_line_id),
   CONSTRAINT fk_credit_line_note FOREIGN KEY(credit_note_id) REFERENCES qbook_credit_notes(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
   CONSTRAINT fk_credit_line_invoice FOREIGN KEY(invoice_line_id) REFERENCES qbook_invoice_lines(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
   CONSTRAINT fk_credit_line_account FOREIGN KEY(revenue_account_id) REFERENCES qbook_accounts_chart(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
   CONSTRAINT fk_credit_line_project FOREIGN KEY(project_id) REFERENCES qbook_projects(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
   CONSTRAINT fk_credit_line_mixer FOREIGN KEY(mixer_id) REFERENCES qbook_mixers(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
-  CONSTRAINT chk_credit_line_total CHECK(net_amount>=0 AND vat_amount>=0 AND gross_amount>0 AND gross_amount=net_amount+vat_amount),
-  CONSTRAINT chk_credit_line_quantity_release CHECK(
-    (quantity_treatment='NO_QUANTITY_RELEASE' AND released_m3 IS NULL) OR
-    (quantity_treatment='RELEASE_QUANTITY' AND released_m3 > 0)
-  )
+  CONSTRAINT chk_credit_line_total CHECK(net_amount>=0 AND vat_amount>=0 AND gross_amount>0 AND gross_amount=net_amount+vat_amount)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE qbook_credit_note_production_releases (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  credit_note_line_id BIGINT UNSIGNED NOT NULL,
+  invoice_production_allocation_id BIGINT UNSIGNED NOT NULL,
+  released_m3 DECIMAL(10,2) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY(id),
+  UNIQUE KEY uq_credit_release_line_allocation(credit_note_line_id,invoice_production_allocation_id),
+  KEY idx_credit_release_allocation(invoice_production_allocation_id),
+  CONSTRAINT fk_credit_release_line FOREIGN KEY(credit_note_line_id)
+    REFERENCES qbook_credit_note_lines(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CONSTRAINT fk_credit_release_allocation FOREIGN KEY(invoice_production_allocation_id)
+    REFERENCES qbook_invoice_production_allocations(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CONSTRAINT chk_credit_release_positive CHECK(released_m3 > 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE qbook_credit_note_allocations (

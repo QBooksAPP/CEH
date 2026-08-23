@@ -20,37 +20,50 @@ accounts_endpoint(function()use($user,$in):array{
             $already=$db->prepare("SELECT COALESCE(SUM(cl.gross_amount),0) FROM qbook_credit_note_lines cl JOIN qbook_credit_notes c ON c.id=cl.credit_note_id AND c.status='ISSUED' WHERE cl.invoice_line_id=?");
             $already->execute([$lid]); $am=accounts_money_minor((string)$already->fetchColumn(),false);
             if($am+$g>$originalGross) accounts_fail('CREDIT_EXCEEDS_INVOICE_LINE',409);
-            $treatment=strtoupper((string)($x['quantity_treatment']??'NO_QUANTITY_RELEASE'));
-            if(!in_array($treatment,['NO_QUANTITY_RELEASE','RELEASE_QUANTITY'],true)) accounts_fail('INVALID_QUANTITY_TREATMENT');
-            $released=null;
-            $pa=$db->prepare("SELECT billed_m3 FROM qbook_invoice_production_allocations WHERE invoice_line_id=? AND status='COMMITTED' FOR UPDATE");
-            $pa->execute([$lid]); $allocation=$pa->fetch();
-            if($treatment==='RELEASE_QUANTITY'){
-                if(!$allocation) accounts_fail('PRODUCTION_QUANTITY_RELEASE_NOT_AVAILABLE',409);
-                $releasedRaw=trim((string)($x['released_m3']??''));
+            if(array_key_exists('released_m3',$x)||array_key_exists('quantity_treatment',$x)) accounts_fail('ALLOCATION_SPECIFIC_RELEASE_REQUIRED');
+            $releaseInput=$x['production_releases']??[];
+            if(!is_array($releaseInput)) accounts_fail('INVALID_PRODUCTION_RELEASES');
+            $releaseInput=array_values($releaseInput);
+            usort($releaseInput,static fn(mixed $a,mixed $b):int=>(int)($a['invoice_production_allocation_id']??0)<=>(int)($b['invoice_production_allocation_id']??0));
+            $releases=[]; $seen=[];
+            foreach($releaseInput as $release){
+                if(!is_array($release)) accounts_fail('INVALID_PRODUCTION_RELEASE');
+                $allocationId=(int)($release['invoice_production_allocation_id']??0);
+                if($allocationId<=0||isset($seen[$allocationId])) accounts_fail('INVALID_PRODUCTION_ALLOCATION_RELEASE');
+                $seen[$allocationId]=true;
+                $releasedRaw=trim((string)($release['released_m3']??''));
                 if(!preg_match('/\A\d{1,8}(?:\.\d{1,2})?\z/',$releasedRaw)||(float)$releasedRaw<=0) accounts_fail('INVALID_RELEASED_M3');
                 $released=number_format((float)$releasedRaw,2,'.','');
-                $used=$db->prepare("SELECT COALESCE(SUM(cl.released_m3),0) FROM qbook_credit_note_lines cl JOIN qbook_credit_notes cn ON cn.id=cl.credit_note_id AND cn.status='ISSUED' WHERE cl.invoice_line_id=? AND cl.quantity_treatment='RELEASE_QUANTITY'");
-                $used->execute([$lid]);
-                if((float)$used->fetchColumn()+(float)$released>(float)$allocation['billed_m3']) accounts_fail('QUANTITY_RELEASE_EXCEEDS_BILLED_M3',409);
-            } elseif(array_key_exists('released_m3',$x)&&trim((string)$x['released_m3'])!=='') accounts_fail('RELEASED_M3_NOT_ALLOWED');
+                $pa=$db->prepare("SELECT id,billed_m3 FROM qbook_invoice_production_allocations WHERE id=? AND invoice_line_id=? AND status='COMMITTED' FOR UPDATE");
+                $pa->execute([$allocationId,$lid]); $allocation=$pa->fetch();
+                if(!$allocation) accounts_fail('PRODUCTION_ALLOCATION_RELEASE_MISMATCH',409);
+                $used=$db->prepare("SELECT COALESCE(SUM(cr.released_m3),0) FROM qbook_credit_note_production_releases cr JOIN qbook_credit_note_lines cl ON cl.id=cr.credit_note_line_id JOIN qbook_credit_notes cn ON cn.id=cl.credit_note_id AND cn.status='ISSUED' WHERE cr.invoice_production_allocation_id=?");
+                $used->execute([$allocationId]);
+                if((float)$used->fetchColumn()+(float)$released>(float)$allocation['billed_m3']) accounts_fail('QUANTITY_RELEASE_EXCEEDS_ALLOCATION_M3',409);
+                $releases[]=['invoice_production_allocation_id'=>$allocationId,'released_m3'=>$released];
+            }
             $v=0; $n=$g;
             if($originalGross>0&&accounts_money_minor($ol['vat_amount'],false)>0){
                 $v=(int)round($g*accounts_money_minor($ol['vat_amount'],false)/$originalGross); $n=$g-$v;
             }
-            $net+=$n; $vat+=$v; $gross+=$g; $lines[]=[$idx+1,$ol,$n,$v,$g,$treatment,$released];
+            $net+=$n; $vat+=$v; $gross+=$g; $lines[]=[$idx+1,$ol,$n,$v,$g,$releases];
         }
         if($gross>$invoice['outstanding_minor']) accounts_fail('CREDIT_EXCEEDS_OUTSTANDING',409);
         $date=accounts_date($in['credit_date']??gmdate('Y-m-d'));
         $db->prepare("INSERT INTO qbook_credit_notes(reference_no,invoice_id,credit_date,reason,net_amount,vat_amount,total_amount,created_by)VALUES(?,?,?,?,?,?,?,?)")
             ->execute([$ref,$invoice['id'],$date,$reason,accounts_minor_decimal($net),accounts_minor_decimal($vat),accounts_minor_decimal($gross),$user['id']]);
         $cid=(int)$db->lastInsertId();
-        $il=$db->prepare("INSERT INTO qbook_credit_note_lines(credit_note_id,invoice_line_id,line_no,description,revenue_account_id,net_amount,vat_amount,gross_amount,project_id,mixer_id,quantity_treatment,released_m3)VALUES(?,?,?,?,?,?,?,?,?,?,?,?)");
+        $il=$db->prepare("INSERT INTO qbook_credit_note_lines(credit_note_id,invoice_line_id,line_no,description,revenue_account_id,net_amount,vat_amount,gross_amount,project_id,mixer_id)VALUES(?,?,?,?,?,?,?,?,?,?)");
+        $releaseInsert=$db->prepare("INSERT INTO qbook_credit_note_production_releases(credit_note_line_id,invoice_production_allocation_id,released_m3)VALUES(?,?,?)");
         $jl=[]; $quantityAudit=[];
-        foreach($lines as[$no,$ol,$n,$v,$g,$treatment,$released]){
-            $il->execute([$cid,$ol['id'],$no,$reason,$ol['revenue_account_id'],accounts_minor_decimal($n),accounts_minor_decimal($v),accounts_minor_decimal($g),$ol['project_id'],$ol['mixer_id'],$treatment,$released]);
+        foreach($lines as[$no,$ol,$n,$v,$g,$releases]){
+            $il->execute([$cid,$ol['id'],$no,$reason,$ol['revenue_account_id'],accounts_minor_decimal($n),accounts_minor_decimal($v),accounts_minor_decimal($g),$ol['project_id'],$ol['mixer_id']]);
+            $creditLineId=(int)$db->lastInsertId();
             $jl[]=['account_id'=>(int)$ol['revenue_account_id'],'debit_minor'=>$n,'credit_minor'=>0,'description'=>$reason,'client_id'=>(int)$invoice['client_id'],'project_id'=>$ol['project_id'],'mixer_id'=>$ol['mixer_id']];
-            $quantityAudit[]=['invoice_line_id'=>(int)$ol['id'],'quantity_treatment'=>$treatment,'released_m3'=>$released];
+            foreach($releases as $release){
+                $releaseInsert->execute([$creditLineId,$release['invoice_production_allocation_id'],$release['released_m3']]);
+                $quantityAudit[]=['credit_note_line_id'=>$creditLineId,'invoice_line_id'=>(int)$ol['id'],'invoice_production_allocation_id'=>$release['invoice_production_allocation_id'],'released_m3'=>$release['released_m3']];
+            }
         }
         if($vat>0) $jl[]=['account_id'=>billing_account_role($db,'OUTPUT_VAT_PAYABLE'),'debit_minor'=>$vat,'credit_minor'=>0,'description'=>'VAT credit '.billing_ref('CREDIT_NOTE',$ref),'client_id'=>(int)$invoice['client_id']];
         $jl[]=['account_id'=>billing_account_role($db,'TRADE_RECEIVABLES'),'debit_minor'=>0,'credit_minor'=>$gross,'description'=>billing_ref('CREDIT_NOTE',$ref),'client_id'=>(int)$invoice['client_id']];
