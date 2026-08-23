@@ -273,17 +273,33 @@ class _AccountsBillingSettingsScreenState
         body: _configuration == null
             ? const Center(child: CircularProgressIndicator())
             : ListView(padding: const EdgeInsets.all(18), children: [
-                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Expanded(
-                      child: AccountsSectionTitle('Tax Configuration',
-                          subtitle:
-                              'Effective-dated VAT and WHT settings. Rates already snapshotted on transactions remain unchanged.')),
-                  FilledButton.icon(
+                LayoutBuilder(builder: (context, constraints) {
+                  final narrow = constraints.maxWidth < 600;
+                  const title = AccountsSectionTitle('Tax Configuration',
+                      subtitle:
+                          'Effective-dated VAT and WHT settings. Rates already snapshotted on transactions remain unchanged.');
+                  final button = FilledButton.icon(
                       key: const ValueKey('add-tax-code'),
                       onPressed: _busy ? null : _addTaxCode,
                       icon: const Icon(Icons.add),
-                      label: const Text('Add Tax Code'))
-                ]),
+                      label: const Text('Add Tax Code'));
+                  if (narrow) {
+                    return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          title,
+                          const SizedBox(height: 12),
+                          Align(alignment: Alignment.centerLeft, child: button),
+                        ]);
+                  }
+                  return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Expanded(child: title),
+                        const SizedBox(width: 16),
+                        button,
+                      ]);
+                }),
                 for (final code in codes)
                   Card(
                       child: SwitchListTile(
@@ -291,7 +307,7 @@ class _AccountsBillingSettingsScreenState
                               style:
                                   const TextStyle(fontWeight: FontWeight.w700)),
                           subtitle: Text(
-                              '${code['tax_type']} • ${code['rate_percent']}%${code['tax_type'] == 'WHT' ? ' • ${code['calculation_base']}' : ''}\n${displayAccountsDate('${code['effective_from']}')} → ${code['effective_to'] == null ? 'No end date' : displayAccountsDate('${code['effective_to']}')}'),
+                              '${code['tax_type']} • ${formatBillingTaxRate(code['rate_percent'])}${code['tax_type'] == 'WHT' ? ' • ${code['calculation_base']}' : ''}\n${displayAccountsDate('${code['effective_from']}')} → ${code['effective_to'] == null ? 'No end date' : displayAccountsDate('${code['effective_to']}')}'),
                           value: '${code['is_active']}' == '1' ||
                               code['is_active'] == true,
                           onChanged: _busy

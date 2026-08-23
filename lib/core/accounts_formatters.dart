@@ -34,6 +34,13 @@ String formatNgn(num value) {
   return '${negative ? '−' : ''}₦$grouped.${parts.last}';
 }
 
+/// Formats database-backed Billing tax rates for people, without changing the
+/// stored DECIMAL precision or the immutable transaction snapshot.
+String formatBillingTaxRate(Object? value) {
+  final rate = value is num ? value.toDouble() : double.tryParse('$value');
+  return '${(rate ?? 0).toStringAsFixed(2)}%';
+}
+
 double? parseNgnInput(String value) {
   final normalized = value.replaceAll(',', '').trim();
   if (!RegExp(r'^\d+(?:\.\d{1,2})?$').hasMatch(normalized)) return null;

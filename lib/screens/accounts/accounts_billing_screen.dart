@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/accounts_formatters.dart';
 import '../../core/api_client.dart';
 import '../../models/accounts.dart';
 import '../../models/client.dart';
@@ -131,6 +132,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
   final _description = TextEditingController();
   String _vatMode = 'NONE';
   int? _vatTaxCodeId;
+  int? _invoiceId;
   List<Map<String, dynamic>> _vatCodes = const [];
   bool _saving = false;
   @override
@@ -197,6 +199,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
     setState(() => _saving = true);
     try {
       final saved = await widget.api.saveInvoice(widget.session, {
+        if (_invoiceId != null) 'id': _invoiceId,
         'client_id': _client!.id,
         'invoice_date': DateTime.now().toIso8601String().substring(0, 10),
         'payment_term': 'ADVANCE_PAYMENT',
@@ -228,9 +231,15 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
           }
         ]
       });
+      _invoiceId = (saved['id'] as num).toInt();
       if (issue) {
-        await widget.api
-            .issueInvoice(widget.session, (saved['id'] as num).toInt());
+        try {
+          await widget.api.issueInvoice(widget.session, _invoiceId!);
+        } on ApiException catch (e) {
+          _message(
+              'Draft ${saved['reference'] ?? ''} was saved, but Issue failed: ${e.code}');
+          return;
+        }
       }
       if (mounted) {
         _message(issue ? 'Invoice issued.' : 'Invoice draft saved.');
@@ -325,7 +334,8 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
               items: _vatCodes
                   .map((c) => DropdownMenuItem(
                       value: (c['id'] as num).toInt(),
-                      child: Text('${c['name']} • ${c['rate_percent']}%')))
+                      child: Text(
+                          '${c['name']} • ${formatBillingTaxRate(c['rate_percent'])}')))
                   .toList(),
               onChanged: (v) => setState(() => _vatTaxCodeId = v))
         ],

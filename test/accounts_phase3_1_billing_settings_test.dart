@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:ceh/core/api_client.dart';
+import 'package:ceh/core/accounts_formatters.dart';
 import 'package:ceh/models/session.dart';
 import 'package:ceh/screens/accounts/accounts_billing_settings_screen.dart';
 import 'package:flutter/material.dart';
@@ -84,6 +85,38 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('save-invoice-settings')), findsOneWidget);
     expect(find.text('Advance Payment'), findsWidgets);
+  });
+
+  testWidgets('narrow Android layout uses full-width readable sections',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(const MaterialApp(
+        home: AccountsBillingSettingsScreen(
+            session: adminSession, api: BillingSettingsApi())));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    final title = tester.getRect(find.text('Tax Configuration'));
+    final card = tester.getRect(find.byType(Card).first);
+    expect(title.width, greaterThan(120));
+    expect(card.width, greaterThan(300));
+    expect(find.textContaining('VAT • 7.50%'), findsOneWidget);
+
+    await tester.drag(find.byType(ListView), const Offset(0, -900));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('save-invoice-settings')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  test('Billing percentages always display exactly two decimals', () {
+    expect(formatBillingTaxRate('7.500000'), '7.50%');
+    expect(formatBillingTaxRate('2'), '2.00%');
+    expect(formatBillingTaxRate(5), '5.00%');
+    expect(formatBillingTaxRate('10.000000'), '10.00%');
   });
 
   test('backend owns tax roles and preserves rate history', () {

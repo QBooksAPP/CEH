@@ -30,6 +30,10 @@ function billing_percent_amount(int $baseMinor,string $rate): int {
 function billing_inclusive_net(int $grossMinor,string $rate): int {
     $millionths=(int)round((float)$rate*1000000); return intdiv($grossMinor*100000000+intdiv(100000000+$millionths,2),100000000+$millionths);
 }
+function billing_format_percent(mixed $rate): string {
+    if (!is_numeric($rate)) return '0.00%';
+    return number_format((float)$rate, 2, '.', '').'%';
+}
 function billing_invoice_lines(PDO $db,array $input,int $clientId,string $vatMode,?array $tax): array {
     $raw=$input['lines']??null; if(!is_array($raw)||$raw===[]||count($raw)>100) accounts_fail('INVOICE_LINES_REQUIRED'); $out=[];
     foreach(array_values($raw) as $i=>$line){ if(!is_array($line)) accounts_fail('INVALID_INVOICE_LINE');

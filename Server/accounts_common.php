@@ -20,7 +20,23 @@ function accounts_endpoint(callable $action): never {
     } catch (AccountsApiError $e) {
         qbook_json(['ok' => false, 'error' => $e->errorCode], $e->httpStatus);
     } catch (Throwable $e) {
-        error_log('CEH Accounts endpoint failure: ' . get_class($e));
+        $endpoint = basename((string)($_SERVER['SCRIPT_NAME'] ?? 'unknown'));
+        $sqlState = $e instanceof PDOException && isset($e->errorInfo[0])
+            ? (string)$e->errorInfo[0]
+            : '-';
+        $driverCode = $e instanceof PDOException && isset($e->errorInfo[1])
+            ? (string)$e->errorInfo[1]
+            : '-';
+        error_log(sprintf(
+            'CEH Accounts endpoint failure endpoint=%s type=%s sqlstate=%s driver=%s file=%s line=%d message=%s',
+            $endpoint,
+            get_class($e),
+            $sqlState,
+            $driverCode,
+            basename($e->getFile()),
+            $e->getLine(),
+            $e->getMessage()
+        ));
         qbook_json(['ok' => false, 'error' => 'SERVER_ERROR'], 500);
     }
 }
