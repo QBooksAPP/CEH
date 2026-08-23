@@ -869,6 +869,19 @@ class CehApiClient {
         .toList();
   }
 
+  Future<List<CostCentre>> costCentres(CehSession session) async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/cost_centres.php'),
+            headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'COST_CENTRES_FAILED');
+    return (data['cost_centres'] as List? ?? const [])
+        .map((item) =>
+            CostCentre.fromJson(Map<String, dynamic>.from(item as Map)))
+        .toList();
+  }
+
   Future<ExpenseSupplier> createExpenseSupplier(
       CehSession session, Map<String, dynamic> payload) async {
     final data = await _postJson(

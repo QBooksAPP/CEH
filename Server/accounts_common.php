@@ -109,6 +109,16 @@ function accounts_supplier(PDO $db, mixed $supplierId, bool $active = true): arr
     return $supplier;
 }
 
+function accounts_cost_centre(PDO $db, mixed $costCentreId, bool $active = true): ?int {
+    $id = accounts_nullable_id($costCentreId);
+    if ($id === null) return null;
+    $sql = "SELECT id FROM qbook_cost_centres WHERE id=?" . ($active ? " AND is_active=1" : "");
+    $stmt = $db->prepare($sql);
+    $stmt->execute([$id]);
+    if (!$stmt->fetch()) accounts_fail('ACTIVE_COST_CENTRE_REQUIRED', 409);
+    return $id;
+}
+
 /** Validate and normalize submitted expense lines. Monetary calculations use minor units. */
 function accounts_expense_lines(PDO $db, mixed $value, bool $require = true): array {
     if (!is_array($value) || ($require && $value === [])) accounts_fail('EXPENSE_LINES_REQUIRED');
@@ -132,6 +142,8 @@ function accounts_expense_lines(PDO $db, mixed $value, bool $require = true): ar
             $calculated = (int)round((float)$quantity * $unitPrice);
             if ($calculated !== $amount) accounts_fail('LINE_QUANTITY_TOTAL_MISMATCH');
         }
+        $costCentre = accounts_cost_centre($db, $line['cost_centre_id'] ?? null);
+        if ($costCentre === null) accounts_fail('COST_CENTRE_REQUIRED');
         $client = accounts_nullable_id($line['client_id'] ?? null);
         $project = accounts_nullable_id($line['project_id'] ?? null);
         $mixer = accounts_nullable_id($line['mixer_id'] ?? null);
@@ -143,6 +155,7 @@ function accounts_expense_lines(PDO $db, mixed $value, bool $require = true): ar
             'amount_minor' => $amount,
             'quantity' => $quantity,
             'unit_price_minor' => $unitPrice,
+            'cost_centre_id' => $costCentre,
             'client_id' => $client, 'project_id' => $project, 'mixer_id' => $mixer,
         ];
     }
@@ -160,9 +173,9 @@ function accounts_require_line_total(array $lines, int $headerMinor): void {
 function accounts_replace_expense_lines(PDO $db, string $table, int $expenseId, array $lines): void {
     if (!in_array($table, ['qbook_petty_cash_expense_lines','qbook_general_expense_lines'], true)) accounts_fail('INVALID_LINE_TABLE', 500);
     $db->prepare("DELETE FROM {$table} WHERE expense_id=?")->execute([$expenseId]);
-    $insert = $db->prepare("INSERT INTO {$table}(expense_id,line_no,item_description,expense_account_id,amount,quantity,unit_price,client_id,project_id,mixer_id) VALUES(?,?,?,?,?,?,?,?,?,?)");
+    $insert = $db->prepare("INSERT INTO {$table}(expense_id,line_no,item_description,expense_account_id,amount,quantity,unit_price,cost_centre_id,client_id,project_id,mixer_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)");
     foreach ($lines as $line) {
-        $insert->execute([$expenseId,$line['line_no'],$line['item_description'],$line['expense_account_id'],accounts_minor_decimal($line['amount_minor']),$line['quantity'],$line['unit_price_minor']===null?null:accounts_minor_decimal($line['unit_price_minor']),$line['client_id'],$line['project_id'],$line['mixer_id']]);
+        $insert->execute([$expenseId,$line['line_no'],$line['item_description'],$line['expense_account_id'],accounts_minor_decimal($line['amount_minor']),$line['quantity'],$line['unit_price_minor']===null?null:accounts_minor_decimal($line['unit_price_minor']),$line['cost_centre_id'],$line['client_id'],$line['project_id'],$line['mixer_id']]);
     }
 }
 
@@ -279,12 +292,13 @@ function accounts_post_journal(PDO $db, array $user, array $header, array $lines
         accounts_nullable_id($header['approved_by'] ?? null),
     ]);
     $journalId = (int)$db->lastInsertId();
-    $insert = $db->prepare("INSERT INTO qbook_financial_journal_lines(journal_id,line_no,account_id,description,debit,credit,client_id,project_id,mixer_id,custodian_user_id) VALUES(?,?,?,?,?,?,?,?,?,?)");
+    $insert = $db->prepare("INSERT INTO qbook_financial_journal_lines(journal_id,line_no,account_id,description,debit,credit,cost_centre_id,client_id,project_id,mixer_id,custodian_user_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)");
     foreach ($lines as $index => $line) {
         $accountId = (int)($line['account_id'] ?? 0);
         $check = $db->prepare("SELECT id FROM qbook_accounts_chart WHERE id=? AND is_active=1 AND is_postable=1");
         $check->execute([$accountId]);
         if (!$check->fetch()) accounts_fail('ACCOUNT_NOT_AVAILABLE', 409);
+        $costCentreId = accounts_cost_centre($db, $line['cost_centre_id'] ?? null, false);
         $clientId = accounts_nullable_id($line['client_id'] ?? null);
         $projectId = accounts_nullable_id($line['project_id'] ?? null);
         $mixerId = accounts_nullable_id($line['mixer_id'] ?? null);
@@ -294,7 +308,7 @@ function accounts_post_journal(PDO $db, array $user, array $header, array $lines
             production_clean_text($line['description'] ?? '', 500, 'INVALID_LINE_DESCRIPTION', false) ?: null,
             accounts_minor_decimal((int)($line['debit_minor'] ?? 0)),
             accounts_minor_decimal((int)($line['credit_minor'] ?? 0)),
-            $clientId, $projectId, $mixerId,
+            $costCentreId, $clientId, $projectId, $mixerId,
             accounts_nullable_id($line['custodian_user_id'] ?? null),
         ]);
     }
@@ -317,6 +331,7 @@ function accounts_reverse_journal(PDO $db, array $user, int $journalId, string $
             'debit_minor' => accounts_money_minor((string)$line['credit'], false),
             'credit_minor' => accounts_money_minor((string)$line['debit'], false),
             'description' => 'Reversal: ' . $reason,
+            'cost_centre_id' => $line['cost_centre_id'],
             'client_id' => $line['client_id'], 'project_id' => $line['project_id'],
             'mixer_id' => $line['mixer_id'], 'custodian_user_id' => $line['custodian_user_id'],
         ];

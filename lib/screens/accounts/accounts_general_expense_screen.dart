@@ -85,6 +85,7 @@ class _AccountsGeneralExpenseScreenState
     return _GeneralExpenseLookups(
         banks: banks,
         suppliers: suppliers,
+        costCentres: await _api.costCentres(widget.session),
         accounts: accounts,
         clients: clients,
         projects: projects,
@@ -290,9 +291,12 @@ class _AccountsGeneralExpenseScreenState
               return const Center(child: CircularProgressIndicator());
             }
             final data = snapshot.data!;
-            if (data.banks.isEmpty || data.accounts.isEmpty) {
+            if (data.banks.isEmpty ||
+                data.accounts.isEmpty ||
+                data.costCentres.isEmpty) {
               return const Center(
-                  child: Text('Bank and expense accounts are required.'));
+                  child: Text(
+                      'Bank, Cost Centre and expense accounts are required.'));
             }
             _bank ??= data.banks.first.id;
             return ListView(padding: const EdgeInsets.all(18), children: [
@@ -372,6 +376,7 @@ class _AccountsGeneralExpenseScreenState
                     index: index,
                     line: _lines[index],
                     accounts: data.accounts,
+                    costCentres: data.costCentres,
                     clients: data.clients,
                     projects: data.projects,
                     mixers: data.mixers,
@@ -437,6 +442,7 @@ class _CompactExpenseLine extends StatefulWidget {
       required this.index,
       required this.line,
       required this.accounts,
+      required this.costCentres,
       required this.clients,
       required this.projects,
       required this.mixers,
@@ -446,6 +452,7 @@ class _CompactExpenseLine extends StatefulWidget {
   final int index;
   final _ExpenseLineDraft line;
   final List<FinancialAccount> accounts;
+  final List<CostCentre> costCentres;
   final List<CehClient> clients;
   final List<CehProject> projects;
   final List<Map<String, dynamic>> mixers;
@@ -495,6 +502,8 @@ class _CompactExpenseLineState extends State<_CompactExpenseLine> {
   Widget build(BuildContext context) {
     widget.line.accountId ??=
         widget.accounts.isEmpty ? null : widget.accounts.first.id;
+    widget.line.costCentreId ??=
+        widget.costCentres.isEmpty ? null : widget.costCentres.first.id;
     final calculated = widget.line.usesQuantityPrice;
     return Card(
         child: Padding(
@@ -509,6 +518,18 @@ class _CompactExpenseLineState extends State<_CompactExpenseLine> {
                       onPressed: widget.onRemove,
                       icon: const Icon(Icons.delete_outline))
               ]),
+              DropdownButtonFormField<int>(
+                  initialValue: widget.line.costCentreId,
+                  decoration: const InputDecoration(labelText: 'Cost Centre'),
+                  items: widget.costCentres
+                      .where((centre) => centre.isActive)
+                      .map((centre) => DropdownMenuItem(
+                          value: centre.id, child: Text(centre.name)))
+                      .toList(),
+                  onChanged: (value) {
+                    widget.line.costCentreId = value;
+                    widget.onChanged();
+                  }),
               DropdownButtonFormField<int>(
                   initialValue: widget.line.accountId,
                   decoration:
@@ -613,6 +634,7 @@ class _ExpenseLineDraft {
       this.quantityText = '',
       this.priceText = '',
       this.totalText = '',
+      this.costCentreId,
       this.accountId,
       this.clientId,
       this.projectId,
@@ -624,21 +646,26 @@ class _ExpenseLineDraft {
           quantityText: '${value['quantity'] ?? ''}',
           priceText: '${value['unit_price'] ?? ''}',
           totalText: '${value['amount'] ?? ''}',
+          costCentreId: (value['cost_centre_id'] as num?)?.toInt(),
           accountId: (value['expense_account_id'] as num?)?.toInt(),
           clientId: (value['client_id'] as num?)?.toInt(),
           projectId: (value['project_id'] as num?)?.toInt(),
           mixerId: (value['mixer_id'] as num?)?.toInt());
   final Object identity = Object();
   String description, quantityText, priceText, totalText;
-  int? accountId, clientId, projectId, mixerId;
+  int? accountId, costCentreId, clientId, projectId, mixerId;
   double? get total => parseNgnInput(totalText);
   bool get usesQuantityPrice =>
       double.tryParse(quantityText.trim()) != null &&
       parseNgnInput(priceText) != null;
   bool get isPersistable =>
-      accountId != null && description.trim().isNotEmpty && (total ?? 0) > 0;
+      accountId != null &&
+      costCentreId != null &&
+      description.trim().isNotEmpty &&
+      (total ?? 0) > 0;
   Map<String, dynamic> toPayload() => {
         'expense_account_id': accountId,
+        'cost_centre_id': costCentreId,
         'description': description.trim(),
         'amount': total,
         if (quantityText.trim().isNotEmpty) 'quantity': quantityText.trim(),
@@ -653,12 +680,14 @@ class _GeneralExpenseLookups {
   const _GeneralExpenseLookups(
       {required this.banks,
       required this.suppliers,
+      required this.costCentres,
       required this.accounts,
       required this.clients,
       required this.projects,
       required this.mixers});
   final List<CehBankAccount> banks;
   final List<ExpenseSupplier> suppliers;
+  final List<CostCentre> costCentres;
   final List<FinancialAccount> accounts;
   final List<CehClient> clients;
   final List<CehProject> projects;

@@ -175,6 +175,23 @@ class ExpenseSupplier {
           isActive: _bool(json['is_active']));
 }
 
+class CostCentre {
+  const CostCentre(
+      {required this.id,
+      required this.code,
+      required this.name,
+      required this.isActive});
+  final int id;
+  final String code;
+  final String name;
+  final bool isActive;
+  factory CostCentre.fromJson(Map<String, dynamic> json) => CostCentre(
+      id: _int(json['id']),
+      code: '${json['code'] ?? ''}',
+      name: '${json['name'] ?? ''}',
+      isActive: _bool(json['is_active']));
+}
+
 class ExpenseLine {
   const ExpenseLine(
       {required this.id,
@@ -183,18 +200,28 @@ class ExpenseLine {
       required this.amount,
       required this.category,
       required this.expenseAccountId,
+      this.costCentre,
+      this.costCentreId,
       this.client,
+      this.clientId,
       this.project,
-      this.equipment});
+      this.projectId,
+      this.equipment,
+      this.equipmentId});
   final int? id;
   final int lineNo;
   final String description;
   final double amount;
   final String category;
   final int expenseAccountId;
+  final String? costCentre;
+  final int? costCentreId;
   final String? client;
+  final int? clientId;
   final String? project;
+  final int? projectId;
   final String? equipment;
+  final int? equipmentId;
   factory ExpenseLine.fromJson(Map<String, dynamic> json) => ExpenseLine(
       id: json['id'] == null ? null : _int(json['id']),
       lineNo: _int(json['line_no']),
@@ -202,9 +229,15 @@ class ExpenseLine {
       amount: _double(json['amount']),
       category: '${json['category'] ?? ''}',
       expenseAccountId: _int(json['expense_account_id']),
+      costCentre: json['cost_centre_name']?.toString(),
+      costCentreId:
+          json['cost_centre_id'] == null ? null : _int(json['cost_centre_id']),
       client: json['client_name']?.toString(),
+      clientId: json['client_id'] == null ? null : _int(json['client_id']),
       project: json['project_name']?.toString(),
-      equipment: json['mixer_code']?.toString());
+      projectId: json['project_id'] == null ? null : _int(json['project_id']),
+      equipment: json['mixer_code']?.toString(),
+      equipmentId: json['mixer_id'] == null ? null : _int(json['mixer_id']));
 }
 
 class ConsolidatedExpense {

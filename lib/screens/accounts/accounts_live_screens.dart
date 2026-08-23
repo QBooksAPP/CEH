@@ -466,11 +466,13 @@ class _AccountsExpensesScreenState extends State<AccountsExpensesScreen> {
             account.isActive &&
             account.isPostable)
         .toList();
-    if (!mounted || accounts.isEmpty) return;
+    final costCentres = await _api.costCentres(widget.session);
+    if (!mounted || accounts.isEmpty || costCentres.isEmpty) return;
     var accountId =
         accounts.any((account) => account.id == line.expenseAccountId)
             ? line.expenseAccountId
             : accounts.first.id;
+    var costCentreId = line.costCentreId;
     final description = TextEditingController(text: line.description);
     final reason = TextEditingController();
     final confirmed = await showDialog<bool>(
@@ -478,6 +480,16 @@ class _AccountsExpensesScreenState extends State<AccountsExpensesScreen> {
           builder: (context) => AlertDialog(
             title: Text('Correct line ${line.lineNo}'),
             content: Column(mainAxisSize: MainAxisSize.min, children: [
+              DropdownButtonFormField<int>(
+                  initialValue: costCentreId,
+                  decoration:
+                      const InputDecoration(labelText: 'Correct Cost Centre'),
+                  items: costCentres
+                      .where((centre) => centre.isActive)
+                      .map((centre) => DropdownMenuItem(
+                          value: centre.id, child: Text(centre.name)))
+                      .toList(),
+                  onChanged: (value) => costCentreId = value),
               DropdownButtonFormField<int>(
                   initialValue: accountId,
                   decoration:
@@ -503,7 +515,7 @@ class _AccountsExpensesScreenState extends State<AccountsExpensesScreen> {
                   child: const Text('Back')),
               FilledButton(
                   onPressed: () {
-                    if (reason.text.trim().isNotEmpty) {
+                    if (reason.text.trim().isNotEmpty && costCentreId != null) {
                       Navigator.pop(context, true);
                     }
                   },
@@ -520,7 +532,11 @@ class _AccountsExpensesScreenState extends State<AccountsExpensesScreen> {
               reason: reason.text.trim(),
               classification: {
                 'expense_account_id': accountId,
+                'cost_centre_id': costCentreId,
                 'description': description.text.trim(),
+                if (line.clientId != null) 'client_id': line.clientId,
+                if (line.projectId != null) 'project_id': line.projectId,
+                if (line.equipmentId != null) 'mixer_id': line.equipmentId,
               }));
     }
     description.dispose();
@@ -626,7 +642,7 @@ class _AccountsExpensesScreenState extends State<AccountsExpensesScreen> {
                                 title:
                                     Text('${line.lineNo}. ${line.description}'),
                                 subtitle: Text(
-                                    '${line.category}${line.client == null ? '' : ' • ${line.client}'}${line.project == null ? '' : ' • ${line.project}'}${line.equipment == null ? '' : ' • ${line.equipment}'}'),
+                                    '${line.costCentre ?? 'Historical — no Cost Centre'} • ${line.category}${line.client == null ? '' : ' • ${line.client}'}${line.project == null ? '' : ' • ${line.project}'}${line.equipment == null ? '' : ' • ${line.equipment}'}'),
                                 trailing: Text(formatNaira(line.amount),
                                     style: const TextStyle(
                                         fontWeight: FontWeight.w800)),
@@ -1526,6 +1542,7 @@ class _AccountsPettyExpenseScreenState
   final _reclassificationReason = TextEditingController();
   int? _custodian;
   int? _account;
+  int? _costCentre;
   int? _supplierId;
   int? _client;
   int? _project;
@@ -1564,6 +1581,7 @@ class _AccountsPettyExpenseScreenState
         final first = existingLines.first;
         _firstLineAmount.text = '${first['amount'] ?? ''}';
         _account = (first['expense_account_id'] as num?)?.toInt() ?? _account;
+        _costCentre = (first['cost_centre_id'] as num?)?.toInt();
         _client = (first['client_id'] as num?)?.toInt();
         _project = (first['project_id'] as num?)?.toInt();
         _mixer = (first['mixer_id'] as num?)?.toInt();
@@ -1583,6 +1601,7 @@ class _AccountsPettyExpenseScreenState
         clients.map((client) => _api.projects(widget.session, client.id)));
     final mixers = await _api.mixers(widget.session);
     final suppliers = await _api.expenseSuppliers(widget.session);
+    final costCentres = await _api.costCentres(widget.session);
     return _ExpenseLookups(
       overview: overview,
       accounts: accounts,
@@ -1590,6 +1609,7 @@ class _AccountsPettyExpenseScreenState
       projects: projectGroups.expand((items) => items).toList(),
       mixers: mixers,
       suppliers: suppliers,
+      costCentres: costCentres,
     );
   }
 
@@ -1652,10 +1672,15 @@ class _AccountsPettyExpenseScreenState
                   .where((a) =>
                       a.accountType == 'EXPENSE' && a.isPostable && a.isActive)
                   .toList();
-              if (custodians.isEmpty || accounts.isEmpty) {
+              if (custodians.isEmpty ||
+                  accounts.isEmpty ||
+                  lookup.costCentres.isEmpty) {
                 return const Text(
-                    'Custodian and expense accounts are required.');
+                    'Custodian, Cost Centre and expense accounts are required.');
               }
+              _costCentre ??= lookup.costCentres.isEmpty
+                  ? null
+                  : lookup.costCentres.first.id;
               return Column(children: [
                 TextFormField(
                     initialValue: _issuedReference ??
@@ -1694,6 +1719,16 @@ class _AccountsPettyExpenseScreenState
                     inputFormatters: const [NgnAmountInputFormatter()],
                     decoration: const InputDecoration(
                         labelText: 'Header Total (calculated)')),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                    initialValue: _costCentre,
+                    decoration: const InputDecoration(labelText: 'Cost Centre'),
+                    items: lookup.costCentres
+                        .where((centre) => centre.isActive)
+                        .map((centre) => DropdownMenuItem(
+                            value: centre.id, child: Text(centre.name)))
+                        .toList(),
+                    onChanged: (value) => _costCentre = value),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<int>(
                     initialValue: _account ?? accounts.first.id,
@@ -1979,6 +2014,7 @@ class _AccountsPettyExpenseScreenState
             'description': _description.text,
             'amount': parseNgnInput(_firstLineAmount.text) ?? amount,
             'expense_account_id': accountId,
+            'cost_centre_id': _costCentre,
             if (_firstLineQuantity.text.trim().isNotEmpty)
               'quantity': _firstLineQuantity.text.trim(),
             if (_firstLinePrice.text.trim().isNotEmpty)
@@ -2074,6 +2110,8 @@ class _AccountsPettyExpenseScreenState
     final quantity = TextEditingController();
     final unitPrice = TextEditingController();
     int account = accounts.first.id;
+    int? costCentre =
+        lookup.costCentres.isEmpty ? null : lookup.costCentres.first.id;
     int? client;
     int? project;
     int? mixer;
@@ -2088,6 +2126,17 @@ class _AccountsPettyExpenseScreenState
                         controller: description,
                         decoration: const InputDecoration(
                             labelText: 'Item / description')),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<int>(
+                        initialValue: costCentre,
+                        decoration:
+                            const InputDecoration(labelText: 'Cost Centre'),
+                        items: lookup.costCentres
+                            .where((centre) => centre.isActive)
+                            .map((centre) => DropdownMenuItem(
+                                value: centre.id, child: Text(centre.name)))
+                            .toList(),
+                        onChanged: (value) => costCentre = value),
                     const SizedBox(height: 10),
                     DropdownButtonFormField<int>(
                         initialValue: account,
@@ -2177,6 +2226,7 @@ class _AccountsPettyExpenseScreenState
                                   quantity.text, unitPrice.text) ??
                               parseNgnInput(amount.text);
                           if (description.text.trim().isEmpty ||
+                              costCentre == null ||
                               parsed == null) {
                             return;
                           }
@@ -2184,6 +2234,7 @@ class _AccountsPettyExpenseScreenState
                             'description': description.text.trim(),
                             'amount': parsed,
                             'expense_account_id': account,
+                            'cost_centre_id': costCentre,
                             if (quantity.text.trim().isNotEmpty)
                               'quantity': quantity.text.trim(),
                             if (unitPrice.text.trim().isNotEmpty)
@@ -2217,6 +2268,7 @@ class _ExpenseLookups {
     required this.projects,
     required this.mixers,
     required this.suppliers,
+    required this.costCentres,
   });
   final PettyCashOverview overview;
   final List<FinancialAccount> accounts;
@@ -2224,4 +2276,5 @@ class _ExpenseLookups {
   final List<CehProject> projects;
   final List<Map<String, dynamic>> mixers;
   final List<ExpenseSupplier> suppliers;
+  final List<CostCentre> costCentres;
 }
