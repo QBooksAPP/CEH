@@ -69,6 +69,9 @@ CREATE TABLE qbook_petty_cash_expense_lines (
   PRIMARY KEY (id),
   UNIQUE KEY uq_petty_expense_line_no (expense_id,line_no),
   KEY idx_petty_line_account (expense_account_id),
+  KEY idx_petty_line_client (client_id),
+  KEY idx_petty_line_project (project_id),
+  KEY idx_petty_line_mixer (mixer_id),
   CONSTRAINT fk_petty_line_expense FOREIGN KEY (expense_id)
     REFERENCES qbook_petty_cash_expenses(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
   CONSTRAINT fk_petty_line_account FOREIGN KEY (expense_account_id)
@@ -188,6 +191,10 @@ CREATE TABLE qbook_general_expense_lines (
   mixer_id BIGINT UNSIGNED NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uq_general_expense_line_no (expense_id,line_no),
+  KEY idx_general_line_account (expense_account_id),
+  KEY idx_general_line_client (client_id),
+  KEY idx_general_line_project (project_id),
+  KEY idx_general_line_mixer (mixer_id),
   CONSTRAINT fk_general_line_expense FOREIGN KEY (expense_id)
     REFERENCES qbook_general_expenses(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
   CONSTRAINT fk_general_line_account FOREIGN KEY (expense_account_id)
@@ -199,6 +206,8 @@ CREATE TABLE qbook_general_expense_lines (
   CONSTRAINT fk_general_line_mixer FOREIGN KEY (mixer_id)
     REFERENCES qbook_mixers(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
   CONSTRAINT chk_general_line_positive CHECK (amount > 0.00),
+  CONSTRAINT chk_general_line_quantity CHECK (quantity IS NULL OR quantity > 0.0000),
+  CONSTRAINT chk_general_line_unit_price CHECK (unit_price IS NULL OR unit_price > 0.00),
   CONSTRAINT chk_general_line_quantity_pair CHECK
     ((quantity IS NULL AND unit_price IS NULL) OR (quantity IS NOT NULL AND unit_price IS NOT NULL))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
