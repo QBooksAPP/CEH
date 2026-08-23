@@ -5,6 +5,7 @@ import '../../models/accounts.dart';
 import '../../models/client.dart';
 import '../../models/session.dart';
 import '../../widgets/accounts_widgets.dart';
+import 'accounts_billing_settings_screen.dart';
 
 class AccountsBillingScreen extends StatefulWidget {
   const AccountsBillingScreen(
@@ -26,7 +27,17 @@ class _AccountsBillingScreenState extends State<AccountsBillingScreen> {
   void _reload() => _invoices = widget.api.invoices(widget.session);
   @override
   Widget build(BuildContext context) => Scaffold(
-      appBar: AppBar(title: const Text('Billing & Receivables')),
+      appBar: AppBar(title: const Text('Billing & Receivables'), actions: [
+        IconButton(
+            key: const ValueKey('billing-settings'),
+            tooltip: 'Billing Settings',
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => AccountsBillingSettingsScreen(
+                        session: widget.session, api: widget.api))))
+      ]),
       floatingActionButton: FloatingActionButton.extended(
           key: const ValueKey('new-invoice'),
           icon: const Icon(Icons.add),

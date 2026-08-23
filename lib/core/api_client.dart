@@ -839,6 +839,31 @@ class CehApiClient {
     return data;
   }
 
+  Future<void> createTaxCode(
+          CehSession session, Map<String, dynamic> payload) =>
+      _postJson(session, 'tax_configuration.php',
+              {'action': 'CREATE', ...payload}, 'TAX_CODE_CREATE_FAILED')
+          .then((_) {});
+
+  Future<void> setTaxCodeActive(
+          CehSession session, int taxCodeId, bool isActive) =>
+      _postJson(
+              session,
+              'tax_configuration.php',
+              {
+                'action': 'SET_ACTIVE',
+                'tax_code_id': taxCodeId,
+                'is_active': isActive
+              },
+              'TAX_CODE_STATUS_FAILED')
+          .then((_) {});
+
+  Future<void> updateInvoiceSettings(
+          CehSession session, Map<String, dynamic> payload) =>
+      _postJson(session, 'invoice_settings_update.php', payload,
+              'INVOICE_SETTINGS_UPDATE_FAILED')
+          .then((_) {});
+
   Future<Map<String, dynamic>> receivablesAgeing(CehSession session) async {
     final response = await http
         .get(Uri.parse('$baseUrl/receivables_ageing.php'),
