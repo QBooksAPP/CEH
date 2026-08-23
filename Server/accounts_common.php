@@ -19,6 +19,9 @@ function accounts_endpoint(callable $action): never {
         qbook_json(['ok' => true] + (is_array($payload) ? $payload : []));
     } catch (AccountsApiError $e) {
         qbook_json(['ok' => false, 'error' => $e->errorCode], $e->httpStatus);
+    } catch (Throwable $e) {
+        error_log('CEH Accounts endpoint failure: ' . get_class($e));
+        qbook_json(['ok' => false, 'error' => 'SERVER_ERROR'], 500);
     }
 }
 
@@ -87,7 +90,10 @@ function accounts_general_expense_reference(mixed $number): ?string {
 
 function accounts_normalized_name(mixed $value): string {
     $name = production_clean_text($value, 200, 'SUPPLIER_REQUIRED');
-    $normalized = mb_strtolower(trim((string)preg_replace('/\s+/u', ' ', $name)), 'UTF-8');
+    $collapsed = trim((string)preg_replace('/\s+/u', ' ', $name));
+    $normalized = function_exists('mb_strtolower')
+        ? mb_strtolower($collapsed, 'UTF-8')
+        : strtolower($collapsed);
     if ($normalized === '') accounts_fail('SUPPLIER_REQUIRED');
     return $normalized;
 }

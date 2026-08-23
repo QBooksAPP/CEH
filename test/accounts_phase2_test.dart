@@ -173,13 +173,13 @@ void main() {
     expect(ui, contains("'BANK'"));
   });
 
-  test('Flutter exposes split-line and bank-expense workflows', () {
-    expect(ui, contains('Add Expense Line'));
+  test('Flutter exposes shared-line and bank-expense workflows', () {
+    expect(ui, contains('Add another line'));
     expect(ui, contains('Create Expense from Statement'));
-    expect(generalUi, contains('Bank-Paid Expense'));
+    expect(generalUi, contains('New Bank Expense'));
     expect(generalUi, contains('Save Draft'));
     expect(generalUi, contains('Submit Expense'));
-    expect(generalUi, contains('Create Supplier Inline'));
+    expect(generalUi, contains('New Supplier'));
   });
 
   test('migration has no financial postings or destructive data rewrite', () {

@@ -1518,6 +1518,8 @@ class _AccountsPettyExpenseScreenState
   final _picker = ImagePicker();
   final _amount = TextEditingController();
   final _firstLineAmount = TextEditingController();
+  final _firstLineQuantity = TextEditingController();
+  final _firstLinePrice = TextEditingController();
   final _supplier = TextEditingController();
   final _description = TextEditingController();
   final _noReceiptReason = TextEditingController();
@@ -1610,6 +1612,8 @@ class _AccountsPettyExpenseScreenState
     for (final controller in [
       _amount,
       _firstLineAmount,
+      _firstLineQuantity,
+      _firstLinePrice,
       _supplier,
       _description,
       _noReceiptReason,
@@ -1684,11 +1688,12 @@ class _AccountsPettyExpenseScreenState
                 const SizedBox(height: 12),
                 TextField(
                     controller: _amount,
-                    enabled: !widget.reclassifyPosted,
+                    enabled: false,
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true),
                     inputFormatters: const [NgnAmountInputFormatter()],
-                    decoration: const InputDecoration(labelText: 'Amount (₦)')),
+                    decoration: const InputDecoration(
+                        labelText: 'Header Total (calculated)')),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<int>(
                     initialValue: _account ?? accounts.first.id,
@@ -1705,8 +1710,26 @@ class _AccountsPettyExpenseScreenState
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true),
                     inputFormatters: const [NgnAmountInputFormatter()],
-                    decoration:
-                        const InputDecoration(labelText: 'Line 1 amount (₦)')),
+                    decoration: const InputDecoration(labelText: 'Total (₦)'),
+                    onChanged: (_) => _refreshPettyHeaderTotal()),
+                Row(children: [
+                  Expanded(
+                      child: TextField(
+                          controller: _firstLineQuantity,
+                          enabled: !widget.reclassifyPosted,
+                          onChanged: (_) => _refreshPettyHeaderTotal(),
+                          decoration: const InputDecoration(
+                              labelText: 'Qty (optional)'))),
+                  const SizedBox(width: 10),
+                  Expanded(
+                      child: TextField(
+                          controller: _firstLinePrice,
+                          enabled: !widget.reclassifyPosted,
+                          onChanged: (_) => _refreshPettyHeaderTotal(),
+                          inputFormatters: const [NgnAmountInputFormatter()],
+                          decoration: const InputDecoration(
+                              labelText: 'Price (optional)')))
+                ]),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<int?>(
                     initialValue: _supplierId,
@@ -1804,13 +1827,15 @@ class _AccountsPettyExpenseScreenState
                           0)),
                       trailing: IconButton(
                           icon: const Icon(Icons.delete_outline),
-                          onPressed: () =>
-                              setState(() => _additionalLines.removeAt(index))),
+                          onPressed: () => setState(() {
+                                _additionalLines.removeAt(index);
+                                _refreshPettyHeaderTotal();
+                              })),
                     )),
                   OutlinedButton.icon(
                     onPressed: () => _addExpenseLine(lookup, accounts),
                     icon: const Icon(Icons.add),
-                    label: const Text('Add Expense Line'),
+                    label: const Text('Add another line'),
                   ),
                 ],
                 if (widget.reclassifyPosted) ...[
@@ -1921,10 +1946,24 @@ class _AccountsPettyExpenseScreenState
         ],
       );
 
+  void _refreshPettyHeaderTotal() {
+    final calculated = calculateExpenseLineTotal(
+        _firstLineQuantity.text, _firstLinePrice.text);
+    if (calculated != null) {
+      _firstLineAmount.text = calculated.toStringAsFixed(2);
+    }
+    final total = sumExpenseLineTotals([
+      parseNgnInput(_firstLineAmount.text),
+      ..._additionalLines.map((line) => line['amount'] as num?),
+    ]);
+    _amount.text = total > 0 ? total.toStringAsFixed(2) : '';
+  }
+
   Future<void> _save(int custodianId, int accountId,
       {required bool submit}) async {
     setState(() => _saving = true);
     try {
+      _refreshPettyHeaderTotal();
       final amount = parseNgnInput(_amount.text);
       if (amount == null) throw const ApiException('INVALID_AMOUNT');
       final payload = <String, dynamic>{
@@ -1940,6 +1979,10 @@ class _AccountsPettyExpenseScreenState
             'description': _description.text,
             'amount': parseNgnInput(_firstLineAmount.text) ?? amount,
             'expense_account_id': accountId,
+            if (_firstLineQuantity.text.trim().isNotEmpty)
+              'quantity': _firstLineQuantity.text.trim(),
+            if (_firstLinePrice.text.trim().isNotEmpty)
+              'unit_price': parseNgnInput(_firstLinePrice.text),
             if (_client != null) 'client_id': _client,
             if (_project != null) 'project_id': _project,
             if (_mixer != null) 'mixer_id': _mixer,
@@ -2130,7 +2173,9 @@ class _AccountsPettyExpenseScreenState
                         child: const Text('Back')),
                     FilledButton(
                         onPressed: () {
-                          final parsed = parseNgnInput(amount.text);
+                          final parsed = calculateExpenseLineTotal(
+                                  quantity.text, unitPrice.text) ??
+                              parseNgnInput(amount.text);
                           if (description.text.trim().isEmpty ||
                               parsed == null) {
                             return;
@@ -2155,7 +2200,12 @@ class _AccountsPettyExpenseScreenState
     amount.dispose();
     quantity.dispose();
     unitPrice.dispose();
-    if (line != null && mounted) setState(() => _additionalLines.add(line));
+    if (line != null && mounted) {
+      setState(() {
+        _additionalLines.add(line);
+        _refreshPettyHeaderTotal();
+      });
+    }
   }
 }
 

@@ -41,6 +41,16 @@ double? parseNgnInput(String value) {
   return amount != null && amount > 0 ? amount : null;
 }
 
+double? calculateExpenseLineTotal(String quantity, String price) {
+  final qty = double.tryParse(quantity.trim());
+  final unitPrice = parseNgnInput(price);
+  if (qty == null || qty <= 0 || unitPrice == null) return null;
+  return (qty * unitPrice * 100).round() / 100;
+}
+
+double sumExpenseLineTotals(Iterable<num?> totals) =>
+    totals.fold(0, (sum, value) => sum + (value?.toDouble() ?? 0));
+
 class NgnAmountInputFormatter extends TextInputFormatter {
   const NgnAmountInputFormatter();
 
