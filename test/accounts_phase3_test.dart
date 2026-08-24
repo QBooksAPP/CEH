@@ -34,6 +34,16 @@ void main() {
       expect(value.vatMinor, 0);
       expect(value.grossMinor, 200000);
     });
+
+    test('VAT none leaves net and gross unchanged', () {
+      final value = calculateInvoiceTax(
+          enteredMinor: 45000000,
+          rateMillionthsOfPercent: 7500000,
+          mode: InvoiceVatMode.none);
+      expect(value.netMinor, 45000000);
+      expect(value.vatMinor, 0);
+      expect(value.grossMinor, 45000000);
+    });
   });
 
   group('production billing controls', () {
@@ -132,6 +142,23 @@ void main() {
           issue, contains("billing_account_role(\$db,'OUTPUT_VAT_PAYABLE')"));
       expect(issue, contains("'source_module'=>'INVOICE'"));
       expect(issue, contains("'client_id'=>(int)\$i['client_id']"));
+    });
+
+    test('server VAT arithmetic avoids overflowing intermediate products', () {
+      final common = server('billing_common.php');
+      expect(common, contains('billing_multiply_divide_round_half_up'));
+      expect(common, contains('billing_rate_millionths'));
+      expect(
+          common,
+          contains(
+              'billing_multiply_divide_round_half_up(\$baseMinor,billing_rate_millionths(\$rate),100000000)'));
+      expect(
+          common,
+          contains(
+              'billing_multiply_divide_round_half_up(\$grossMinor,100000000,100000000+\$millionths)'));
+      expect(common, isNot(contains('\$baseMinor*\$millionths+50000000')));
+      expect(common, isNot(contains('\$grossMinor*100000000+intdiv')));
+      expect(common, isNot(contains('(int)round((float)\$rate*1000000)')));
     });
 
     test('receipt posts cash and explicit WHT without revenue', () {

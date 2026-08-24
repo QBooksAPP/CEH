@@ -23,12 +23,40 @@ function billing_tax_code(PDO $db,mixed $id,string $type,string $date): array {
     $s=$db->prepare("SELECT * FROM qbook_tax_codes WHERE id=? AND tax_type=? AND is_active=1 AND effective_from<=? AND (effective_to IS NULL OR effective_to>=?)");
     $s->execute([(int)$id,$type,$date,$date]); $r=$s->fetch(); if(!$r) accounts_fail('EFFECTIVE_TAX_CODE_REQUIRED',409); return $r;
 }
+function billing_multiply_divide_round_half_up(int $multiplicand,int $multiplier,int $divisor): int {
+    if($multiplicand<0||$multiplier<0||$divisor<=0)accounts_fail('INVALID_TAX_RATE',500);
+    $quotient=0;$remainder=0;$partQuotient=intdiv($multiplicand,$divisor);$partRemainder=$multiplicand%$divisor;
+    while($multiplier>0){
+        if(($multiplier%2)===1){
+            if($partQuotient>PHP_INT_MAX-$quotient)accounts_fail('TAX_AMOUNT_OVERFLOW',500);
+            $quotient+=$partQuotient;
+            if($remainder>=$divisor-$partRemainder){
+                $remainder-=($divisor-$partRemainder);
+                if($quotient===PHP_INT_MAX)accounts_fail('TAX_AMOUNT_OVERFLOW',500);
+                $quotient++;
+            }else{$remainder+=$partRemainder;}
+        }
+        $multiplier=intdiv($multiplier,2);if($multiplier===0)break;
+        $carry=$partRemainder>=$divisor-$partRemainder?1:0;
+        $partRemainder=$carry===1?$partRemainder-($divisor-$partRemainder):$partRemainder+$partRemainder;
+        if($partQuotient>intdiv(PHP_INT_MAX-$carry,2))accounts_fail('TAX_AMOUNT_OVERFLOW',500);
+        $partQuotient=$partQuotient*2+$carry;
+    }
+    if($remainder>=$divisor-$remainder){
+        if($quotient===PHP_INT_MAX)accounts_fail('TAX_AMOUNT_OVERFLOW',500);
+        $quotient++;
+    }
+    return $quotient;
+}
+function billing_rate_millionths(string $rate): int {
+    if(!preg_match('/\A(\d{1,3})(?:\.(\d{1,6}))?\z/',$rate,$parts))accounts_fail('INVALID_TAX_RATE',500);
+    return (int)$parts[1]*1000000+(int)str_pad($parts[2]??'',6,'0');
+}
 function billing_percent_amount(int $baseMinor,string $rate): int {
-    if(!preg_match('/\A\d{1,3}(?:\.\d{1,6})?\z/',$rate)) accounts_fail('INVALID_TAX_RATE',500);
-    $millionths=(int)round((float)$rate*1000000); return intdiv($baseMinor*$millionths+50000000,100000000);
+    return billing_multiply_divide_round_half_up($baseMinor,billing_rate_millionths($rate),100000000);
 }
 function billing_inclusive_net(int $grossMinor,string $rate): int {
-    $millionths=(int)round((float)$rate*1000000); return intdiv($grossMinor*100000000+intdiv(100000000+$millionths,2),100000000+$millionths);
+    $millionths=billing_rate_millionths($rate); return billing_multiply_divide_round_half_up($grossMinor,100000000,100000000+$millionths);
 }
 function billing_format_percent(mixed $rate): string {
     if (!is_numeric($rate)) return '0.00%';
