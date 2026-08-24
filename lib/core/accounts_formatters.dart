@@ -10,6 +10,12 @@ String displayAccountsDate(String canonical) {
   return '${match.group(3)}-${match.group(2)}-${match.group(1)}';
 }
 
+String displayAccountsTimestampDate(String timestamp) {
+  final match =
+      RegExp(r'^(\d{4}-\d{2}-\d{2})(?:[ T].*)?$').firstMatch(timestamp);
+  return displayAccountsDate(match?.group(1) ?? timestamp);
+}
+
 DateTime? parseCanonicalAccountsDate(String value) {
   final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(value);
   if (match == null) return null;

@@ -46,6 +46,7 @@ BillingInvoiceDetail _detail(String vatMode, {String status = 'DRAFT'}) =>
               description: 'Concrete batched',
               sourceType: 'PRODUCTION_REPORT',
               revenueAccountId: 41,
+              enteredAmount: 450000,
               quantity: 30,
               unitName: 'm³',
               unitPrice: 15000,
@@ -108,6 +109,20 @@ void main() {
     expect(source, isNot(contains('accounts_post_journal')));
     expect(source, isNot(contains('UPDATE qbook_invoices')));
     expect(source, isNot(contains('DELETE FROM qbook_invoices')));
+  });
+
+  test('issued invoice PDF is authenticated and loads its cache dependency',
+      () {
+    final endpoint = File('Server/invoice_pdf.php').readAsStringSync();
+    final api = File('lib/core/api_client.dart').readAsStringSync();
+    expect(endpoint,
+        contains("require_once __DIR__ . '/production_report_common.php'"));
+    expect(endpoint, contains('billing_require_admin()'));
+    expect(endpoint, contains('INVOICE_SETTINGS_INCOMPLETE'));
+    expect(endpoint, contains("'quantity'"));
+    expect(endpoint, contains("'unit_price'"));
+    expect(api, contains("headers:authHeaders(session)"));
+    expect(api, contains("startsWith('application/pdf')"));
   });
 
   testWidgets('Draft invoice row opens without changing invoice state',
@@ -173,6 +188,9 @@ void main() {
         find.byKey(const ValueKey('issue-invoice-from-detail')), findsNothing);
     expect(find.text('View / Share Invoice PDF'), findsOneWidget);
     expect(find.textContaining('Journal #44'), findsOneWidget);
+    expect(find.text('24-08-2026'), findsOneWidget);
+    expect(find.text('Concrete batched'), findsOneWidget);
+    expect(find.text('30.00 m³ × ₦15,000.00 = ₦450,000.00'), findsOneWidget);
     expect(find.text('CEH-CN-000001'), findsOneWidget);
     expect(api.issueCalls, 0);
   });

@@ -463,7 +463,10 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
       final temp = await getTemporaryDirectory();
       final dir = Directory('${temp.path}/ceh-invoices');
       await dir.create(recursive: true);
-      final file = File('${dir.path}/${pdf.filename}');
+      final safeFilename = RegExp(r'^[A-Za-z0-9._-]+$').hasMatch(pdf.filename)
+          ? pdf.filename
+          : '${invoice.reference}.pdf';
+      final file = File('${dir.path}/$safeFilename');
       await file.writeAsBytes(pdf.bytes, flush: true);
       await SharePlus.instance.share(ShareParams(
           title: invoice.reference,
@@ -472,6 +475,11 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(e.code)));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('INVOICE_PDF_SHARE_FAILED')));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -487,6 +495,18 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
                 style: const TextStyle(fontWeight: FontWeight.w700))),
         Expanded(child: Text(value))
       ]));
+
+  String _lineUnit(BillingInvoiceLine line) {
+    final unit = (line.unitName ?? '').trim();
+    if (unit == 'm³' || line.sourceType == 'PRODUCTION_REPORT') return 'm³';
+    final description = line.description.toLowerCase();
+    if ((unit.isEmpty || unit.toLowerCase() == 'unit') &&
+        (description.contains('concrete') || description.contains('batch'))) {
+      return 'm³';
+    }
+    return unit.isEmpty ? 'unit' : unit;
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
       appBar: AppBar(title: const Text('Invoice Details')),
@@ -536,12 +556,16 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
                         child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Line ${line.lineNo} • ${line.description}',
+                              Text(line.description,
                                   style: const TextStyle(
                                       fontWeight: FontWeight.w800)),
                               const SizedBox(height: 6),
-                              Text(
-                                  '${line.quantity == null ? '' : '${line.quantity} ${line.unitName ?? ''} • '}${formatNaira(line.total)}'),
+                              if (line.quantity != null &&
+                                  line.unitPrice != null)
+                                Text(
+                                    '${line.quantity!.toStringAsFixed(2)} ${_lineUnit(line)} × ${formatNaira(line.unitPrice!)} = ${formatNaira(line.enteredAmount)}')
+                              else
+                                Text(formatNaira(line.enteredAmount)),
                               if ((line.project ?? '').isNotEmpty)
                                 Text('Project: ${line.project}'),
                               if ((line.equipment ?? '').isNotEmpty)
@@ -555,7 +579,11 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
                     child: Padding(
                         padding: const EdgeInsets.all(16),
                         child: Column(children: [
-                          _metric('Issued', i.issuedAt ?? '—'),
+                          _metric(
+                              'Issued',
+                              i.issuedAt == null
+                                  ? '—'
+                                  : displayAccountsTimestampDate(i.issuedAt!)),
                           _metric('Amount paid', formatNaira(i.amountPaid)),
                           _metric('WHT allocated', formatNaira(i.whtAllocated)),
                           _metric(
