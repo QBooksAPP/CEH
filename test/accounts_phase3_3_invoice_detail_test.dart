@@ -118,7 +118,9 @@ void main() {
     expect(endpoint,
         contains("require_once __DIR__ . '/production_report_common.php'"));
     expect(endpoint, contains('billing_require_admin()'));
-    expect(endpoint, contains('INVOICE_SETTINGS_INCOMPLETE'));
+    expect(endpoint, contains('INVOICE_SETTINGS_SNAPSHOT_MISSING'));
+    expect(File('Server/invoice_issue.php').readAsStringSync(),
+        contains('INVOICE_SETTINGS_INCOMPLETE'));
     expect(endpoint, contains("'quantity'"));
     expect(endpoint, contains("'unit_price'"));
     expect(api, contains("headers:authHeaders(session)"));

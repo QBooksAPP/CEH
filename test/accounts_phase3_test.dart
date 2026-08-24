@@ -141,7 +141,7 @@ void main() {
       expect(
           issue, contains("billing_account_role(\$db,'OUTPUT_VAT_PAYABLE')"));
       expect(issue, contains("'source_module'=>'INVOICE'"));
-      expect(issue, contains("'client_id'=>(int)\$i['client_id']"));
+      expect(issue, contains("'client_id'=>(int)\$invoice['client_id']"));
     });
 
     test('server VAT arithmetic avoids overflowing intermediate products', () {
