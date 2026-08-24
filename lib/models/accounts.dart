@@ -200,6 +200,7 @@ class BillingInvoice {
       required this.status,
       required this.total,
       required this.outstanding,
+      this.projectNames = '',
       this.invoiceDate,
       this.dueDate});
   final int id;
@@ -208,6 +209,7 @@ class BillingInvoice {
   final String status;
   final double total;
   final double outstanding;
+  final String projectNames;
   final String? invoiceDate;
   final String? dueDate;
   factory BillingInvoice.fromJson(Map<String, dynamic> json) => BillingInvoice(
@@ -217,6 +219,7 @@ class BillingInvoice {
       status: '${json['display_status'] ?? json['status'] ?? ''}',
       total: _double(json['total_amount']),
       outstanding: _double(json['outstanding']),
+      projectNames: '${json['project_names'] ?? ''}',
       invoiceDate: json['invoice_date']?.toString(),
       dueDate: json['due_date']?.toString());
 }

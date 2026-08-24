@@ -19,7 +19,10 @@ accounts_endpoint(function():array{
         return['invoice'=>$invoice,'lines'=>$lines,'credit_notes'=>$credits];
     }
     $where=[];$args=[];if(($client=(int)($_GET['client_id']??0))>0){$where[]='i.client_id=?';$args[]=$client;}
-    $sql="SELECT i.*,{$settled} settled FROM qbook_invoices i".($where?' WHERE '.implode(' AND ',$where):'')." ORDER BY COALESCE(i.invoice_date,DATE(i.created_at)) DESC,i.id DESC";
-    $s=$db->prepare($sql);$s->execute($args);$out=[];foreach($s->fetchAll()as$row){$total=$row['total_amount']===null?0:accounts_money_minor($row['total_amount'],false);$settledMinor=accounts_money_minor((string)$row['settled'],false);$row['reference']=billing_ref('INVOICE',$row['reference_no']);$row['outstanding']=accounts_minor_decimal($total-$settledMinor);$row['display_status']=billing_display_status($row+['outstanding_minor'=>$total-$settledMinor]);$out[]=$row;}
+    $outstandingOnly=filter_var($_GET['outstanding_only']??false,FILTER_VALIDATE_BOOL);
+    if($outstandingOnly)$where[]="i.status='ISSUED'";
+    $projects="COALESCE((SELECT GROUP_CONCAT(DISTINCT p.name ORDER BY p.name SEPARATOR ' • ') FROM qbook_invoice_lines il LEFT JOIN qbook_projects p ON p.id=il.project_id WHERE il.invoice_id=i.id AND p.id IS NOT NULL),'')";
+    $sql="SELECT i.*,{$settled} settled,{$projects} project_names FROM qbook_invoices i".($where?' WHERE '.implode(' AND ',$where):'')." ORDER BY COALESCE(i.invoice_date,DATE(i.created_at)) DESC,i.id DESC";
+    $s=$db->prepare($sql);$s->execute($args);$out=[];foreach($s->fetchAll()as$row){$total=$row['total_amount']===null?0:accounts_money_minor($row['total_amount'],false);$settledMinor=accounts_money_minor((string)$row['settled'],false);$outstanding=$total-$settledMinor;if($outstandingOnly&&$outstanding<=0)continue;$row['reference']=billing_ref('INVOICE',$row['reference_no']);$row['outstanding']=accounts_minor_decimal($outstanding);$row['display_status']=billing_display_status($row+['outstanding_minor'=>$outstanding]);$out[]=$row;}
     return['invoices'=>$out];
 });

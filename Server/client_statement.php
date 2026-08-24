@@ -1,4 +1,68 @@
 <?php
-declare(strict_types=1);require_once __DIR__.'/billing_common.php';$user=billing_require_admin();production_require_method('GET');accounts_endpoint(function():array{$db=production_db();$client=billing_client($db,$_GET['client_id']??0);$from=accounts_date($_GET['from']??gmdate('Y-01-01'));$to=accounts_date($_GET['to']??gmdate('Y-m-d'));
-$opening=$db->prepare("SELECT COALESCE((SELECT SUM(total_amount) FROM qbook_invoices WHERE client_id=? AND status='ISSUED' AND invoice_date<?),0)-COALESCE((SELECT SUM(r.cash_amount+COALESCE(w.accepted_amount,0)) FROM qbook_customer_receipts r LEFT JOIN qbook_receipt_wht w ON w.receipt_id=r.id WHERE r.client_id=? AND r.status='POSTED' AND r.destination='TRADE_RECEIVABLES' AND r.receipt_date<?),0)-COALESCE((SELECT SUM(c.total_amount) FROM qbook_credit_notes c JOIN qbook_invoices i ON i.id=c.invoice_id WHERE i.client_id=? AND c.status='ISSUED' AND c.credit_date<?),0)-COALESCE((SELECT SUM(a.amount) FROM qbook_advance_applications a JOIN qbook_customer_receipts r ON r.id=a.receipt_id WHERE r.client_id=? AND DATE(a.applied_at)<?),0)");$opening->execute([$client['id'],$from,$client['id'],$from,$client['id'],$from,$client['id'],$from]);$openingMinor=accounts_money_minor((string)$opening->fetchColumn(),false);$balance=$openingMinor;
-$s=$db->prepare("SELECT invoice_date event_date,'INVOICE' event_type,reference_no,total_amount debit,0 credit FROM qbook_invoices WHERE client_id=? AND status='ISSUED' AND invoice_date BETWEEN ? AND ? UNION ALL SELECT r.receipt_date,'RECEIPT',r.reference_no,0,r.cash_amount+COALESCE(w.accepted_amount,0) FROM qbook_customer_receipts r LEFT JOIN qbook_receipt_wht w ON w.receipt_id=r.id WHERE r.client_id=? AND r.status='POSTED' AND r.destination='TRADE_RECEIVABLES' AND r.receipt_date BETWEEN ? AND ? UNION ALL SELECT c.credit_date,'CREDIT_NOTE',c.reference_no,0,c.total_amount FROM qbook_credit_notes c JOIN qbook_invoices i ON i.id=c.invoice_id WHERE i.client_id=? AND c.status='ISSUED' AND c.credit_date BETWEEN ? AND ? UNION ALL SELECT DATE(a.applied_at),'ADVANCE_APPLICATION',r.reference_no,0,a.amount FROM qbook_advance_applications a JOIN qbook_customer_receipts r ON r.id=a.receipt_id WHERE r.client_id=? AND DATE(a.applied_at) BETWEEN ? AND ? ORDER BY event_date,event_type,reference_no");$s->execute([$client['id'],$from,$to,$client['id'],$from,$to,$client['id'],$from,$to,$client['id'],$from,$to]);$events=[];foreach($s->fetchAll()as$r){$debit=accounts_money_minor((string)$r['debit'],false);$credit=accounts_money_minor((string)$r['credit'],false);$balance+=$debit-$credit;$type=$r['event_type']==='INVOICE'?'INVOICE':($r['event_type']==='CREDIT_NOTE'?'CREDIT_NOTE':'RECEIPT');$r['reference']=billing_ref($type,$r['reference_no']);$r['running_balance']=accounts_minor_decimal($balance);$events[]=$r;}return['client'=>$client,'from'=>$from,'to'=>$to,'opening_balance'=>accounts_minor_decimal($openingMinor),'events'=>$events,'closing_balance'=>accounts_minor_decimal($balance)];});
+declare(strict_types=1);
+
+require_once __DIR__ . '/billing_common.php';
+$user = billing_require_admin();
+production_require_method('GET');
+
+accounts_endpoint(function (): array {
+    $db = production_db();
+    $client = billing_client($db, $_GET['client_id'] ?? 0);
+    $from = accounts_date($_GET['from'] ?? gmdate('Y-01-01'));
+    $to = accounts_date($_GET['to'] ?? gmdate('Y-m-d'));
+    $opening = $db->prepare(
+        "SELECT
+          COALESCE((SELECT SUM(total_amount) FROM qbook_invoices WHERE client_id=? AND status='ISSUED' AND invoice_date<?),0)
+          -COALESCE((SELECT SUM(a.cash_amount+a.wht_amount) FROM qbook_customer_receipt_allocations a JOIN qbook_customer_receipts r ON r.id=a.receipt_id AND r.status='POSTED' WHERE r.client_id=? AND r.receipt_date<?),0)
+          -COALESCE((SELECT SUM(c.total_amount) FROM qbook_credit_notes c JOIN qbook_invoices i ON i.id=c.invoice_id WHERE i.client_id=? AND c.status='ISSUED' AND c.credit_date<?),0)
+          -COALESCE((SELECT SUM(a.amount) FROM qbook_advance_applications a JOIN qbook_customer_receipts r ON r.id=a.receipt_id WHERE r.client_id=? AND DATE(a.applied_at)<?),0)"
+    );
+    $opening->execute([$client['id'], $from, $client['id'], $from, $client['id'], $from, $client['id'], $from]);
+    $openingMinor = accounts_money_minor((string)$opening->fetchColumn(), false);
+    $balance = $openingMinor;
+
+    $statement = $db->prepare(
+        "SELECT invoice_date event_date,'INVOICE' event_type,reference_no,total_amount debit,0 credit
+           FROM qbook_invoices WHERE client_id=? AND status='ISSUED' AND invoice_date BETWEEN ? AND ?
+         UNION ALL
+         SELECT r.receipt_date,'RECEIPT',r.reference_no,0,SUM(a.cash_amount+a.wht_amount)
+           FROM qbook_customer_receipts r
+           JOIN qbook_customer_receipt_allocations a ON a.receipt_id=r.id
+          WHERE r.client_id=? AND r.status='POSTED' AND r.receipt_date BETWEEN ? AND ?
+          GROUP BY r.id,r.receipt_date,r.reference_no
+         UNION ALL
+         SELECT c.credit_date,'CREDIT_NOTE',c.reference_no,0,c.total_amount
+           FROM qbook_credit_notes c JOIN qbook_invoices i ON i.id=c.invoice_id
+          WHERE i.client_id=? AND c.status='ISSUED' AND c.credit_date BETWEEN ? AND ?
+         UNION ALL
+         SELECT DATE(a.applied_at),'ADVANCE_APPLICATION',r.reference_no,0,a.amount
+           FROM qbook_advance_applications a JOIN qbook_customer_receipts r ON r.id=a.receipt_id
+          WHERE r.client_id=? AND DATE(a.applied_at) BETWEEN ? AND ?
+         ORDER BY event_date,event_type,reference_no"
+    );
+    $statement->execute([
+        $client['id'], $from, $to,
+        $client['id'], $from, $to,
+        $client['id'], $from, $to,
+        $client['id'], $from, $to,
+    ]);
+    $events = [];
+    foreach ($statement->fetchAll() as $row) {
+        $debit = accounts_money_minor((string)$row['debit'], false);
+        $credit = accounts_money_minor((string)$row['credit'], false);
+        $balance += $debit - $credit;
+        $type = $row['event_type'] === 'INVOICE' ? 'INVOICE'
+            : ($row['event_type'] === 'CREDIT_NOTE' ? 'CREDIT_NOTE' : 'RECEIPT');
+        $row['reference'] = billing_ref($type, $row['reference_no']);
+        $row['running_balance'] = accounts_minor_decimal($balance);
+        $events[] = $row;
+    }
+    return [
+        'client' => $client,
+        'from' => $from,
+        'to' => $to,
+        'opening_balance' => accounts_minor_decimal($openingMinor),
+        'events' => $events,
+        'closing_balance' => accounts_minor_decimal($balance),
+    ];
+});

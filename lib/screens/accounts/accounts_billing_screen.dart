@@ -61,11 +61,11 @@ class _AccountsBillingScreenState extends State<AccountsBillingScreen> {
             Wrap(spacing: 10, runSpacing: 8, children: [
               OutlinedButton.icon(
                   icon: const Icon(Icons.payments_outlined),
-                  label: const Text('Customer Receipt'),
+                  label: const Text('Customer Payment'),
                   onPressed: () => Navigator.push(
                       context,
                       MaterialPageRoute(
-                          builder: (_) => CustomerReceiptScreen(
+                          builder: (_) => CustomerPaymentScreen(
                               session: widget.session, api: widget.api)))),
               OutlinedButton.icon(
                   icon: const Icon(Icons.schedule_outlined),
@@ -638,23 +638,26 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
           }));
 }
 
-class CustomerReceiptScreen extends StatefulWidget {
-  const CustomerReceiptScreen(
+class CustomerPaymentScreen extends StatefulWidget {
+  const CustomerPaymentScreen(
       {super.key, required this.session, required this.api});
   final CehSession session;
   final CehApiClient api;
   @override
-  State<CustomerReceiptScreen> createState() => _CustomerReceiptScreenState();
+  State<CustomerPaymentScreen> createState() => _CustomerPaymentScreenState();
 }
 
-class _CustomerReceiptScreenState extends State<CustomerReceiptScreen> {
+class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
   List<CehClient> clients = const [];
   List<CehBankAccount> banks = const [];
+  List<BillingInvoice> invoices = const [];
   CehClient? client;
   CehBankAccount? bank;
-  String destination = 'CUSTOMER_ADVANCES';
   final amount = TextEditingController();
   final reference = TextEditingController();
+  final Map<int, TextEditingController> allocations = {};
+  bool loadingInvoices = false;
+  bool posting = false;
   @override
   void initState() {
     super.initState();
@@ -671,16 +674,94 @@ class _CustomerReceiptScreenState extends State<CustomerReceiptScreen> {
     });
   }
 
-  Future<void> save() async {
-    if (client == null || bank == null) return;
+  @override
+  void dispose() {
+    amount.dispose();
+    reference.dispose();
+    for (final controller in allocations.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  double _money(String value) =>
+      double.tryParse(value.replaceAll(',', '').replaceAll('₦', '').trim()) ??
+      0;
+
+  double get received => _money(amount.text);
+  double get allocated => allocations.values
+      .fold(0, (total, controller) => total + _money(controller.text));
+  double get unallocated => received - allocated;
+
+  Future<void> _selectClient(CehClient? value) async {
+    for (final controller in allocations.values) {
+      controller.dispose();
+    }
+    setState(() {
+      client = value;
+      invoices = const [];
+      allocations.clear();
+      loadingInvoices = value != null;
+    });
+    if (value == null) return;
     try {
-      await widget.api.saveCustomerReceipt(widget.session, {
+      final rows =
+          await widget.api.outstandingInvoices(widget.session, value.id);
+      if (!mounted || client?.id != value.id) return;
+      setState(() {
+        invoices = rows;
+        for (final invoice in rows) {
+          allocations[invoice.id] = TextEditingController();
+        }
+        loadingInvoices = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => loadingInvoices = false);
+      _message(e.code);
+    }
+  }
+
+  void _message(String value) => ScaffoldMessenger.of(context)
+      .showSnackBar(SnackBar(content: Text(value)));
+
+  Future<void> saveAndPost() async {
+    if (client == null || bank == null || received <= 0) {
+      _message('Select a Client, Received Into account and Amount Received.');
+      return;
+    }
+    if (allocated > received + 0.000001) {
+      _message('Allocated amount cannot exceed Amount Received.');
+      return;
+    }
+    for (final invoice in invoices) {
+      final value = _money(allocations[invoice.id]?.text ?? '');
+      if (value > invoice.outstanding + 0.000001) {
+        _message(
+            '${invoice.reference} allocation exceeds its outstanding balance.');
+        return;
+      }
+    }
+    setState(() => posting = true);
+    try {
+      final draft = await widget.api.saveCustomerReceipt(widget.session, {
         'client_id': client!.id,
         'bank_account_id': bank!.id,
         'receipt_date': DateTime.now().toIso8601String().substring(0, 10),
         'cash_amount': amount.text,
         'bank_reference': reference.text,
-        'destination': destination
+      });
+      await widget.api.postCustomerPayment(widget.session, {
+        'receipt_id': draft['id'],
+        'allocations': [
+          for (final invoice in invoices)
+            if (_money(allocations[invoice.id]?.text ?? '') > 0)
+              {
+                'invoice_id': invoice.id,
+                'cash_amount':
+                    _money(allocations[invoice.id]!.text).toStringAsFixed(2),
+              }
+        ],
       });
       if (mounted) {
         Navigator.pop(context);
@@ -690,15 +771,17 @@ class _CustomerReceiptScreenState extends State<CustomerReceiptScreen> {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(e.code)));
       }
+    } finally {
+      if (mounted) setState(() => posting = false);
     }
   }
 
   @override
   Widget build(BuildContext context) => Scaffold(
-      appBar: AppBar(title: const Text('Customer Receipt')),
+      appBar: AppBar(title: const Text('Customer Payment')),
       body: ListView(padding: const EdgeInsets.all(18), children: [
         const Text(
-            'A pre-invoice receipt is posted to Customer Advances. Trade Receivables receipts may be allocated after saving.'),
+            'Allocate this payment to outstanding invoices. Any remainder is retained automatically as Customer Credit / Advance.'),
         const SizedBox(height: 12),
         DropdownButtonFormField<CehClient>(
             initialValue: client,
@@ -706,40 +789,93 @@ class _CustomerReceiptScreenState extends State<CustomerReceiptScreen> {
             items: clients
                 .map((x) => DropdownMenuItem(value: x, child: Text(x.name)))
                 .toList(),
-            onChanged: (v) => setState(() => client = v)),
+            onChanged: posting ? null : _selectClient),
+        const SizedBox(height: 12),
+        const Text('Outstanding Invoice(s)',
+            style: TextStyle(fontWeight: FontWeight.w800)),
+        const SizedBox(height: 8),
+        if (loadingInvoices)
+          const Center(child: CircularProgressIndicator())
+        else if (client != null && invoices.isEmpty)
+          const Card(
+              child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child:
+                      Text('No outstanding issued invoices for this Client.')))
+        else
+          for (final invoice in invoices)
+            Card(
+                key: ValueKey('payment-invoice-${invoice.id}'),
+                child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                              '${invoice.reference} • ${invoice.projectNames.isEmpty ? 'General / No project' : invoice.projectNames}',
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w800)),
+                          const SizedBox(height: 4),
+                          Text(
+                              'Invoice ${formatNaira(invoice.total)} • Outstanding ${formatNaira(invoice.outstanding)}'),
+                          const SizedBox(height: 10),
+                          TextField(
+                              key: ValueKey('payment-allocation-${invoice.id}'),
+                              controller: allocations[invoice.id],
+                              enabled: !posting,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                      decimal: true),
+                              onChanged: (_) => setState(() {}),
+                              decoration: const InputDecoration(
+                                  labelText: 'Allocate to this invoice'))
+                        ]))),
         const SizedBox(height: 12),
         DropdownButtonFormField<CehBankAccount>(
             initialValue: bank,
-            decoration: const InputDecoration(labelText: 'Received into'),
+            decoration: const InputDecoration(labelText: 'Received Into'),
             items: banks
                 .map((x) => DropdownMenuItem(value: x, child: Text(x.name)))
                 .toList(),
-            onChanged: (v) => setState(() => bank = v)),
-        const SizedBox(height: 12),
-        DropdownButtonFormField<String>(
-            initialValue: destination,
-            decoration:
-                const InputDecoration(labelText: 'Accounting destination'),
-            items: const [
-              DropdownMenuItem(
-                  value: 'CUSTOMER_ADVANCES',
-                  child: Text('Customer Advance / Deposit')),
-              DropdownMenuItem(
-                  value: 'TRADE_RECEIVABLES', child: Text('Trade Receivables'))
-            ],
-            onChanged: (v) => setState(() => destination = v!)),
+            onChanged: posting ? null : (v) => setState(() => bank = v)),
         const SizedBox(height: 12),
         TextField(
+            key: const ValueKey('payment-amount-received'),
             controller: amount,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(labelText: 'Cash received')),
+            enabled: !posting,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            onChanged: (_) => setState(() {}),
+            decoration: const InputDecoration(labelText: 'Amount Received')),
+        const SizedBox(height: 12),
+        Card(
+            child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(children: [
+                  _paymentMetric('Amount Received', received),
+                  _paymentMetric('Allocated', allocated),
+                  _paymentMetric('Unallocated / Customer Credit', unallocated),
+                ]))),
         const SizedBox(height: 12),
         TextField(
             controller: reference,
+            enabled: !posting,
             decoration: const InputDecoration(
-                labelText: 'Zenith reference — optional')),
+                labelText: 'Zenith Reference — optional')),
         const SizedBox(height: 20),
-        FilledButton(onPressed: save, child: const Text('Save Receipt Draft'))
+        FilledButton(
+            key: const ValueKey('save-post-customer-payment'),
+            onPressed: posting ? null : saveAndPost,
+            child: Text(posting ? 'Posting…' : 'Save / Post Payment'))
+      ]));
+
+  Widget _paymentMetric(String label, double value) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        Text(label),
+        Text(formatNaira(value),
+            style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: value < 0 ? Theme.of(context).colorScheme.error : null))
       ]));
 }
 

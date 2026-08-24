@@ -793,6 +793,21 @@ class CehApiClient {
         .toList();
   }
 
+  Future<List<BillingInvoice>> outstandingInvoices(
+      CehSession session, int clientId) async {
+    final uri = Uri.parse('$baseUrl/invoices.php').replace(
+        queryParameters: {'client_id': '$clientId', 'outstanding_only': '1'});
+    final response = await http
+        .get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'OUTSTANDING_INVOICES_FAILED');
+    return (data['invoices'] as List? ?? const [])
+        .map((value) =>
+            BillingInvoice.fromJson(Map<String, dynamic>.from(value as Map)))
+        .toList();
+  }
+
   Future<BillingInvoiceDetail> invoiceDetails(CehSession session,int invoiceId) async {
     final uri=Uri.parse('$baseUrl/invoices.php').replace(queryParameters:{'id':'$invoiceId'});
     final response=await http.get(uri,headers:authHeaders(session)).timeout(const Duration(seconds:25));
@@ -842,6 +857,13 @@ class CehApiClient {
       CehSession session, Map<String, dynamic> payload) async {
     final data = await _postJson(session, 'customer_receipt_save.php', payload,
         'CUSTOMER_RECEIPT_SAVE_FAILED');
+    return Map<String, dynamic>.from(data['receipt'] as Map);
+  }
+
+  Future<Map<String, dynamic>> postCustomerPayment(
+      CehSession session, Map<String, dynamic> payload) async {
+    final data = await _postJson(session, 'customer_receipt_post.php', payload,
+        'CUSTOMER_PAYMENT_POST_FAILED');
     return Map<String, dynamic>.from(data['receipt'] as Map);
   }
 
