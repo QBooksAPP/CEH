@@ -89,6 +89,8 @@ void main() {
     await tester.pumpWidget(
         MaterialApp(home: InvoiceEditorScreen(session: _admin, api: api)));
     await tester.pumpAndSettle();
+    expect(find.text('Issue Invoice'), findsNothing,
+        reason: 'Issue is available only from saved Draft details.');
 
     await _selectDropdown(tester,
         find.byType(DropdownButtonFormField<CehClient>), 'ABC Construction');

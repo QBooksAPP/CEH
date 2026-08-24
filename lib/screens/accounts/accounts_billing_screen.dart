@@ -1,4 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../core/accounts_formatters.dart';
 import '../../core/api_client.dart';
@@ -101,12 +105,23 @@ class _AccountsBillingScreenState extends State<AccountsBillingScreen> {
                     for (final i in rows)
                       Card(
                           child: ListTile(
+                              key: ValueKey('invoice-row-${i.id}'),
                               title: Text('${i.reference} • ${i.client}',
                                   style: const TextStyle(
                                       fontWeight: FontWeight.w800)),
                               subtitle: Text(
                                   '${i.status} • Outstanding ${formatNaira(i.outstanding)}'),
-                              trailing: Text(formatNaira(i.total))))
+                              trailing: Text(formatNaira(i.total)),
+                              onTap: () async {
+                                await Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (_) => InvoiceDetailsScreen(
+                                            invoiceId: i.id,
+                                            session: widget.session,
+                                            api: widget.api)));
+                                if (mounted) setState(_reload);
+                              }))
                   ]);
                 })
           ])));
@@ -114,9 +129,10 @@ class _AccountsBillingScreenState extends State<AccountsBillingScreen> {
 
 class InvoiceEditorScreen extends StatefulWidget {
   const InvoiceEditorScreen(
-      {super.key, required this.session, required this.api});
+      {super.key, required this.session, required this.api, this.draft});
   final CehSession session;
   final CehApiClient api;
+  final BillingInvoiceDetail? draft;
   @override
   State<InvoiceEditorScreen> createState() => _InvoiceEditorScreenState();
 }
@@ -132,12 +148,17 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
   final _description = TextEditingController();
   String _vatMode = 'NONE';
   int? _vatTaxCodeId;
+  int? _revenueAccountId;
   int? _invoiceId;
+  late String _invoiceDate;
+  String _paymentTerm = 'ADVANCE_PAYMENT';
+  String _terms = 'Advance Payment';
   List<Map<String, dynamic>> _vatCodes = const [];
   bool _saving = false;
   @override
   void initState() {
     super.initState();
+    _invoiceDate = DateTime.now().toIso8601String().substring(0, 10);
     _load();
   }
 
@@ -160,7 +181,38 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
               e['tax_type'] == 'VAT' &&
               ('${e['is_active']}' == '1' || e['is_active'] == true))
           .toList();
+      final draft = widget.draft;
+      if (draft != null && draft.lines.isNotEmpty) {
+        final line = draft.lines.first;
+        _invoiceId = draft.id;
+        _invoiceDate = draft.invoiceDate;
+        _paymentTerm = draft.paymentTerm;
+        _terms = draft.terms;
+        _client = _clients.where((c) => c.id == draft.clientId).firstOrNull;
+        _quantity.text = line.quantity?.toString() ?? '';
+        _rate.text = line.unitPrice?.toStringAsFixed(2) ?? '';
+        _description.text = line.description;
+        _revenueAccountId = line.revenueAccountId;
+        _vatMode = draft.vatMode;
+        _vatTaxCodeId = draft.vatTaxCodeId;
+      }
     });
+    if (_client != null) {
+      final rows = await widget.api
+          .billableProductionReports(widget.session, _client!.id);
+      if (mounted) {
+        setState(() {
+          _reports = rows;
+          final allocations =
+              widget.draft?.lines.first.productionAllocations ?? const [];
+          if (allocations.isNotEmpty) {
+            final sessionId =
+                int.tryParse('${allocations.first['production_session_id']}');
+            _report = rows.where((r) => r.sessionId == sessionId).firstOrNull;
+          }
+        });
+      }
+    }
   }
 
   Future<void> _selectClient(CehClient? value) async {
@@ -179,7 +231,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
   double get _amount =>
       (double.tryParse(_quantity.text) ?? 0) *
       (double.tryParse(_rate.text) ?? 0);
-  Future<void> _save(bool issue) async {
+  Future<void> _save() async {
     if (_client == null || _revenue.isEmpty) return;
     if (_vatMode != 'NONE' && _vatTaxCodeId == null) {
       _message('Select an effective VAT code.');
@@ -201,9 +253,9 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
       final saved = await widget.api.saveInvoice(widget.session, {
         if (_invoiceId != null) 'id': _invoiceId,
         'client_id': _client!.id,
-        'invoice_date': DateTime.now().toIso8601String().substring(0, 10),
-        'payment_term': 'ADVANCE_PAYMENT',
-        'terms': 'Advance Payment',
+        'invoice_date': _invoiceDate,
+        'payment_term': _paymentTerm,
+        'terms': _terms,
         'vat_mode': _vatMode,
         'vat_tax_code_id': _vatTaxCodeId,
         'lines': [
@@ -219,7 +271,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
             'unit_price': rate.toStringAsFixed(2),
             'amount': _amount.toStringAsFixed(2),
             'taxable': true,
-            'revenue_account_id': _revenue.first.id,
+            'revenue_account_id': _revenueAccountId ?? _revenue.first.id,
             'project_id': _report?.projectId,
             'production': _report == null
                 ? null
@@ -232,17 +284,8 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
         ]
       });
       _invoiceId = (saved['id'] as num).toInt();
-      if (issue) {
-        try {
-          await widget.api.issueInvoice(widget.session, _invoiceId!);
-        } on ApiException catch (e) {
-          _message(
-              'Draft ${saved['reference'] ?? ''} was saved, but Issue failed: ${e.code}');
-          return;
-        }
-      }
       if (mounted) {
-        _message(issue ? 'Invoice issued.' : 'Invoice draft saved.');
+        _message('Invoice draft saved.');
         Navigator.pop(context);
       }
     } on ApiException catch (e) {
@@ -256,7 +299,8 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   @override
   Widget build(BuildContext context) => Scaffold(
-      appBar: AppBar(title: const Text('New Invoice')),
+      appBar: AppBar(
+          title: Text(widget.draft == null ? 'New Invoice' : 'Edit Draft')),
       body: ListView(padding: const EdgeInsets.all(18), children: [
         const AccountsSectionTitle(
             'Client → signed production → rate → invoice',
@@ -343,18 +387,227 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
         Text('Invoice line total: ${formatNaira(_amount)}',
             style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 20),
-        Row(children: [
-          Expanded(
-              child: OutlinedButton(
-                  onPressed: _saving ? null : () => _save(false),
-                  child: const Text('Save Draft'))),
-          const SizedBox(width: 12),
-          Expanded(
-              child: FilledButton(
-                  onPressed: _saving ? null : () => _save(true),
-                  child: const Text('Issue Invoice')))
-        ])
+        FilledButton(
+            onPressed: _saving ? null : _save, child: const Text('Save Draft'))
       ]));
+}
+
+class InvoiceDetailsScreen extends StatefulWidget {
+  const InvoiceDetailsScreen(
+      {super.key,
+      required this.invoiceId,
+      required this.session,
+      required this.api});
+  final int invoiceId;
+  final CehSession session;
+  final CehApiClient api;
+  @override
+  State<InvoiceDetailsScreen> createState() => _InvoiceDetailsScreenState();
+}
+
+class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
+  late Future<BillingInvoiceDetail> _detail;
+  bool _busy = false;
+  @override
+  void initState() {
+    super.initState();
+    _reload();
+  }
+
+  void _reload() =>
+      _detail = widget.api.invoiceDetails(widget.session, widget.invoiceId);
+  String _vatMode(String value) => switch (value) {
+        'VAT_EXCLUSIVE' => 'VAT Exclusive',
+        'VAT_INCLUSIVE' => 'VAT Inclusive',
+        _ => 'No VAT'
+      };
+  Future<void> _issue(BillingInvoiceDetail invoice) async {
+    final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+                title: const Text('Issue Invoice?'),
+                content: Text(
+                    'Final invoice total: ${formatNaira(invoice.total)}\n\nIssuing posts this invoice to Trade Receivables, Revenue and Output VAT where applicable. The posted accounting record cannot be edited silently.'),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Cancel')),
+                  FilledButton(
+                      key: const ValueKey('confirm-issue-invoice'),
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Issue Invoice'))
+                ]));
+    if (confirmed != true || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await widget.api.issueInvoice(widget.session, invoice.id);
+      if (mounted) {
+        setState(() {
+          _reload();
+        });
+      }
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.code)));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _sharePdf(BillingInvoiceDetail invoice) async {
+    setState(() => _busy = true);
+    try {
+      final pdf = await widget.api.invoicePdf(widget.session, invoice.id);
+      final temp = await getTemporaryDirectory();
+      final dir = Directory('${temp.path}/ceh-invoices');
+      await dir.create(recursive: true);
+      final file = File('${dir.path}/${pdf.filename}');
+      await file.writeAsBytes(pdf.bytes, flush: true);
+      await SharePlus.instance.share(ShareParams(
+          title: invoice.reference,
+          files: [XFile(file.path, mimeType: 'application/pdf')]));
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.code)));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Widget _metric(String label, String value) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SizedBox(
+            width: 145,
+            child: Text(label,
+                style: const TextStyle(fontWeight: FontWeight.w700))),
+        Expanded(child: Text(value))
+      ]));
+  @override
+  Widget build(BuildContext context) => Scaffold(
+      appBar: AppBar(title: const Text('Invoice Details')),
+      body: FutureBuilder<BillingInvoiceDetail>(
+          future: _detail,
+          builder: (context, s) {
+            if (s.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (s.hasError) {
+              return Center(child: Text('Unable to load invoice: ${s.error}'));
+            }
+            final i = s.data!;
+            final draft = i.status == 'DRAFT';
+            return ListView(padding: const EdgeInsets.all(18), children: [
+              Text(i.reference,
+                  key: const ValueKey('invoice-detail-reference'),
+                  style: Theme.of(context)
+                      .textTheme
+                      .headlineSmall
+                      ?.copyWith(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 12),
+              Card(
+                  child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(children: [
+                        _metric('Status', draft ? 'Draft' : i.status),
+                        _metric('Client', i.client),
+                        _metric(
+                            'Invoice date', displayAccountsDate(i.invoiceDate)),
+                        _metric('Terms', i.terms.replaceAll('_', ' ')),
+                        _metric('VAT treatment', _vatMode(i.vatMode)),
+                        _metric(
+                            'VAT rate',
+                            i.vatMode == 'NONE'
+                                ? 'Not applicable'
+                                : formatBillingTaxRate(i.vatRate)),
+                        _metric('Net', formatNaira(i.net)),
+                        _metric('VAT', formatNaira(i.vat)),
+                        _metric('Total', formatNaira(i.total))
+                      ]))),
+              const AccountsSectionTitle('Invoice lines'),
+              for (final line in i.lines)
+                Card(
+                    child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Line ${line.lineNo} • ${line.description}',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w800)),
+                              const SizedBox(height: 6),
+                              Text(
+                                  '${line.quantity == null ? '' : '${line.quantity} ${line.unitName ?? ''} • '}${formatNaira(line.total)}'),
+                              if ((line.project ?? '').isNotEmpty)
+                                Text('Project: ${line.project}'),
+                              if ((line.equipment ?? '').isNotEmpty)
+                                Text('Equipment: ${line.equipment}'),
+                              for (final p in line.productionAllocations)
+                                Text(
+                                    'Production Report: ${p['report_reference_snapshot']} • ${p['billed_m3']} m³')
+                            ]))),
+              if (!draft)
+                Card(
+                    child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(children: [
+                          _metric('Issued', i.issuedAt ?? '—'),
+                          _metric('Amount paid', formatNaira(i.amountPaid)),
+                          _metric('WHT allocated', formatNaira(i.whtAllocated)),
+                          _metric(
+                              'Credit notes',
+                              i.creditNotes.isEmpty
+                                  ? 'None'
+                                  : i.creditNotes
+                                      .map((c) => c['reference'])
+                                      .join(', ')),
+                          _metric('Outstanding', formatNaira(i.outstanding)),
+                          _metric(
+                              'Journal / posting',
+                              i.journalId == null
+                                  ? 'Not posted'
+                                  : 'Journal #${i.journalId} • ${i.postingStatus ?? 'POSTED'}')
+                        ]))),
+              if (draft)
+                Row(children: [
+                  Expanded(
+                      child: OutlinedButton(
+                          key: const ValueKey('edit-invoice-draft'),
+                          onPressed: _busy
+                              ? null
+                              : () async {
+                                  await Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                          builder: (_) => InvoiceEditorScreen(
+                                              session: widget.session,
+                                              api: widget.api,
+                                              draft: i)));
+                                  if (mounted) {
+                                    setState(() {
+                                      _reload();
+                                    });
+                                  }
+                                },
+                          child: const Text('Edit Draft'))),
+                  const SizedBox(width: 12),
+                  Expanded(
+                      child: FilledButton(
+                          key: const ValueKey('issue-invoice-from-detail'),
+                          onPressed: _busy ? null : () => _issue(i),
+                          child: const Text('Issue Invoice')))
+                ])
+              else
+                FilledButton.icon(
+                    onPressed: _busy ? null : () => _sharePdf(i),
+                    icon: const Icon(Icons.picture_as_pdf_outlined),
+                    label: const Text('View / Share Invoice PDF'))
+            ]);
+          }));
 }
 
 class CustomerReceiptScreen extends StatefulWidget {

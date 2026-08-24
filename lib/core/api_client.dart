@@ -793,6 +793,22 @@ class CehApiClient {
         .toList();
   }
 
+  Future<BillingInvoiceDetail> invoiceDetails(CehSession session,int invoiceId) async {
+    final uri=Uri.parse('$baseUrl/invoices.php').replace(queryParameters:{'id':'$invoiceId'});
+    final response=await http.get(uri,headers:authHeaders(session)).timeout(const Duration(seconds:25));
+    final data=_decodeObject(response);_requireOk(response,data,'INVOICE_DETAILS_FAILED');
+    return BillingInvoiceDetail.fromJson(data);
+  }
+
+  Future<ProductionReportFile> invoicePdf(CehSession session,int invoiceId) async {
+    final uri=Uri.parse('$baseUrl/invoice_pdf.php').replace(queryParameters:{'invoice_id':'$invoiceId'});
+    final response=await http.get(uri,headers:authHeaders(session)).timeout(const Duration(seconds:40));
+    if(response.statusCode<200||response.statusCode>=300){var error='INVOICE_PDF_FAILED';try{final data=jsonDecode(utf8.decode(response.bodyBytes));if(data is Map&&data['error']!=null)error='${data['error']}';}catch(_){}throw ApiException(error,statusCode:response.statusCode);}
+    if(!(response.headers['content-type']??'').toLowerCase().startsWith('application/pdf')||response.bodyBytes.length<5||String.fromCharCodes(response.bodyBytes.take(5))!='%PDF-')throw const ApiException('INVALID_INVOICE_PDF');
+    final disposition=response.headers['content-disposition']??'';final match=RegExp(r'filename="?([^";]+)"?',caseSensitive:false).firstMatch(disposition);final filename=match?.group(1)??'CEH-Invoice.pdf';
+    return ProductionReportFile(bytes:response.bodyBytes,filename:filename);
+  }
+
   Future<List<BillableProductionReport>> billableProductionReports(
       CehSession session, int clientId) async {
     final uri = Uri.parse('$baseUrl/billable_production_reports.php')
