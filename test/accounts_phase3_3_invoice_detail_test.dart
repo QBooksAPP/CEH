@@ -35,8 +35,10 @@ BillingInvoiceDetail _detail(String vatMode, {String status = 'DRAFT'}) =>
         vat: vatMode == 'NONE' ? 0 : 33750,
         total: vatMode == 'NONE' ? 450000 : 483750,
         amountPaid: status == 'DRAFT' ? 0 : 100000,
+        customerCreditApplied: status == 'DRAFT' ? 0 : 116250,
         whtAllocated: status == 'DRAFT' ? 0 : 10000,
-        outstanding: status == 'DRAFT' ? 483750 : 373750,
+        creditNotesTotal: status == 'DRAFT' ? 0 : 25000,
+        outstanding: status == 'DRAFT' ? 483750 : 232500,
         issuedAt: status == 'DRAFT' ? null : '2026-08-24 10:00:00',
         journalId: status == 'DRAFT' ? null : 44,
         postingStatus: status == 'DRAFT' ? null : 'POSTED',
@@ -69,6 +71,35 @@ BillingInvoiceDetail _detail(String vatMode, {String status = 'DRAFT'}) =>
             ? const []
             : const [
                 {'reference': 'CEH-CN-000001'}
+              ],
+        settlementHistory: status == 'DRAFT'
+            ? const []
+            : const [
+                InvoiceSettlementEvent(
+                    date: '2026-08-24',
+                    type: 'CUSTOMER_PAYMENT',
+                    amount: 100000,
+                    reference: 'CEH-RCP-000010',
+                    bankDestination: 'Zenith Bank',
+                    bankReference: 'ZN-123'),
+                InvoiceSettlementEvent(
+                    date: '2026-08-25',
+                    type: 'CUSTOMER_CREDIT',
+                    amount: 116250,
+                    reference: 'CEH-RCP-000011'),
+                InvoiceSettlementEvent(
+                    date: '2026-08-26',
+                    type: 'WHT',
+                    amount: 10000,
+                    reference: 'CEH-RCP-000012',
+                    taxCode: 'WHT_SERVICES',
+                    taxRate: '2.000000',
+                    certificateStatus: 'CERTIFICATE_PENDING'),
+                InvoiceSettlementEvent(
+                    date: '2026-08-27',
+                    type: 'CREDIT_NOTE',
+                    amount: 25000,
+                    reference: 'CEH-CN-000001'),
               ]);
 
 class _DetailApi extends CehApiClient {
@@ -109,6 +140,21 @@ void main() {
     expect(source, isNot(contains('accounts_post_journal')));
     expect(source, isNot(contains('UPDATE qbook_invoices')));
     expect(source, isNot(contains('DELETE FROM qbook_invoices')));
+  });
+
+  test('settlement detail derives each effective component independently', () {
+    final source = File('Server/invoices.php').readAsStringSync();
+    expect(source, contains('customer_credit_applied'));
+    expect(source, contains('credit_notes_total'));
+    expect(source, contains('qbook_customer_receipt_allocations'));
+    expect(source, contains('qbook_advance_applications'));
+    expect(source, contains('qbook_receipt_wht'));
+    expect(source, contains('qbook_credit_note_allocations'));
+    expect(source, contains("'CUSTOMER_PAYMENT' event_type"));
+    expect(source, contains("'CUSTOMER_CREDIT' event_type"));
+    expect(source, contains("'WHT' event_type"));
+    expect(source, contains("'CREDIT_NOTE' event_type"));
+    expect(source, isNot(contains('INSERT INTO')));
   });
 
   test('issued invoice PDF is authenticated and loads its cache dependency',
@@ -179,11 +225,14 @@ void main() {
 
   testWidgets('issued invoice details are read-only and expose PDF/status',
       (tester) async {
+    tester.view.physicalSize = const Size(900, 2600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     final api = _DetailApi(_detail('VAT_EXCLUSIVE', status: 'ISSUED'));
     await tester.pumpWidget(MaterialApp(
         home: InvoiceDetailsScreen(invoiceId: 9, session: _admin, api: api)));
     await tester.pumpAndSettle();
-    await tester.drag(find.byType(ListView), const Offset(0, -900));
+    await tester.drag(find.byType(ListView), const Offset(0, -500));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('edit-invoice-draft')), findsNothing);
     expect(
@@ -195,5 +244,31 @@ void main() {
     expect(find.text('30.00 m³ × ₦15,000.00 = ₦450,000.00'), findsOneWidget);
     expect(find.text('CEH-CN-000001'), findsOneWidget);
     expect(api.issueCalls, 0);
+  });
+
+  testWidgets('part-paid invoice explains mixed settlement chronologically',
+      (tester) async {
+    tester.view.physicalSize = const Size(900, 2200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final api = _DetailApi(_detail('VAT_EXCLUSIVE', status: 'PART_PAID'));
+    await tester.pumpWidget(MaterialApp(
+        home: InvoiceDetailsScreen(invoiceId: 9, session: _admin, api: api)));
+    await tester.pumpAndSettle();
+    expect(find.text('Part Paid'), findsOneWidget);
+    await tester.drag(find.byType(ListView), const Offset(0, -1100));
+    await tester.pumpAndSettle();
+    expect(find.text('Cash Payments'), findsOneWidget);
+    expect(find.text('Customer Credit Applied'), findsOneWidget);
+    expect(find.text('₦116,250.00'), findsWidgets);
+    expect(
+        find.textContaining('24-08-2026 • Customer Payment'), findsOneWidget);
+    expect(find.textContaining('25-08-2026 • Customer Credit Applied'),
+        findsOneWidget);
+    expect(find.textContaining('26-08-2026 • WHT Allocated'), findsOneWidget);
+    expect(find.textContaining('27-08-2026 • Credit Note'), findsOneWidget);
+    expect(find.textContaining('Zenith Bank'), findsOneWidget);
+    expect(find.textContaining('WHT_SERVICES 2.00%'), findsOneWidget);
+    expect(find.textContaining('Certificate Pending'), findsOneWidget);
   });
 }

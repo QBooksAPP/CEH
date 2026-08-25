@@ -119,7 +119,7 @@ class _AccountsBillingScreenState extends State<AccountsBillingScreen> {
                                   style: const TextStyle(
                                       fontWeight: FontWeight.w800)),
                               subtitle: Text(
-                                  '${i.status} • Outstanding ${formatNaira(i.outstanding)}'),
+                                  '${formatAccountsStatus(i.status)} • Outstanding ${formatNaira(i.outstanding)}'),
                               trailing: Text(formatNaira(i.total)),
                               onTap: () async {
                                 await Navigator.push(
@@ -516,6 +516,32 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
     return unit.isEmpty ? 'unit' : unit;
   }
 
+  String _settlementType(String type) => switch (type) {
+        'CUSTOMER_PAYMENT' => 'Customer Payment',
+        'CUSTOMER_CREDIT' => 'Customer Credit Applied',
+        'WHT' => 'WHT Allocated',
+        'CREDIT_NOTE' => 'Credit Note',
+        _ => formatAccountsStatus(type),
+      };
+
+  String _settlementDetails(InvoiceSettlementEvent event) {
+    final details = <String>[];
+    if ((event.reference ?? '').isNotEmpty) details.add(event.reference!);
+    if ((event.bankDestination ?? '').isNotEmpty) {
+      details.add('Received into ${event.bankDestination}');
+    }
+    if ((event.bankReference ?? '').isNotEmpty) {
+      details.add('Bank ref ${event.bankReference}');
+    }
+    if ((event.taxCode ?? '').isNotEmpty) {
+      details.add('${event.taxCode} ${formatBillingTaxRate(event.taxRate)}');
+    }
+    if ((event.certificateStatus ?? '').isNotEmpty) {
+      details.add(formatAccountsStatus(event.certificateStatus!));
+    }
+    return details.join(' • ');
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
       appBar: AppBar(title: const Text('Invoice Details')),
@@ -542,7 +568,8 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
                   child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Column(children: [
-                        _metric('Status', draft ? 'Draft' : i.status),
+                        _metric('Status',
+                            draft ? 'Draft' : formatAccountsStatus(i.status)),
                         _metric('Client', i.client),
                         _metric(
                             'Invoice date', displayAccountsDate(i.invoiceDate)),
@@ -583,7 +610,8 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
                                 Text(
                                     'Production Report: ${p['report_reference_snapshot']} • ${p['billed_m3']} m³')
                             ]))),
-              if (!draft)
+              if (!draft) ...[
+                const AccountsSectionTitle('Settlement summary'),
                 Card(
                     child: Padding(
                         padding: const EdgeInsets.all(16),
@@ -593,22 +621,38 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
                               i.issuedAt == null
                                   ? '—'
                                   : displayAccountsTimestampDate(i.issuedAt!)),
-                          _metric('Amount paid', formatNaira(i.amountPaid)),
-                          _metric('WHT allocated', formatNaira(i.whtAllocated)),
+                          _metric('Invoice Total', formatNaira(i.total)),
+                          _metric('Cash Payments', formatNaira(i.amountPaid)),
+                          _metric('Customer Credit Applied',
+                              formatNaira(i.customerCreditApplied)),
+                          _metric('WHT Allocated', formatNaira(i.whtAllocated)),
                           _metric(
-                              'Credit notes',
-                              i.creditNotes.isEmpty
-                                  ? 'None'
-                                  : i.creditNotes
-                                      .map((c) => c['reference'])
-                                      .join(', ')),
+                              'Credit Notes', formatNaira(i.creditNotesTotal)),
                           _metric('Outstanding', formatNaira(i.outstanding)),
                           _metric(
                               'Journal / posting',
                               i.journalId == null
                                   ? 'Not posted'
-                                  : 'Journal #${i.journalId} • ${i.postingStatus ?? 'POSTED'}')
+                                  : 'Journal #${i.journalId} • ${formatAccountsStatus(i.postingStatus ?? 'POSTED')}')
                         ]))),
+                const AccountsSectionTitle('Payment / Allocation History'),
+                if (i.settlementHistory.isEmpty)
+                  const Card(
+                      child: Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Text('No settlement activity yet.')))
+                else
+                  for (final event in i.settlementHistory)
+                    Card(
+                        child: ListTile(
+                            key: ValueKey(
+                                'settlement-${event.type}-${event.date}-${event.amount}'),
+                            title: Text(
+                                '${displayAccountsDate(event.date)} • ${_settlementType(event.type)} • ${formatNaira(event.amount)}'),
+                            subtitle: _settlementDetails(event).isEmpty
+                                ? null
+                                : Text(_settlementDetails(event))))
+              ],
               if (draft)
                 Row(children: [
                   Expanded(

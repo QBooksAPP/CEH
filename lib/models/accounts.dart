@@ -300,10 +300,13 @@ class BillingInvoiceDetail {
       required this.vat,
       required this.total,
       required this.amountPaid,
+      this.customerCreditApplied = 0,
       required this.whtAllocated,
+      this.creditNotesTotal = 0,
       required this.outstanding,
       required this.lines,
       required this.creditNotes,
+      this.settlementHistory = const [],
       this.issuedAt,
       this.journalId,
       this.postingStatus});
@@ -322,10 +325,13 @@ class BillingInvoiceDetail {
   final double vat;
   final double total;
   final double amountPaid;
+  final double customerCreditApplied;
   final double whtAllocated;
+  final double creditNotesTotal;
   final double outstanding;
   final List<BillingInvoiceLine> lines;
   final List<Map<String, dynamic>> creditNotes;
+  final List<InvoiceSettlementEvent> settlementHistory;
   final String? issuedAt;
   final int? journalId;
   final String? postingStatus;
@@ -349,7 +355,9 @@ class BillingInvoiceDetail {
         vat: _double(json['vat_amount']),
         total: _double(json['total_amount']),
         amountPaid: _double(json['amount_paid']),
+        customerCreditApplied: _double(json['customer_credit_applied']),
         whtAllocated: _double(json['wht_allocated']),
+        creditNotesTotal: _double(json['credit_notes_total']),
         outstanding: _double(json['outstanding']),
         lines: (data['lines'] as List? ?? const [])
             .map((e) => BillingInvoiceLine.fromJson(
@@ -358,10 +366,49 @@ class BillingInvoiceDetail {
         creditNotes: (data['credit_notes'] as List? ?? const [])
             .map((e) => Map<String, dynamic>.from(e as Map))
             .toList(),
+        settlementHistory: (data['settlement_history'] as List? ?? const [])
+            .map((e) => InvoiceSettlementEvent.fromJson(
+                Map<String, dynamic>.from(e as Map)))
+            .toList(),
         issuedAt: json['issued_at']?.toString(),
         journalId: json['journal_id'] == null ? null : _int(json['journal_id']),
         postingStatus: json['posting_status']?.toString());
   }
+}
+
+class InvoiceSettlementEvent {
+  const InvoiceSettlementEvent(
+      {required this.date,
+      required this.type,
+      required this.amount,
+      this.reference,
+      this.bankDestination,
+      this.bankReference,
+      this.taxCode,
+      this.taxRate,
+      this.certificateStatus});
+
+  final String date;
+  final String type;
+  final double amount;
+  final String? reference;
+  final String? bankDestination;
+  final String? bankReference;
+  final String? taxCode;
+  final String? taxRate;
+  final String? certificateStatus;
+
+  factory InvoiceSettlementEvent.fromJson(Map<String, dynamic> json) =>
+      InvoiceSettlementEvent(
+          date: '${json['event_date'] ?? ''}',
+          type: '${json['event_type'] ?? ''}',
+          amount: _double(json['amount']),
+          reference: json['reference']?.toString(),
+          bankDestination: json['bank_destination']?.toString(),
+          bankReference: json['bank_reference']?.toString(),
+          taxCode: json['tax_code']?.toString(),
+          taxRate: json['tax_rate']?.toString(),
+          certificateStatus: json['certificate_status']?.toString());
 }
 
 class BillableProductionReport {

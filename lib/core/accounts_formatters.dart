@@ -47,6 +47,14 @@ String formatBillingTaxRate(Object? value) {
   return '${(rate ?? 0).toStringAsFixed(2)}%';
 }
 
+String formatAccountsStatus(String value) => value
+    .trim()
+    .split('_')
+    .where((part) => part.isNotEmpty)
+    .map((part) =>
+        '${part.substring(0, 1).toUpperCase()}${part.substring(1).toLowerCase()}')
+    .join(' ');
+
 double? parseNgnInput(String value) {
   final normalized = normalizeNgnInput(value);
   if (normalized == null) return null;
