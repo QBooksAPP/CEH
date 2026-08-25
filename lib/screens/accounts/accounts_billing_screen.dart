@@ -712,9 +712,16 @@ class _PaymentWhtDraft {
   int? taxCodeId;
   String certificateStatus = 'CERTIFICATE_PENDING';
   final base = TextEditingController();
+  final accepted = TextEditingController();
+  final overrideReason = TextEditingController();
+  bool acceptedEdited = false;
   XFile? certificate;
 
-  void dispose() => base.dispose();
+  void dispose() {
+    base.dispose();
+    accepted.dispose();
+    overrideReason.dispose();
+  }
 }
 
 class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
@@ -785,16 +792,18 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
   int get receivedMinor => _minor(amount.text);
   int get allocatedMinor => allocations.values
       .fold(0, (total, controller) => total + _minor(controller.text));
-  int _whtMinor(int invoiceId) {
+  Map<String, dynamic>? _whtCode(int? taxCodeId) {
+    if (taxCodeId == null) return null;
+    for (final item in whtCodes) {
+      if ((item['id'] as num).toInt() == taxCodeId) return item;
+    }
+    return null;
+  }
+
+  int _suggestedWhtMinor(int invoiceId) {
     final draft = wht[invoiceId];
     if (draft == null || !draft.enabled || draft.taxCodeId == null) return 0;
-    Map<String, dynamic>? code;
-    for (final item in whtCodes) {
-      if ((item['id'] as num).toInt() == draft.taxCodeId) {
-        code = item;
-        break;
-      }
-    }
+    final code = _whtCode(draft.taxCodeId);
     if (code == null) return 0;
     try {
       return calculateTaxMinorUnits(
@@ -802,6 +811,51 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
     } on FormatException {
       return 0;
     }
+  }
+
+  int _whtMinor(int invoiceId) {
+    final draft = wht[invoiceId];
+    if (draft == null || !draft.enabled) return 0;
+    return _minor(draft.accepted.text);
+  }
+
+  int? _automaticBaseMinor(BillingInvoice invoice, Map<String, dynamic> code) {
+    if (invoice.creditNotesTotal > 0) return null;
+    return switch ('${code['calculation_base']}') {
+      'NET' => (invoice.net * 100).round(),
+      'GROSS' => (invoice.total * 100).round(),
+      _ => null,
+    };
+  }
+
+  bool _requiresManualBase(BillingInvoice invoice, Map<String, dynamic> code) =>
+      _automaticBaseMinor(invoice, code) == null;
+
+  void _selectWhtCode(BillingInvoice invoice, int? value) {
+    final draft = wht[invoice.id]!;
+    draft.taxCodeId = value;
+    draft.acceptedEdited = false;
+    draft.overrideReason.clear();
+    final code = _whtCode(value);
+    final baseMinor = code == null ? null : _automaticBaseMinor(invoice, code);
+    if (baseMinor == null || baseMinor <= 0) {
+      draft.base.clear();
+      draft.accepted.clear();
+      return;
+    }
+    draft.base.text = completeNgnInput(ngnMinorUnitsForApi(baseMinor));
+    final suggested = calculateTaxMinorUnits(baseMinor, code!['rate_percent']);
+    draft.accepted.text = completeNgnInput(ngnMinorUnitsForApi(suggested));
+  }
+
+  void _baseChanged(BillingInvoice invoice) {
+    final draft = wht[invoice.id]!;
+    if (!draft.acceptedEdited) {
+      final suggested = _suggestedWhtMinor(invoice.id);
+      draft.accepted.text =
+          suggested > 0 ? completeNgnInput(ngnMinorUnitsForApi(suggested)) : '';
+    }
+    setState(() {});
   }
 
   int get whtAllocatedMinor =>
@@ -860,11 +914,24 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
       final draft = wht[invoice.id]!;
       final whtValue = _whtMinor(invoice.id);
       if (draft.enabled) {
+        final suggestedWht = _suggestedWhtMinor(invoice.id);
         if (draft.taxCodeId == null ||
             _minor(draft.base.text) <= 0 ||
+            suggestedWht <= 0 ||
             whtValue <= 0) {
           _message(
               '${invoice.reference}: select a WHT Code and enter the calculation base.');
+          return;
+        }
+        final reason = draft.overrideReason.text.trim();
+        if (whtValue != suggestedWht && reason.isEmpty) {
+          _message(
+              '${invoice.reference}: enter a reason for the WHT override.');
+          return;
+        }
+        if (whtValue == suggestedWht && reason.isNotEmpty) {
+          _message(
+              '${invoice.reference}: remove the override reason because accepted WHT equals suggested WHT.');
           return;
         }
         if (draft.certificateStatus == 'CERTIFICATE_RECEIVED' &&
@@ -919,6 +986,11 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
                   'wht_tax_code_id': wht[invoice.id]!.taxCodeId,
                   'wht_calculation_base_amount':
                       ngnMinorUnitsForApi(_minor(wht[invoice.id]!.base.text)),
+                  'wht_suggested_amount':
+                      ngnMinorUnitsForApi(_suggestedWhtMinor(invoice.id)),
+                  if (_whtMinor(invoice.id) != _suggestedWhtMinor(invoice.id))
+                    'wht_override_reason':
+                        wht[invoice.id]!.overrideReason.text.trim(),
                   'certificate_status': wht[invoice.id]!.certificateStatus,
                   if (whtEvidenceIds[invoice.id] != null)
                     'wht_certificate_evidence_id': whtEvidenceIds[invoice.id],
@@ -1013,6 +1085,9 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
                                         if (!value) {
                                           draft.taxCodeId = null;
                                           draft.base.clear();
+                                          draft.accepted.clear();
+                                          draft.overrideReason.clear();
+                                          draft.acceptedEdited = false;
                                           draft.certificateStatus =
                                               'CERTIFICATE_PENDING';
                                           draft.certificate = null;
@@ -1036,22 +1111,66 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
                                     .toList(),
                                 onChanged: posting
                                     ? null
-                                    : (value) => setState(() {
-                                          wht[invoice.id]!.taxCodeId = value;
-                                        })),
+                                    : (value) => setState(
+                                        () => _selectWhtCode(invoice, value))),
                             const SizedBox(height: 10),
                             if (wht[invoice.id]!.taxCodeId != null)
                               Builder(builder: (context) {
                                 final code = whtCodes.firstWhere((item) =>
                                     (item['id'] as num).toInt() ==
                                     wht[invoice.id]!.taxCodeId);
-                                return Text(
-                                    'Configured rate: ${formatBillingTaxRate(code['rate_percent'])} • Calculation base: ${formatAccountsStatus('${code['calculation_base']}')}\nEnter the actual amount subject to WHT; it is not inferred from cash or outstanding.');
+                                final manual =
+                                    _requiresManualBase(invoice, code);
+                                final suggested =
+                                    _suggestedWhtMinor(invoice.id);
+                                return Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                          'Configured rate: ${formatBillingTaxRate(code['rate_percent'])} • Calculation base: ${formatAccountsStatus('${code['calculation_base']}')}'),
+                                      if (manual)
+                                        const Text(
+                                            'Enter the supported WHT base manually; CEH will not guess from cash or outstanding.'),
+                                      if (suggested > 0)
+                                        Text(
+                                            '${formatBillingTaxRate(code['rate_percent'])} × ${formatNaira(_minor(wht[invoice.id]!.base.text) / 100)} = ${formatNaira(suggested / 100)}',
+                                            key: ValueKey(
+                                                'payment-wht-calculation-${invoice.id}')),
+                                    ]);
                               }),
                             const SizedBox(height: 8),
                             TextField(
                                 key: ValueKey('payment-wht-base-${invoice.id}'),
                                 controller: wht[invoice.id]!.base,
+                                enabled: !posting &&
+                                    (wht[invoice.id]!.taxCodeId == null ||
+                                        _requiresManualBase(
+                                            invoice,
+                                            _whtCode(
+                                                wht[invoice.id]!.taxCodeId)!)),
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                        decimal: true),
+                                inputFormatters: const [
+                                  NgnAmountInputFormatter()
+                                ],
+                                onChanged: (_) => _baseChanged(invoice),
+                                decoration: InputDecoration(
+                                    labelText: 'WHT calculation base amount',
+                                    helperText: wht[invoice.id]!.taxCodeId !=
+                                                null &&
+                                            !_requiresManualBase(
+                                                invoice,
+                                                _whtCode(wht[invoice.id]!
+                                                    .taxCodeId)!)
+                                        ? 'Suggested automatically from the immutable issued invoice.'
+                                        : 'Required manually because a safe whole-invoice base cannot be proven.')),
+                            const SizedBox(height: 8),
+                            TextField(
+                                key: ValueKey(
+                                    'payment-wht-accepted-${invoice.id}'),
+                                controller: wht[invoice.id]!.accepted,
                                 enabled: !posting,
                                 keyboardType:
                                     const TextInputType.numberWithOptions(
@@ -1059,9 +1178,27 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
                                 inputFormatters: const [
                                   NgnAmountInputFormatter()
                                 ],
-                                onChanged: (_) => setState(() {}),
+                                onChanged: (_) => setState(() {
+                                      wht[invoice.id]!.acceptedEdited = true;
+                                    }),
                                 decoration: const InputDecoration(
-                                    labelText: 'WHT calculation base amount')),
+                                    labelText: 'WHT Accepted')),
+                            if (_whtMinor(invoice.id) > 0 &&
+                                _whtMinor(invoice.id) !=
+                                    _suggestedWhtMinor(invoice.id)) ...[
+                              const SizedBox(height: 8),
+                              TextField(
+                                  key: ValueKey(
+                                      'payment-wht-override-reason-${invoice.id}'),
+                                  controller: wht[invoice.id]!.overrideReason,
+                                  enabled: !posting,
+                                  maxLength: 500,
+                                  onChanged: (_) => setState(() {}),
+                                  decoration: const InputDecoration(
+                                      labelText: 'WHT override reason',
+                                      helperText:
+                                          'Required because accepted WHT differs from the suggestion.')),
+                            ],
                             const SizedBox(height: 8),
                             DropdownButtonFormField<String>(
                                 key: ValueKey(

@@ -56,8 +56,24 @@ accounts_endpoint(function () use ($user, $input): array {
                 if ($legacyWht) accounts_fail('MIXED_WHT_CONTRACT_NOT_ALLOWED', 409);
                 $code = billing_tax_code($db, $allocation['wht_tax_code_id'], 'WHT', $receipt['receipt_date']);
                 $baseAmount = accounts_money_minor($allocation['wht_calculation_base_amount'] ?? '');
-                $expectedWht = billing_percent_amount($baseAmount, (string)$code['rate_percent']);
-                if ($expectedWht !== $whtAmount) accounts_fail('WHT_CALCULATION_MISMATCH', 409);
+                $suggestedWht = billing_percent_amount($baseAmount, (string)$code['rate_percent']);
+                if (isset($allocation['wht_suggested_amount'])) {
+                    $clientSuggested = accounts_money_minor($allocation['wht_suggested_amount']);
+                    if ($clientSuggested !== $suggestedWht) {
+                        accounts_fail('WHT_SUGGESTION_MISMATCH', 409);
+                    }
+                }
+                $overrideReasonRaw = trim((string)($allocation['wht_override_reason'] ?? ''));
+                $isOverride = $suggestedWht !== $whtAmount;
+                if ($isOverride && $overrideReasonRaw === '') {
+                    accounts_fail('WHT_OVERRIDE_REASON_REQUIRED', 409);
+                }
+                if (!$isOverride && $overrideReasonRaw !== '') {
+                    accounts_fail('WHT_OVERRIDE_REASON_NOT_ALLOWED', 409);
+                }
+                $overrideReason = $isOverride
+                    ? production_clean_text($overrideReasonRaw, 500, 'INVALID_WHT_OVERRIDE_REASON')
+                    : null;
                 $status = strtoupper((string)($allocation['certificate_status'] ?? 'CERTIFICATE_PENDING'));
                 if (!in_array($status, ['CERTIFICATE_PENDING', 'CERTIFICATE_RECEIVED'], true)) {
                     accounts_fail('INVALID_WHT_CERTIFICATE_STATUS');
@@ -74,6 +90,8 @@ accounts_endpoint(function () use ($user, $input): array {
                 $allocationWht = [
                     'code' => $code,
                     'base_minor' => $baseAmount,
+                    'suggested_minor' => $suggestedWht,
+                    'override_reason' => $overrideReason,
                     'status' => $status,
                     'evidence_id' => $evidenceId,
                 ];
@@ -144,7 +162,7 @@ accounts_endpoint(function () use ($user, $input): array {
         ], $lines);
 
         $insertAllocation = $db->prepare('INSERT INTO qbook_customer_receipt_allocations(receipt_id,invoice_id,cash_amount,wht_amount,allocated_by)VALUES(?,?,?,?,?)');
-        $insertAllocationWht = $db->prepare('INSERT INTO qbook_customer_receipt_allocation_wht(receipt_allocation_id,tax_code_id,rate_snapshot,calculation_base_snapshot,calculation_base_amount,accepted_amount,certificate_status,certificate_evidence_id,certificate_received_at)VALUES(?,?,?,?,?,?,?,?,?)');
+        $insertAllocationWht = $db->prepare('INSERT INTO qbook_customer_receipt_allocation_wht(receipt_allocation_id,tax_code_id,rate_snapshot,calculation_base_snapshot,calculation_base_amount,suggested_amount,accepted_amount,override_reason,certificate_status,certificate_evidence_id,certificate_received_at)VALUES(?,?,?,?,?,?,?,?,?,?,?)');
         foreach ($normalized as [$invoice, $cashAmount, $whtAmount, $allocationWht]) {
             $insertAllocation->execute([$id, $invoice['id'], accounts_minor_decimal($cashAmount), accounts_minor_decimal($whtAmount), $user['id']]);
             if ($allocationWht !== null) {
@@ -153,7 +171,8 @@ accounts_endpoint(function () use ($user, $input): array {
                 $status = $allocationWht['status'];
                 $insertAllocationWht->execute([
                     $allocationId, $code['id'], $code['rate_percent'], $code['calculation_base'],
-                    accounts_minor_decimal($allocationWht['base_minor']), accounts_minor_decimal($whtAmount),
+                    accounts_minor_decimal($allocationWht['base_minor']), accounts_minor_decimal($allocationWht['suggested_minor']),
+                    accounts_minor_decimal($whtAmount), $allocationWht['override_reason'],
                     $status, $allocationWht['evidence_id'], $status === 'CERTIFICATE_RECEIVED' ? gmdate('Y-m-d H:i:s') : null,
                 ]);
             }

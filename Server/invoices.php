@@ -68,7 +68,8 @@ accounts_endpoint(function():array{
     $outstandingOnly=filter_var($_GET['outstanding_only']??false,FILTER_VALIDATE_BOOL);
     if($outstandingOnly)$where[]="i.status='ISSUED'";
     $projects="COALESCE((SELECT GROUP_CONCAT(DISTINCT p.name ORDER BY p.name SEPARATOR ' • ') FROM qbook_invoice_lines il LEFT JOIN qbook_projects p ON p.id=il.project_id WHERE il.invoice_id=i.id AND p.id IS NOT NULL),'')";
-    $sql="SELECT i.*,{$settled} settled,{$projects} project_names FROM qbook_invoices i".($where?' WHERE '.implode(' AND ',$where):'')." ORDER BY COALESCE(i.invoice_date,DATE(i.created_at)) DESC,i.id DESC";
+    $creditNotes="COALESCE((SELECT SUM(ca.amount) FROM qbook_credit_note_allocations ca JOIN qbook_credit_notes c ON c.id=ca.credit_note_id AND c.status='ISSUED' WHERE ca.invoice_id=i.id),0)";
+    $sql="SELECT i.*,{$settled} settled,{$projects} project_names,{$creditNotes} credit_notes_total FROM qbook_invoices i".($where?' WHERE '.implode(' AND ',$where):'')." ORDER BY COALESCE(i.invoice_date,DATE(i.created_at)) DESC,i.id DESC";
     $s=$db->prepare($sql);$s->execute($args);$out=[];foreach($s->fetchAll()as$row){$total=$row['total_amount']===null?0:accounts_money_minor($row['total_amount'],false);$settledMinor=accounts_money_minor((string)$row['settled'],false);$outstanding=$total-$settledMinor;if($outstandingOnly&&$outstanding<=0)continue;$row['reference']=billing_ref('INVOICE',$row['reference_no']);$row['outstanding']=accounts_minor_decimal($outstanding);$row['display_status']=billing_display_status($row+['outstanding_minor'=>$outstanding]);$out[]=$row;}
     return['invoices'=>$out];
 });

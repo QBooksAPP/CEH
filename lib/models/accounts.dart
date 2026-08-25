@@ -199,6 +199,10 @@ class BillingInvoice {
       required this.client,
       required this.status,
       required this.total,
+      this.net = 0,
+      this.vat = 0,
+      this.vatMode = 'NONE',
+      this.creditNotesTotal = 0,
       required this.outstanding,
       this.projectNames = '',
       this.invoiceDate,
@@ -208,6 +212,10 @@ class BillingInvoice {
   final String client;
   final String status;
   final double total;
+  final double net;
+  final double vat;
+  final String vatMode;
+  final double creditNotesTotal;
   final double outstanding;
   final String projectNames;
   final String? invoiceDate;
@@ -218,6 +226,10 @@ class BillingInvoice {
       client: '${json['client_name_snapshot'] ?? ''}',
       status: '${json['display_status'] ?? json['status'] ?? ''}',
       total: _double(json['total_amount']),
+      net: _double(json['net_amount']),
+      vat: _double(json['vat_amount']),
+      vatMode: '${json['vat_mode'] ?? 'NONE'}',
+      creditNotesTotal: _double(json['credit_notes_total']),
       outstanding: _double(json['outstanding']),
       projectNames: '${json['project_names'] ?? ''}',
       invoiceDate: json['invoice_date']?.toString(),

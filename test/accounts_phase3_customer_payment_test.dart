@@ -36,7 +36,7 @@ class _PaymentApi extends CehApiClient {
             'name': 'General Services',
             'tax_type': 'WHT',
             'rate_percent': '2.000000',
-            'calculation_base': 'GROSS',
+            'calculation_base': 'NET',
             'effective_from': '2025-01-01',
             'effective_to': null,
             'is_active': 1,
@@ -61,6 +61,17 @@ class _PaymentApi extends CehApiClient {
             'calculation_base': 'GROSS',
             'effective_from': '2020-01-01',
             'effective_to': '2024-12-31',
+            'is_active': 1,
+          },
+          {
+            'id': 24,
+            'code': 'WHT_MANUAL',
+            'name': 'Manual Contractual Base',
+            'tax_type': 'WHT',
+            'rate_percent': '2.000000',
+            'calculation_base': 'MANUAL',
+            'effective_from': '2025-01-01',
+            'effective_to': null,
             'is_active': 1,
           }
         ]
@@ -92,6 +103,9 @@ class _PaymentApi extends CehApiClient {
             client: 'ABC Construction',
             status: 'ISSUED',
             projectNames: 'Epe',
+            net: 450000,
+            vat: 33750,
+            vatMode: 'VAT_EXCLUSIVE',
             total: 483750,
             outstanding: 483750),
         BillingInvoice(
@@ -100,8 +114,22 @@ class _PaymentApi extends CehApiClient {
             client: 'ABC Construction',
             status: 'PART_PAID',
             projectNames: 'Badagry • Epe',
+            net: 279069.77,
+            vat: 20930.23,
+            vatMode: 'VAT_INCLUSIVE',
             total: 300000,
             outstanding: 200000),
+        BillingInvoice(
+            id: 6,
+            reference: 'CEH-INV-000006',
+            client: 'ABC Construction',
+            status: 'ISSUED',
+            projectNames: 'General',
+            net: 100000,
+            vat: 0,
+            vatMode: 'NONE',
+            total: 100000,
+            outstanding: 100000),
       ];
 
   @override
@@ -168,6 +196,8 @@ void main() {
     final statement = File('Server/client_statement.php').readAsStringSync();
     final migration = File('Server/migration_v1_18_customer_payment_wht.sql')
         .readAsStringSync();
+    final migration19 = File('Server/migration_v1_19_wht_net_base_audit.sql')
+        .readAsStringSync();
 
     test('v1.18 adds restrictive allocation-specific WHT snapshots only', () {
       expect(migration, contains('qbook_customer_receipt_allocation_wht'));
@@ -182,6 +212,18 @@ void main() {
           isNot(contains(RegExp(r'\b(DROP TABLE|TRUNCATE|DELETE FROM)\b',
               caseSensitive: false))));
       expect(migration, isNot(contains('CASCADE')));
+    });
+
+    test('v1.19 guards and corrects exactly five unused WHT codes', () {
+      expect(migration19, contains('@ceh_v119_expected_code_count=5'));
+      expect(migration19, contains('@ceh_v119_invalid_code_count=0'));
+      expect(migration19, contains('@ceh_v119_legacy_reference_count=0'));
+      expect(migration19, contains('@ceh_v119_allocation_reference_count=0'));
+      expect(migration19, contains('@ceh_v119_posted_wht_without_snapshot=0'));
+      expect(migration19, contains('SET calculation_base=\'NET\''));
+      expect(migration19, contains('@ceh_v119_corrected_rows=5'));
+      expect(migration19, contains('suggested_amount DECIMAL(18,2) NULL'));
+      expect(migration19, contains('override_reason VARCHAR(500) NULL'));
     });
 
     test('full, partial and multiple allocations credit AR only once', () {
@@ -207,7 +249,9 @@ void main() {
       expect(post, contains(r'$whtAllocated !== $wht'));
       expect(post, isNot(contains(r'cash - $wht')));
       expect(post, contains('qbook_customer_receipt_allocation_wht'));
-      expect(post, contains('WHT_CALCULATION_MISMATCH'));
+      expect(post, contains('WHT_OVERRIDE_REASON_REQUIRED'));
+      expect(post, contains('WHT_OVERRIDE_REASON_NOT_ALLOWED'));
+      expect(post, contains('suggested_amount'));
       expect(post, contains('billing_percent_amount'));
       expect(post, contains('CERTIFICATE_PENDING'));
       expect(post, contains('CERTIFICATE_RECEIVED'));
@@ -286,11 +330,13 @@ void main() {
     expect(
         find.textContaining('CEH-INV-000005 • Badagry • Epe'), findsOneWidget);
 
-    final fields = find.byType(TextField);
-    await tester.enterText(fields.at(2), '600000');
+    await tester.enterText(
+        find.byKey(const ValueKey('payment-amount-received')), '600000');
     await tester.pump();
-    await tester.enterText(fields.at(0), '483750');
-    await tester.enterText(fields.at(1), '100000');
+    await tester.enterText(
+        find.byKey(const ValueKey('payment-allocation-4')), '483750');
+    await tester.enterText(
+        find.byKey(const ValueKey('payment-allocation-5')), '100000');
     await tester.pump();
     expect(find.text('₦16,250.00'), findsOneWidget);
 
@@ -335,12 +381,24 @@ void main() {
     await tester.tap(find.textContaining('General Services').last);
     await tester.pumpAndSettle();
     await tester.enterText(
-        find.byKey(const ValueKey('payment-wht-base-4')), '100000');
-    await tester.enterText(
         find.byKey(const ValueKey('payment-allocation-4')), '100000');
     await tester.pump();
-    expect(find.text('₦2,000.00'), findsWidgets);
-    expect(find.textContaining('Calculation base: Gross'), findsOneWidget);
+    expect(
+        find.textContaining('2.00% × ₦450,000.00 = ₦9,000.00'), findsOneWidget);
+    expect(find.textContaining('Calculation base: Net'), findsOneWidget);
+    expect(
+        (tester
+            .widget<TextField>(find.byKey(const ValueKey('payment-wht-base-4')))
+            .controller!
+            .text),
+        '450,000.00');
+    expect(
+        (tester
+            .widget<TextField>(
+                find.byKey(const ValueKey('payment-wht-accepted-4')))
+            .controller!
+            .text),
+        '9,000.00');
     await tester.tap(find.byType(DropdownButtonFormField<CehBankAccount>));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Zenith Bank').last);
@@ -349,10 +407,199 @@ void main() {
     await tester.pumpAndSettle();
     final row = (api.posted!['allocations'] as List).first as Map;
     expect(row['cash_amount'], '100000.00');
-    expect(row['wht_amount'], '2000.00');
+    expect(row['wht_amount'], '9000.00');
     expect(row['wht_tax_code_id'], 21);
-    expect(row['wht_calculation_base_amount'], '100000.00');
+    expect(row['wht_calculation_base_amount'], '450000.00');
+    expect(row['wht_suggested_amount'], '9000.00');
+    expect(row, isNot(contains('wht_override_reason')));
     expect(row['certificate_status'], 'CERTIFICATE_PENDING');
+  });
+
+  testWidgets(
+      'NET suggestions use issued net for VAT exclusive inclusive and no VAT',
+      (tester) async {
+    tester.view.physicalSize = const Size(900, 3600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final api = _PaymentApi();
+    await tester.pumpWidget(
+        MaterialApp(home: CustomerPaymentScreen(session: _admin, api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButtonFormField<CehClient>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ABC Construction').last);
+    await tester.pumpAndSettle();
+
+    Future<void> selectCode(int invoiceId, String label) async {
+      await tester.tap(find.byKey(ValueKey('payment-wht-$invoiceId')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(ValueKey('payment-wht-code-$invoiceId')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining(label).last);
+      await tester.pumpAndSettle();
+    }
+
+    await selectCode(4, 'General Services');
+    expect(
+        tester
+            .widget<TextField>(find.byKey(const ValueKey('payment-wht-base-4')))
+            .controller!
+            .text,
+        '450,000.00');
+    expect(
+        find.textContaining('2.00% × ₦450,000.00 = ₦9,000.00'), findsOneWidget);
+
+    await selectCode(5, 'Professional');
+    expect(
+        tester
+            .widget<TextField>(find.byKey(const ValueKey('payment-wht-base-5')))
+            .controller!
+            .text,
+        '279,069.77');
+    expect(find.textContaining('5.00% × ₦279,069.77 = ₦13,953.49'),
+        findsOneWidget);
+
+    await selectCode(6, 'General Services');
+    expect(
+        tester
+            .widget<TextField>(find.byKey(const ValueKey('payment-wht-base-6')))
+            .controller!
+            .text,
+        '100,000.00');
+    expect(
+        find.textContaining('2.00% × ₦100,000.00 = ₦2,000.00'), findsOneWidget);
+  });
+
+  testWidgets('MANUAL WHT base calculates suggestion without guessing',
+      (tester) async {
+    tester.view.physicalSize = const Size(900, 2800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final api = _PaymentApi();
+    await tester.pumpWidget(
+        MaterialApp(home: CustomerPaymentScreen(session: _admin, api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButtonFormField<CehClient>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ABC Construction').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('payment-wht-4')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('payment-wht-code-4')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('Manual Contractual Base').last);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('will not guess from cash or outstanding'),
+        findsOneWidget);
+    expect(
+        tester
+            .widget<TextField>(find.byKey(const ValueKey('payment-wht-base-4')))
+            .controller!
+            .text,
+        isEmpty);
+    await tester.enterText(
+        find.byKey(const ValueKey('payment-wht-base-4')), '450000');
+    await tester.pump();
+    expect(
+        find.textContaining('2.00% × ₦450,000.00 = ₦9,000.00'), findsOneWidget);
+    expect(
+        tester
+            .widget<TextField>(
+                find.byKey(const ValueKey('payment-wht-accepted-4')))
+            .controller!
+            .text,
+        '9,000.00');
+  });
+
+  testWidgets('WHT override requires and submits an explicit reason',
+      (tester) async {
+    tester.view.physicalSize = const Size(900, 3000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final api = _PaymentApi();
+    await tester.pumpWidget(
+        MaterialApp(home: CustomerPaymentScreen(session: _admin, api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButtonFormField<CehClient>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ABC Construction').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byKey(const ValueKey('payment-amount-received')), '100000');
+    await tester.enterText(
+        find.byKey(const ValueKey('payment-allocation-4')), '90000');
+    await tester.tap(find.byKey(const ValueKey('payment-wht-4')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('payment-wht-code-4')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('General Services').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byKey(const ValueKey('payment-wht-accepted-4')), '8500');
+    await tester.pump();
+    expect(find.byKey(const ValueKey('payment-wht-override-reason-4')),
+        findsOneWidget);
+    await tester.tap(find.byType(DropdownButtonFormField<CehBankAccount>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Zenith Bank').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('save-post-customer-payment')));
+    await tester.pump();
+    expect(find.textContaining('enter a reason for the WHT override'),
+        findsOneWidget);
+    expect(api.saved, isNull);
+
+    await tester.enterText(
+        find.byKey(const ValueKey('payment-wht-override-reason-4')),
+        'Customer certificate states a lower deduction');
+    await tester.tap(find.byKey(const ValueKey('save-post-customer-payment')));
+    await tester.pumpAndSettle();
+    final row = (api.posted!['allocations'] as List).first as Map;
+    expect(row['wht_suggested_amount'], '9000.00');
+    expect(row['wht_amount'], '8500.00');
+    expect(row['wht_override_reason'],
+        'Customer certificate states a lower deduction');
+  });
+
+  testWidgets('override reason is rejected when accepted equals suggested',
+      (tester) async {
+    tester.view.physicalSize = const Size(900, 3000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final api = _PaymentApi();
+    await tester.pumpWidget(
+        MaterialApp(home: CustomerPaymentScreen(session: _admin, api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButtonFormField<CehClient>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ABC Construction').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byKey(const ValueKey('payment-amount-received')), '100000');
+    await tester.enterText(
+        find.byKey(const ValueKey('payment-allocation-4')), '90000');
+    await tester.tap(find.byKey(const ValueKey('payment-wht-4')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('payment-wht-code-4')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('General Services').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byKey(const ValueKey('payment-wht-accepted-4')), '8500');
+    await tester.pump();
+    await tester.enterText(
+        find.byKey(const ValueKey('payment-wht-override-reason-4')),
+        'Temporary difference');
+    await tester.enterText(
+        find.byKey(const ValueKey('payment-wht-accepted-4')), '9000');
+    await tester.tap(find.byType(DropdownButtonFormField<CehBankAccount>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Zenith Bank').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('save-post-customer-payment')));
+    await tester.pump();
+    expect(find.textContaining('remove the override reason'), findsOneWidget);
+    expect(api.saved, isNull);
   });
 
   testWidgets('multiple invoices retain different explicit WHT treatments',
@@ -381,8 +628,6 @@ void main() {
           .textContaining(id == 4 ? 'General Services' : 'Professional')
           .last);
       await tester.pumpAndSettle();
-      await tester.enterText(
-          find.byKey(ValueKey('payment-wht-base-$id')), '50000');
     }
     await tester.tap(find.byType(DropdownButtonFormField<CehBankAccount>));
     await tester.pumpAndSettle();
@@ -391,9 +636,9 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('save-post-customer-payment')));
     await tester.pumpAndSettle();
     final rows = api.posted!['allocations'] as List;
-    expect(rows[0]['wht_amount'], '1000.00');
+    expect(rows[0]['wht_amount'], '9000.00');
     expect(rows[0]['wht_tax_code_id'], 21);
-    expect(rows[1]['wht_amount'], '2500.00');
+    expect(rows[1]['wht_amount'], '13953.49');
     expect(rows[1]['wht_tax_code_id'], 22);
   });
 
@@ -420,8 +665,6 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.textContaining('General Services').last);
     await tester.pumpAndSettle();
-    await tester.enterText(
-        find.byKey(const ValueKey('payment-wht-base-4')), '100000');
     await tester.enterText(
         find.byKey(const ValueKey('payment-allocation-4')), '483750');
     await tester.tap(find.byType(DropdownButtonFormField<CehBankAccount>));
@@ -457,8 +700,6 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.textContaining('General Services').last);
     await tester.pumpAndSettle();
-    await tester.enterText(
-        find.byKey(const ValueKey('payment-wht-base-4')), '100000');
     await tester.tap(find.byKey(const ValueKey('payment-wht-certificate-4')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Received').last);
