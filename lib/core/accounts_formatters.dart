@@ -48,10 +48,54 @@ String formatBillingTaxRate(Object? value) {
 }
 
 double? parseNgnInput(String value) {
-  final normalized = value.replaceAll(',', '').trim();
-  if (!RegExp(r'^\d+(?:\.\d{1,2})?$').hasMatch(normalized)) return null;
+  final normalized = normalizeNgnInput(value);
+  if (normalized == null) return null;
   final amount = double.tryParse(normalized);
   return amount != null && amount > 0 ? amount : null;
+}
+
+/// Returns an API-safe decimal without presentation commas, or null when the
+/// input is malformed. Financial APIs remain authoritative for validation.
+String? normalizeNgnInput(String value, {bool allowZero = false}) {
+  final presented = value.trim();
+  if (!RegExp(r'^(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{1,2})?$')
+      .hasMatch(presented)) {
+    return null;
+  }
+  final normalized = presented.replaceAll(',', '');
+  if (!RegExp(r'^\d+(?:\.\d{1,2})?$').hasMatch(normalized)) return null;
+  final minor = parseNgnMinorUnits(normalized);
+  if (minor == null || (!allowZero && minor <= 0)) return null;
+  return normalized;
+}
+
+/// Parses NGN input exactly into minor units without floating-point math.
+int? parseNgnMinorUnits(String value, {bool allowZero = true}) {
+  final presented = value.trim();
+  if (!RegExp(r'^(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{1,2})?$')
+      .hasMatch(presented)) {
+    return null;
+  }
+  final normalized = presented.replaceAll(',', '');
+  final match = RegExp(r'^(\d+)(?:\.(\d{1,2}))?$').firstMatch(normalized);
+  if (match == null) return null;
+  final whole = int.tryParse(match.group(1)!);
+  if (whole == null) return null;
+  final fraction = (match.group(2) ?? '').padRight(2, '0');
+  final minor = whole * 100 + (fraction.isEmpty ? 0 : int.parse(fraction));
+  return allowZero || minor > 0 ? minor : null;
+}
+
+String ngnMinorUnitsForApi(int minor) =>
+    '${minor ~/ 100}.${(minor % 100).toString().padLeft(2, '0')}';
+
+String completeNgnInput(String value) {
+  final minor = parseNgnMinorUnits(value);
+  if (minor == null) return value;
+  final whole = (minor ~/ 100)
+      .toString()
+      .replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => ',');
+  return '$whole.${(minor % 100).toString().padLeft(2, '0')}';
 }
 
 double? calculateExpenseLineTotal(String quantity, String price) {
@@ -70,6 +114,12 @@ class NgnAmountInputFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
       TextEditingValue oldValue, TextEditingValue newValue) {
+    final rawCursor =
+        newValue.selection.baseOffset.clamp(0, newValue.text.length);
+    final significantBeforeCursor = newValue.text
+        .substring(0, rawCursor)
+        .replaceAll(RegExp(r'[^0-9.]'), '')
+        .length;
     var raw =
         newValue.text.replaceAll(',', '').replaceAll(RegExp(r'[^0-9.]'), '');
     final dot = raw.indexOf('.');
@@ -84,9 +134,19 @@ class NgnAmountInputFormatter extends TextInputFormatter {
     final grouped =
         integer.replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => ',');
     final formatted = parts.length == 2 ? '$grouped.${parts.last}' : grouped;
+    var seen = 0;
+    var cursor = formatted.length;
+    for (var i = 0; i < formatted.length; i++) {
+      if (RegExp(r'[0-9.]').hasMatch(formatted[i])) seen++;
+      if (seen >= significantBeforeCursor) {
+        cursor = i + 1;
+        break;
+      }
+    }
+    if (significantBeforeCursor == 0) cursor = 0;
     return TextEditingValue(
       text: formatted,
-      selection: TextSelection.collapsed(offset: formatted.length),
+      selection: TextSelection.collapsed(offset: cursor),
     );
   }
 }

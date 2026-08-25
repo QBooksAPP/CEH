@@ -867,6 +867,24 @@ class CehApiClient {
     return Map<String, dynamic>.from(data['receipt'] as Map);
   }
 
+  Future<double> availableCustomerCredit(
+      CehSession session, int clientId) async {
+    final uri = Uri.parse('$baseUrl/customer_advance_apply.php')
+        .replace(queryParameters: {'client_id': '$clientId'});
+    final response = await http
+        .get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'CUSTOMER_CREDIT_LOAD_FAILED');
+    return double.tryParse('${data['available_customer_credit']}') ?? 0;
+  }
+
+  Future<Map<String, dynamic>> applyCustomerCredit(
+      CehSession session, Map<String, dynamic> payload) async {
+    return _postJson(session, 'customer_advance_apply.php', payload,
+        'CUSTOMER_CREDIT_APPLY_FAILED');
+  }
+
   Future<Map<String, dynamic>> taxConfiguration(CehSession session) async {
     final response = await http
         .get(Uri.parse('$baseUrl/tax_configuration.php'),

@@ -68,6 +68,15 @@ class _AccountsBillingScreenState extends State<AccountsBillingScreen> {
                           builder: (_) => CustomerPaymentScreen(
                               session: widget.session, api: widget.api)))),
               OutlinedButton.icon(
+                  key: const ValueKey('apply-customer-credit'),
+                  icon: const Icon(Icons.account_balance_wallet_outlined),
+                  label: const Text('Apply Customer Credit'),
+                  onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => ApplyCustomerCreditScreen(
+                              session: widget.session, api: widget.api)))),
+              OutlinedButton.icon(
                   icon: const Icon(Icons.schedule_outlined),
                   label: const Text('Receivables Ageing'),
                   onPressed: () => Navigator.push(
@@ -229,8 +238,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
   }
 
   double get _amount =>
-      (double.tryParse(_quantity.text) ?? 0) *
-      (double.tryParse(_rate.text) ?? 0);
+      (double.tryParse(_quantity.text) ?? 0) * (parseNgnInput(_rate.text) ?? 0);
   Future<void> _save() async {
     if (_client == null || _revenue.isEmpty) return;
     if (_vatMode != 'NONE' && _vatTaxCodeId == null) {
@@ -238,7 +246,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
       return;
     }
     final q = double.tryParse(_quantity.text) ?? 0;
-    final rate = double.tryParse(_rate.text) ?? 0;
+    final rate = parseNgnInput(_rate.text) ?? 0;
     if (_report != null && (q <= 0 || q > _report!.availableM3)) {
       _message(
           'Billing m³ must be positive and no more than available signed m³.');
@@ -347,6 +355,7 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
                   key: const ValueKey('invoice-rate'),
                   controller: _rate,
                   keyboardType: TextInputType.number,
+                  inputFormatters: const [NgnAmountInputFormatter()],
                   decoration: const InputDecoration(labelText: 'Rate'),
                   onChanged: (_) => setState(() {})))
         ]),
@@ -684,14 +693,12 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
     super.dispose();
   }
 
-  double _money(String value) =>
-      double.tryParse(value.replaceAll(',', '').replaceAll('₦', '').trim()) ??
-      0;
-
-  double get received => _money(amount.text);
-  double get allocated => allocations.values
-      .fold(0, (total, controller) => total + _money(controller.text));
-  double get unallocated => received - allocated;
+  int _minor(String value) => parseNgnMinorUnits(value) ?? 0;
+  int get receivedMinor => _minor(amount.text);
+  int get allocatedMinor => allocations.values
+      .fold(0, (total, controller) => total + _minor(controller.text));
+  int get unallocatedMinor =>
+      receivedMinor > allocatedMinor ? receivedMinor - allocatedMinor : 0;
 
   Future<void> _selectClient(CehClient? value) async {
     for (final controller in allocations.values) {
@@ -726,17 +733,17 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
       .showSnackBar(SnackBar(content: Text(value)));
 
   Future<void> saveAndPost() async {
-    if (client == null || bank == null || received <= 0) {
+    if (client == null || bank == null || receivedMinor <= 0) {
       _message('Select a Client, Received Into account and Amount Received.');
       return;
     }
-    if (allocated > received + 0.000001) {
+    if (allocatedMinor > receivedMinor) {
       _message('Allocated amount cannot exceed Amount Received.');
       return;
     }
     for (final invoice in invoices) {
-      final value = _money(allocations[invoice.id]?.text ?? '');
-      if (value > invoice.outstanding + 0.000001) {
+      final value = _minor(allocations[invoice.id]?.text ?? '');
+      if (value > (invoice.outstanding * 100).round()) {
         _message(
             '${invoice.reference} allocation exceeds its outstanding balance.');
         return;
@@ -748,18 +755,18 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
         'client_id': client!.id,
         'bank_account_id': bank!.id,
         'receipt_date': DateTime.now().toIso8601String().substring(0, 10),
-        'cash_amount': amount.text,
+        'cash_amount': ngnMinorUnitsForApi(receivedMinor),
         'bank_reference': reference.text,
       });
       await widget.api.postCustomerPayment(widget.session, {
         'receipt_id': draft['id'],
         'allocations': [
           for (final invoice in invoices)
-            if (_money(allocations[invoice.id]?.text ?? '') > 0)
+            if (_minor(allocations[invoice.id]?.text ?? '') > 0)
               {
                 'invoice_id': invoice.id,
                 'cash_amount':
-                    _money(allocations[invoice.id]!.text).toStringAsFixed(2),
+                    ngnMinorUnitsForApi(_minor(allocations[invoice.id]!.text)),
               }
         ],
       });
@@ -822,13 +829,19 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
                           TextField(
                               key: ValueKey('payment-allocation-${invoice.id}'),
                               controller: allocations[invoice.id],
-                              enabled: !posting,
+                              enabled: !posting && receivedMinor > 0,
                               keyboardType:
                                   const TextInputType.numberWithOptions(
                                       decimal: true),
+                              inputFormatters: const [
+                                NgnAmountInputFormatter()
+                              ],
                               onChanged: (_) => setState(() {}),
-                              decoration: const InputDecoration(
-                                  labelText: 'Allocate to this invoice'))
+                              decoration: InputDecoration(
+                                  labelText: 'Allocate to this invoice',
+                                  helperText: receivedMinor <= 0
+                                      ? 'Enter Amount Received first'
+                                      : null))
                         ]))),
         const SizedBox(height: 12),
         DropdownButtonFormField<CehBankAccount>(
@@ -844,6 +857,7 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
             controller: amount,
             enabled: !posting,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: const [NgnAmountInputFormatter()],
             onChanged: (_) => setState(() {}),
             decoration: const InputDecoration(labelText: 'Amount Received')),
         const SizedBox(height: 12),
@@ -851,9 +865,10 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
             child: Padding(
                 padding: const EdgeInsets.all(14),
                 child: Column(children: [
-                  _paymentMetric('Amount Received', received),
-                  _paymentMetric('Allocated', allocated),
-                  _paymentMetric('Unallocated / Customer Credit', unallocated),
+                  _paymentMetric('Amount Received', receivedMinor / 100),
+                  _paymentMetric('Allocated', allocatedMinor / 100),
+                  _paymentMetric(
+                      'Unallocated / Customer Credit', unallocatedMinor / 100),
                 ]))),
         const SizedBox(height: 12),
         TextField(
@@ -876,6 +891,213 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
             style: TextStyle(
                 fontWeight: FontWeight.w800,
                 color: value < 0 ? Theme.of(context).colorScheme.error : null))
+      ]));
+}
+
+class ApplyCustomerCreditScreen extends StatefulWidget {
+  const ApplyCustomerCreditScreen(
+      {super.key, required this.session, required this.api});
+  final CehSession session;
+  final CehApiClient api;
+
+  @override
+  State<ApplyCustomerCreditScreen> createState() =>
+      _ApplyCustomerCreditScreenState();
+}
+
+class _ApplyCustomerCreditScreenState extends State<ApplyCustomerCreditScreen> {
+  List<CehClient> clients = const [];
+  List<BillingInvoice> invoices = const [];
+  CehClient? client;
+  int availableMinor = 0;
+  final Map<int, TextEditingController> allocations = {};
+  bool loading = false;
+  bool applying = false;
+
+  int _minor(String value) => parseNgnMinorUnits(value) ?? 0;
+  int get appliedMinor => allocations.values
+      .fold(0, (total, controller) => total + _minor(controller.text));
+  int get remainingMinor =>
+      availableMinor > appliedMinor ? availableMinor - appliedMinor : 0;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.api.clients(widget.session).then((value) {
+      if (mounted) setState(() => clients = value);
+    });
+  }
+
+  @override
+  void dispose() {
+    for (final controller in allocations.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  void _message(String value) => ScaffoldMessenger.of(context)
+      .showSnackBar(SnackBar(content: Text(value)));
+
+  Future<void> _selectClient(CehClient? value) async {
+    for (final controller in allocations.values) {
+      controller.dispose();
+    }
+    setState(() {
+      client = value;
+      availableMinor = 0;
+      invoices = const [];
+      allocations.clear();
+      loading = value != null;
+    });
+    if (value == null) return;
+    try {
+      final results = await Future.wait([
+        widget.api.availableCustomerCredit(widget.session, value.id),
+        widget.api.outstandingInvoices(widget.session, value.id),
+      ]);
+      if (!mounted || client?.id != value.id) return;
+      final rows = results[1] as List<BillingInvoice>;
+      setState(() {
+        availableMinor = ((results[0] as double) * 100).round();
+        invoices = rows;
+        for (final invoice in rows) {
+          allocations[invoice.id] = TextEditingController();
+        }
+        loading = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => loading = false);
+      _message(e.code);
+    }
+  }
+
+  Future<void> applyCredit() async {
+    if (client == null || appliedMinor <= 0) {
+      _message('Select a Client and enter an amount to apply.');
+      return;
+    }
+    if (appliedMinor > availableMinor) {
+      _message('Total Applied cannot exceed Available Customer Credit.');
+      return;
+    }
+    for (final invoice in invoices) {
+      final value = _minor(allocations[invoice.id]?.text ?? '');
+      if (value > (invoice.outstanding * 100).round()) {
+        _message(
+            '${invoice.reference} application exceeds its outstanding balance.');
+        return;
+      }
+    }
+    setState(() => applying = true);
+    try {
+      await widget.api.applyCustomerCredit(widget.session, {
+        'client_id': client!.id,
+        'application_date': canonicalAccountsDate(DateTime.now()),
+        'allocations': [
+          for (final invoice in invoices)
+            if (_minor(allocations[invoice.id]?.text ?? '') > 0)
+              {
+                'invoice_id': invoice.id,
+                'amount':
+                    ngnMinorUnitsForApi(_minor(allocations[invoice.id]!.text)),
+              }
+        ],
+      });
+      if (mounted) Navigator.pop(context);
+    } on ApiException catch (e) {
+      if (mounted) _message(e.code);
+    } finally {
+      if (mounted) setState(() => applying = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+      appBar: AppBar(title: const Text('Apply Customer Credit')),
+      body: ListView(padding: const EdgeInsets.all(18), children: [
+        const Text(
+            'Apply previously received Customer Credit / Advance to outstanding invoices. No new cash movement is created.'),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<CehClient>(
+            initialValue: client,
+            decoration: const InputDecoration(labelText: 'Client'),
+            items: clients
+                .map((x) => DropdownMenuItem(value: x, child: Text(x.name)))
+                .toList(),
+            onChanged: applying ? null : _selectClient),
+        const SizedBox(height: 12),
+        Card(
+            child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: _paymentMetric('Available Customer Credit / Advance',
+                    availableMinor / 100))),
+        const SizedBox(height: 12),
+        const Text('Outstanding Invoice(s)',
+            style: TextStyle(fontWeight: FontWeight.w800)),
+        const SizedBox(height: 8),
+        if (loading)
+          const Center(child: CircularProgressIndicator())
+        else if (client != null && invoices.isEmpty)
+          const Card(
+              child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child:
+                      Text('No outstanding issued invoices for this Client.')))
+        else
+          for (final invoice in invoices)
+            Card(
+                key: ValueKey('credit-invoice-${invoice.id}'),
+                child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                              '${invoice.reference} • ${invoice.projectNames.isEmpty ? 'General / No project' : invoice.projectNames}',
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w800)),
+                          const SizedBox(height: 4),
+                          Text(
+                              'Outstanding ${formatNaira(invoice.outstanding)}'),
+                          const SizedBox(height: 10),
+                          TextField(
+                              key: ValueKey('credit-allocation-${invoice.id}'),
+                              controller: allocations[invoice.id],
+                              enabled: !applying && availableMinor > 0,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                      decimal: true),
+                              inputFormatters: const [
+                                NgnAmountInputFormatter()
+                              ],
+                              onChanged: (_) => setState(() {}),
+                              decoration:
+                                  const InputDecoration(labelText: 'Apply'))
+                        ]))),
+        const SizedBox(height: 12),
+        Card(
+            child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(children: [
+                  _paymentMetric('Total Applied', appliedMinor / 100),
+                  _paymentMetric(
+                      'Remaining Customer Credit', remainingMinor / 100),
+                ]))),
+        const SizedBox(height: 20),
+        FilledButton(
+            key: const ValueKey('apply-customer-credit-submit'),
+            onPressed: applying ? null : applyCredit,
+            child: Text(applying ? 'Applying…' : 'Apply Customer Credit'))
+      ]));
+
+  Widget _paymentMetric(String label, double value) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        Flexible(child: Text(label)),
+        Text(formatNaira(value),
+            style: const TextStyle(fontWeight: FontWeight.w800))
       ]));
 }
 
