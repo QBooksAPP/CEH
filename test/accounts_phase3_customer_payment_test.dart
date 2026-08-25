@@ -216,14 +216,48 @@ void main() {
 
     test('v1.19 guards and corrects exactly five unused WHT codes', () {
       expect(migration19, contains('@ceh_v119_expected_code_count=5'));
-      expect(migration19, contains('@ceh_v119_invalid_code_count=0'));
+      expect(migration19, contains('@ceh_v119_invalid_static_code_count=0'));
       expect(migration19, contains('@ceh_v119_legacy_reference_count=0'));
       expect(migration19, contains('@ceh_v119_allocation_reference_count=0'));
       expect(migration19, contains('@ceh_v119_posted_wht_without_snapshot=0'));
-      expect(migration19, contains('SET calculation_base=\'NET\''));
-      expect(migration19, contains('@ceh_v119_corrected_rows=5'));
+      expect(migration19, contains('SET calculation_base=\'\'NET\'\''));
+      expect(migration19, isNot(contains('ROW_COUNT()')));
+      expect(migration19, isNot(contains('CHECK(ok=1)')));
+      expect(migration19, contains('@ceh_v119_verified_net_count=5'));
+      expect(migration19, contains('@ceh_v119_verified_gross_count=0'));
+      expect(migration19, contains('@ceh_v119_persisted_net_count=5'));
+      expect(migration19, contains('@ceh_v119_persisted_gross_count=0'));
+      expect(migration19, contains("'PRISTINE'"));
+      expect(migration19, contains("'CONFIGURATION_ONLY'"));
+      expect(migration19, contains("'COMPLETE'"));
+      expect(migration19, contains("'INVALID_PARTIAL'"));
       expect(migration19, contains('suggested_amount DECIMAL(18,2) NULL'));
       expect(migration19, contains('override_reason VARCHAR(500) NULL'));
+      expect(migration19, contains('@ceh_v119_verified_audit_columns=2'));
+      expect(
+        migration19.indexOf('@ceh_v119_prewrite_guard_sql'),
+        lessThan(migration19.indexOf('@ceh_v119_update_sql')),
+      );
+      expect(
+        migration19.indexOf('@ceh_v119_verified_net_count'),
+        lessThan(migration19.indexOf('COMMIT;')),
+      );
+      expect(
+        migration19.indexOf('COMMIT;'),
+        lessThan(migration19.indexOf('@ceh_v119_alter_sql')),
+      );
+      expect(
+        migration19,
+        contains('CEH_V119_ABORT_CONFIGURATION_HISTORY_OR_PARTIAL_STATE'),
+      );
+      expect(
+        migration19,
+        contains('CEH_V119_ABORT_FIVE_NET_CONFIGURATIONS_NOT_VERIFIED'),
+      );
+      expect(
+        migration19,
+        contains('CEH_V119_ABORT_FINAL_PERSISTED_STATE_NOT_VERIFIED'),
+      );
     });
 
     test('full, partial and multiple allocations credit AR only once', () {
