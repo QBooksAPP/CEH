@@ -21,6 +21,11 @@ const _admin = CehSession(
         role: 'ADMIN',
         isActive: true));
 
+Future<void> _selectPaymentInvoice(WidgetTester tester, int invoiceId) async {
+  await tester.tap(find.byKey(ValueKey('payment-select-invoice-$invoiceId')));
+  await tester.pumpAndSettle();
+}
+
 class _PaymentApi extends CehApiClient {
   Map<String, dynamic>? saved;
   Map<String, dynamic>? posted;
@@ -367,12 +372,14 @@ void main() {
     await tester.enterText(
         find.byKey(const ValueKey('payment-amount-received')), '600000');
     await tester.pump();
+    await _selectPaymentInvoice(tester, 4);
+    await _selectPaymentInvoice(tester, 5);
     await tester.enterText(
         find.byKey(const ValueKey('payment-allocation-4')), '483750');
     await tester.enterText(
         find.byKey(const ValueKey('payment-allocation-5')), '100000');
     await tester.pump();
-    expect(find.text('₦16,250.00'), findsOneWidget);
+    expect(find.text('₦16,250.00'), findsWidgets);
 
     await tester.tap(find.byType(DropdownButtonFormField<CehBankAccount>));
     await tester.pumpAndSettle();
@@ -405,8 +412,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(
         find.byKey(const ValueKey('payment-amount-received')), '100000');
-    await tester.enterText(
-        find.byKey(const ValueKey('payment-allocation-4')), '100000');
+    await _selectPaymentInvoice(tester, 4);
+    expect(find.byKey(const ValueKey('payment-allocation-4')), findsNothing);
+    expect(find.text('Cash allocated automatically'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('payment-wht-4')));
     await tester.pumpAndSettle();
     expect(find.textContaining('Expired'), findsNothing);
@@ -414,9 +422,6 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.textContaining('General Services').last);
     await tester.pumpAndSettle();
-    await tester.enterText(
-        find.byKey(const ValueKey('payment-allocation-4')), '100000');
-    await tester.pump();
     expect(
         find.textContaining('2.00% × ₦450,000.00 = ₦9,000.00'), findsOneWidget);
     expect(find.textContaining('Calculation base: Net'), findsOneWidget);
@@ -465,6 +470,7 @@ void main() {
     await tester.pumpAndSettle();
 
     Future<void> selectCode(int invoiceId, String label) async {
+      await _selectPaymentInvoice(tester, invoiceId);
       await tester.tap(find.byKey(ValueKey('payment-wht-$invoiceId')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(ValueKey('payment-wht-code-$invoiceId')));
@@ -517,6 +523,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('ABC Construction').last);
     await tester.pumpAndSettle();
+    await _selectPaymentInvoice(tester, 4);
     await tester.tap(find.byKey(const ValueKey('payment-wht-4')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('payment-wht-code-4')));
@@ -560,8 +567,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(
         find.byKey(const ValueKey('payment-amount-received')), '100000');
-    await tester.enterText(
-        find.byKey(const ValueKey('payment-allocation-4')), '90000');
+    await _selectPaymentInvoice(tester, 4);
     await tester.tap(find.byKey(const ValueKey('payment-wht-4')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('payment-wht-code-4')));
@@ -610,8 +616,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(
         find.byKey(const ValueKey('payment-amount-received')), '100000');
-    await tester.enterText(
-        find.byKey(const ValueKey('payment-allocation-4')), '90000');
+    await _selectPaymentInvoice(tester, 4);
     await tester.tap(find.byKey(const ValueKey('payment-wht-4')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('payment-wht-code-4')));
@@ -651,6 +656,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(
         find.byKey(const ValueKey('payment-amount-received')), '150000');
+    await _selectPaymentInvoice(tester, 4);
+    await _selectPaymentInvoice(tester, 5);
+    expect(find.byKey(const ValueKey('payment-allocation-4')), findsOneWidget);
+    expect(find.byKey(const ValueKey('payment-allocation-5')), findsOneWidget);
     for (final id in [4, 5]) {
       await tester.enterText(
           find.byKey(ValueKey('payment-allocation-$id')), '75000');
@@ -676,7 +685,8 @@ void main() {
     expect(rows[1]['wht_tax_code_id'], 22);
   });
 
-  testWidgets('WHT settlement cannot exceed invoice outstanding',
+  testWidgets(
+      'single invoice WHT caps cash so settlement cannot exceed outstanding',
       (tester) async {
     tester.view.physicalSize = const Size(900, 2600);
     tester.view.devicePixelRatio = 1;
@@ -690,26 +700,25 @@ void main() {
     await tester.tap(find.text('ABC Construction').last);
     await tester.pumpAndSettle();
     await tester.enterText(
-        find.byKey(const ValueKey('payment-amount-received')), '483750');
-    await tester.enterText(
-        find.byKey(const ValueKey('payment-allocation-4')), '483750');
+        find.byKey(const ValueKey('payment-amount-received')), '474750');
+    await _selectPaymentInvoice(tester, 4);
     await tester.tap(find.byKey(const ValueKey('payment-wht-4')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('payment-wht-code-4')));
     await tester.pumpAndSettle();
     await tester.tap(find.textContaining('General Services').last);
     await tester.pumpAndSettle();
-    await tester.enterText(
-        find.byKey(const ValueKey('payment-allocation-4')), '483750');
     await tester.tap(find.byType(DropdownButtonFormField<CehBankAccount>));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Zenith Bank').last);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('save-post-customer-payment')));
-    await tester.pump();
+    await tester.pumpAndSettle();
+    final row = (api.posted!['allocations'] as List).single as Map;
+    expect(row['cash_amount'], '474750.00');
+    expect(row['wht_amount'], '9000.00');
     expect(find.textContaining('settlement exceeds its outstanding balance'),
-        findsOneWidget);
-    expect(api.saved, isNull);
+        findsNothing);
   });
 
   testWidgets('received WHT certificate requires attachment', (tester) async {
@@ -726,8 +735,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(
         find.byKey(const ValueKey('payment-amount-received')), '100000');
-    await tester.enterText(
-        find.byKey(const ValueKey('payment-allocation-4')), '90000');
+    await _selectPaymentInvoice(tester, 4);
     await tester.tap(find.byKey(const ValueKey('payment-wht-4')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('payment-wht-code-4')));
@@ -768,10 +776,64 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('ABC Construction').last);
     await tester.pumpAndSettle();
-    final allocation = tester
-        .widget<TextField>(find.byKey(const ValueKey('payment-allocation-4')));
-    expect(allocation.enabled, isFalse);
+    await _selectPaymentInvoice(tester, 4);
+    expect(find.byKey(const ValueKey('payment-allocation-4')), findsNothing);
+    expect(find.text('Cash allocated automatically'), findsOneWidget);
+    expect(find.text('Remaining Cash to Allocate'), findsOneWidget);
     expect(find.textContaining('−₦'), findsNothing);
+  });
+
+  testWidgets('single invoice derives partial cash from Amount Received',
+      (tester) async {
+    tester.view.physicalSize = const Size(800, 1900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final api = _PaymentApi();
+    await tester.pumpWidget(
+        MaterialApp(home: CustomerPaymentScreen(session: _admin, api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButtonFormField<CehClient>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ABC Construction').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byKey(const ValueKey('payment-amount-received')), '325377.91');
+    await _selectPaymentInvoice(tester, 4);
+    expect(find.byKey(const ValueKey('payment-allocation-4')), findsNothing);
+    expect(find.text('₦325,377.91'), findsWidgets);
+    await tester
+        .ensureVisible(find.byType(DropdownButtonFormField<CehBankAccount>));
+    await tester.tap(find.byType(DropdownButtonFormField<CehBankAccount>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Zenith Bank').last);
+    await tester.ensureVisible(
+        find.byKey(const ValueKey('save-post-customer-payment')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('save-post-customer-payment')));
+    await tester.pumpAndSettle();
+    final row = (api.posted!['allocations'] as List).single as Map;
+    expect(row['cash_amount'], '325377.91');
+  });
+
+  testWidgets(
+      'single invoice overpayment leaves genuine cash as customer credit',
+      (tester) async {
+    tester.view.physicalSize = const Size(800, 1900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final api = _PaymentApi();
+    await tester.pumpWidget(
+        MaterialApp(home: CustomerPaymentScreen(session: _admin, api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButtonFormField<CehClient>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ABC Construction').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byKey(const ValueKey('payment-amount-received')), '600000');
+    await _selectPaymentInvoice(tester, 4);
+    expect(find.text('₦483,750.00'), findsWidgets);
+    expect(find.text('₦116,250.00'), findsWidgets);
   });
 
   testWidgets('existing customer credit applies to one or multiple invoices',
