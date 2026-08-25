@@ -47,6 +47,19 @@ String formatBillingTaxRate(Object? value) {
   return '${(rate ?? 0).toStringAsFixed(2)}%';
 }
 
+int calculateTaxMinorUnits(int baseMinor, Object? rateValue) {
+  if (baseMinor < 0) throw const FormatException('Negative tax base');
+  final rate = '${rateValue ?? ''}'.trim();
+  final match = RegExp(r'^(\d{1,3})(?:\.(\d{1,6}))?$').firstMatch(rate);
+  if (match == null) throw const FormatException('Invalid tax rate');
+  final millionths =
+      BigInt.from(int.parse(match.group(1)!)) * BigInt.from(1000000) +
+          BigInt.from(int.parse((match.group(2) ?? '').padRight(6, '0')));
+  final divisor = BigInt.from(100000000);
+  final numerator = BigInt.from(baseMinor) * millionths;
+  return ((numerator + divisor ~/ BigInt.two) ~/ divisor).toInt();
+}
+
 String formatAccountsStatus(String value) => value
     .trim()
     .split('_')

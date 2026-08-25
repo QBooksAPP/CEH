@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:ceh/core/api_client.dart';
 import 'package:ceh/core/accounts_formatters.dart';
@@ -24,6 +25,46 @@ class _PaymentApi extends CehApiClient {
   Map<String, dynamic>? saved;
   Map<String, dynamic>? posted;
   Map<String, dynamic>? creditApplied;
+  final List<Map<String, dynamic>> evidenceUploads = [];
+
+  @override
+  Future<Map<String, dynamic>> taxConfiguration(CehSession session) async => {
+        'tax_codes': [
+          {
+            'id': 21,
+            'code': 'WHT_SERVICES',
+            'name': 'General Services',
+            'tax_type': 'WHT',
+            'rate_percent': '2.000000',
+            'calculation_base': 'GROSS',
+            'effective_from': '2025-01-01',
+            'effective_to': null,
+            'is_active': 1,
+          },
+          {
+            'id': 22,
+            'code': 'WHT_PROFESSIONAL',
+            'name': 'Professional',
+            'tax_type': 'WHT',
+            'rate_percent': '5.000000',
+            'calculation_base': 'NET',
+            'effective_from': '2025-01-01',
+            'effective_to': null,
+            'is_active': 1,
+          },
+          {
+            'id': 23,
+            'code': 'WHT_OLD',
+            'name': 'Expired',
+            'tax_type': 'WHT',
+            'rate_percent': '1.000000',
+            'calculation_base': 'GROSS',
+            'effective_from': '2020-01-01',
+            'effective_to': '2024-12-31',
+            'is_active': 1,
+          }
+        ]
+      };
 
   @override
   Future<List<CehClient>> clients(CehSession session,
@@ -78,6 +119,35 @@ class _PaymentApi extends CehApiClient {
   }
 
   @override
+  Future<void> uploadFinancialEvidence(CehSession session,
+      {required String sourceType,
+      required int sourceRecordId,
+      required String filename,
+      required String mimeType,
+      required Uint8List bytes}) async {
+    evidenceUploads.add({
+      'source_type': sourceType,
+      'source_record_id': sourceRecordId,
+      'filename': filename,
+    });
+  }
+
+  @override
+  Future<int> uploadFinancialEvidenceRecord(CehSession session,
+      {required String sourceType,
+      required int sourceRecordId,
+      required String filename,
+      required String mimeType,
+      required Uint8List bytes}) async {
+    evidenceUploads.add({
+      'source_type': sourceType,
+      'source_record_id': sourceRecordId,
+      'filename': filename,
+    });
+    return 99;
+  }
+
+  @override
   Future<double> availableCustomerCredit(
           CehSession session, int clientId) async =>
       116250;
@@ -96,6 +166,23 @@ void main() {
     final apply = File('Server/customer_advance_apply.php').readAsStringSync();
     final invoices = File('Server/invoices.php').readAsStringSync();
     final statement = File('Server/client_statement.php').readAsStringSync();
+    final migration = File('Server/migration_v1_18_customer_payment_wht.sql')
+        .readAsStringSync();
+
+    test('v1.18 adds restrictive allocation-specific WHT snapshots only', () {
+      expect(migration, contains('qbook_customer_receipt_allocation_wht'));
+      expect(migration, contains('UNIQUE KEY uq_receipt_allocation_wht'));
+      expect(migration,
+          contains('REFERENCES qbook_customer_receipt_allocations(id)'));
+      expect(migration, contains('ON DELETE RESTRICT'));
+      expect(migration, contains('calculation_base_amount DECIMAL(18,2)'));
+      expect(migration, contains('certificate_evidence_id BIGINT UNSIGNED'));
+      expect(
+          migration,
+          isNot(contains(RegExp(r'\b(DROP TABLE|TRUNCATE|DELETE FROM)\b',
+              caseSensitive: false))));
+      expect(migration, isNot(contains('CASCADE')));
+    });
 
     test('full, partial and multiple allocations credit AR only once', () {
       expect(post, contains(r'$cashAllocated += $cashAmount'));
@@ -119,6 +206,12 @@ void main() {
       expect(post, contains('WHT_MUST_BE_FULLY_ALLOCATED'));
       expect(post, contains(r'$whtAllocated !== $wht'));
       expect(post, isNot(contains(r'cash - $wht')));
+      expect(post, contains('qbook_customer_receipt_allocation_wht'));
+      expect(post, contains('WHT_CALCULATION_MISMATCH'));
+      expect(post, contains('billing_percent_amount'));
+      expect(post, contains('CERTIFICATE_PENDING'));
+      expect(post, contains('CERTIFICATE_RECEIVED'));
+      expect(post, contains('WHT_CERTIFICATE_EVIDENCE_REQUIRED'));
     });
 
     test('later application uses only calculated customer credit', () {
@@ -212,6 +305,178 @@ void main() {
     expect(api.saved, isNot(contains('destination')));
     expect(api.posted?['receipt_id'], 11);
     expect((api.posted?['allocations'] as List).length, 2);
+    expect(api.posted, isNot(contains('wht_amount')));
+    expect((api.posted?['allocations'] as List).first,
+        isNot(contains('wht_amount')));
+  });
+
+  testWidgets('explicit WHT is configured per invoice allocation',
+      (tester) async {
+    tester.view.physicalSize = const Size(900, 2600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final api = _PaymentApi();
+    await tester.pumpWidget(
+        MaterialApp(home: CustomerPaymentScreen(session: _admin, api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButtonFormField<CehClient>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ABC Construction').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byKey(const ValueKey('payment-amount-received')), '100000');
+    await tester.enterText(
+        find.byKey(const ValueKey('payment-allocation-4')), '100000');
+    await tester.tap(find.byKey(const ValueKey('payment-wht-4')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Expired'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('payment-wht-code-4')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('General Services').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byKey(const ValueKey('payment-wht-base-4')), '100000');
+    await tester.enterText(
+        find.byKey(const ValueKey('payment-allocation-4')), '100000');
+    await tester.pump();
+    expect(find.text('₦2,000.00'), findsWidgets);
+    expect(find.textContaining('Calculation base: Gross'), findsOneWidget);
+    await tester.tap(find.byType(DropdownButtonFormField<CehBankAccount>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Zenith Bank').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('save-post-customer-payment')));
+    await tester.pumpAndSettle();
+    final row = (api.posted!['allocations'] as List).first as Map;
+    expect(row['cash_amount'], '100000.00');
+    expect(row['wht_amount'], '2000.00');
+    expect(row['wht_tax_code_id'], 21);
+    expect(row['wht_calculation_base_amount'], '100000.00');
+    expect(row['certificate_status'], 'CERTIFICATE_PENDING');
+  });
+
+  testWidgets('multiple invoices retain different explicit WHT treatments',
+      (tester) async {
+    tester.view.physicalSize = const Size(900, 3400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final api = _PaymentApi();
+    await tester.pumpWidget(
+        MaterialApp(home: CustomerPaymentScreen(session: _admin, api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButtonFormField<CehClient>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ABC Construction').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byKey(const ValueKey('payment-amount-received')), '150000');
+    for (final id in [4, 5]) {
+      await tester.enterText(
+          find.byKey(ValueKey('payment-allocation-$id')), '75000');
+      await tester.tap(find.byKey(ValueKey('payment-wht-$id')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(ValueKey('payment-wht-code-$id')));
+      await tester.pumpAndSettle();
+      await tester.tap(find
+          .textContaining(id == 4 ? 'General Services' : 'Professional')
+          .last);
+      await tester.pumpAndSettle();
+      await tester.enterText(
+          find.byKey(ValueKey('payment-wht-base-$id')), '50000');
+    }
+    await tester.tap(find.byType(DropdownButtonFormField<CehBankAccount>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Zenith Bank').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('save-post-customer-payment')));
+    await tester.pumpAndSettle();
+    final rows = api.posted!['allocations'] as List;
+    expect(rows[0]['wht_amount'], '1000.00');
+    expect(rows[0]['wht_tax_code_id'], 21);
+    expect(rows[1]['wht_amount'], '2500.00');
+    expect(rows[1]['wht_tax_code_id'], 22);
+  });
+
+  testWidgets('WHT settlement cannot exceed invoice outstanding',
+      (tester) async {
+    tester.view.physicalSize = const Size(900, 2600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final api = _PaymentApi();
+    await tester.pumpWidget(
+        MaterialApp(home: CustomerPaymentScreen(session: _admin, api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButtonFormField<CehClient>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ABC Construction').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byKey(const ValueKey('payment-amount-received')), '483750');
+    await tester.enterText(
+        find.byKey(const ValueKey('payment-allocation-4')), '483750');
+    await tester.tap(find.byKey(const ValueKey('payment-wht-4')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('payment-wht-code-4')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('General Services').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byKey(const ValueKey('payment-wht-base-4')), '100000');
+    await tester.enterText(
+        find.byKey(const ValueKey('payment-allocation-4')), '483750');
+    await tester.tap(find.byType(DropdownButtonFormField<CehBankAccount>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Zenith Bank').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('save-post-customer-payment')));
+    await tester.pump();
+    expect(find.textContaining('settlement exceeds its outstanding balance'),
+        findsOneWidget);
+    expect(api.saved, isNull);
+  });
+
+  testWidgets('received WHT certificate requires attachment', (tester) async {
+    tester.view.physicalSize = const Size(900, 2600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final api = _PaymentApi();
+    await tester.pumpWidget(
+        MaterialApp(home: CustomerPaymentScreen(session: _admin, api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButtonFormField<CehClient>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ABC Construction').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byKey(const ValueKey('payment-amount-received')), '100000');
+    await tester.enterText(
+        find.byKey(const ValueKey('payment-allocation-4')), '90000');
+    await tester.tap(find.byKey(const ValueKey('payment-wht-4')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('payment-wht-code-4')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('General Services').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byKey(const ValueKey('payment-wht-base-4')), '100000');
+    await tester.tap(find.byKey(const ValueKey('payment-wht-certificate-4')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Received').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButtonFormField<CehBankAccount>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Zenith Bank').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('save-post-customer-payment')));
+    await tester.pump();
+    expect(find.textContaining('attach the received WHT certificate'),
+        findsOneWidget);
+    expect(api.saved, isNull);
+  });
+
+  test('WHT percentage uses exact integer minor-unit rounding', () {
+    expect(calculateTaxMinorUnits(10000000, '2.000000'), 200000);
+    expect(calculateTaxMinorUnits(33333, '5.000000'), 1667);
   });
 
   testWidgets(

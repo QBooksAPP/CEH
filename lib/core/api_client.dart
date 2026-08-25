@@ -1242,6 +1242,27 @@ class CehApiClient {
     );
   }
 
+  Future<int> uploadFinancialEvidenceRecord(CehSession session,
+      {required String sourceType,
+      required int sourceRecordId,
+      required String filename,
+      required String mimeType,
+      required Uint8List bytes}) async {
+    final data = await _postJson(
+      session,
+      'financial_evidence_upload.php',
+      {
+        'source_type': sourceType,
+        'source_record_id': sourceRecordId,
+        'filename': filename,
+        'mime_type': mimeType,
+        'data_base64': base64Encode(bytes),
+      },
+      'FINANCIAL_EVIDENCE_UPLOAD_FAILED',
+    );
+    return ((data['evidence'] as Map)['id'] as num).toInt();
+  }
+
   Future<Map<String, dynamic>> _postJson(
     CehSession session,
     String endpoint,

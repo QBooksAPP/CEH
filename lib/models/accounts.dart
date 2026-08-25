@@ -386,6 +386,8 @@ class InvoiceSettlementEvent {
       this.bankReference,
       this.taxCode,
       this.taxRate,
+      this.calculationBase,
+      this.calculationBaseAmount,
       this.certificateStatus});
 
   final String date;
@@ -396,6 +398,8 @@ class InvoiceSettlementEvent {
   final String? bankReference;
   final String? taxCode;
   final String? taxRate;
+  final String? calculationBase;
+  final double? calculationBaseAmount;
   final String? certificateStatus;
 
   factory InvoiceSettlementEvent.fromJson(Map<String, dynamic> json) =>
@@ -408,6 +412,10 @@ class InvoiceSettlementEvent {
           bankReference: json['bank_reference']?.toString(),
           taxCode: json['tax_code']?.toString(),
           taxRate: json['tax_rate']?.toString(),
+          calculationBase: json['calculation_base']?.toString(),
+          calculationBaseAmount: json['calculation_base_amount'] == null
+              ? null
+              : _double(json['calculation_base_amount']),
           certificateStatus: json['certificate_status']?.toString());
 }
 

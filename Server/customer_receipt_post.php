@@ -20,7 +20,8 @@ accounts_endpoint(function () use ($user, $input): array {
         $wht = 0;
         $whtCode = null;
         $certificateStatus = 'NOT_APPLICABLE';
-        if (isset($input['wht_amount']) && trim((string)$input['wht_amount']) !== '') {
+        $legacyWht = isset($input['wht_amount']) && trim((string)$input['wht_amount']) !== '';
+        if ($legacyWht) {
             $wht = accounts_money_minor($input['wht_amount']);
             $whtCode = billing_tax_code($db, $input['wht_tax_code_id'] ?? 0, 'WHT', $receipt['receipt_date']);
             $certificateStatus = strtoupper((string)($input['certificate_status'] ?? 'CERTIFICATE_PENDING'));
@@ -35,6 +36,7 @@ accounts_endpoint(function () use ($user, $input): array {
         $whtAllocated = 0;
         $normalized = [];
         $invoiceIds = [];
+        $allocationWhtMode = false;
         foreach ($allocations as $allocation) {
             if (!is_array($allocation)) accounts_fail('INVALID_ALLOCATION');
             $invoiceId = (int)($allocation['invoice_id'] ?? 0);
@@ -48,19 +50,53 @@ accounts_endpoint(function () use ($user, $input): array {
                 ? accounts_money_minor($allocation['cash_amount'], false) : 0;
             $whtAmount = isset($allocation['wht_amount']) && trim((string)$allocation['wht_amount']) !== ''
                 ? accounts_money_minor($allocation['wht_amount'], false) : 0;
+            $allocationWht = null;
+            if ($whtAmount > 0 && isset($allocation['wht_tax_code_id'])) {
+                $allocationWhtMode = true;
+                if ($legacyWht) accounts_fail('MIXED_WHT_CONTRACT_NOT_ALLOWED', 409);
+                $code = billing_tax_code($db, $allocation['wht_tax_code_id'], 'WHT', $receipt['receipt_date']);
+                $baseAmount = accounts_money_minor($allocation['wht_calculation_base_amount'] ?? '');
+                $expectedWht = billing_percent_amount($baseAmount, (string)$code['rate_percent']);
+                if ($expectedWht !== $whtAmount) accounts_fail('WHT_CALCULATION_MISMATCH', 409);
+                $status = strtoupper((string)($allocation['certificate_status'] ?? 'CERTIFICATE_PENDING'));
+                if (!in_array($status, ['CERTIFICATE_PENDING', 'CERTIFICATE_RECEIVED'], true)) {
+                    accounts_fail('INVALID_WHT_CERTIFICATE_STATUS');
+                }
+                $evidenceId = accounts_nullable_id($allocation['wht_certificate_evidence_id'] ?? null);
+                if ($evidenceId !== null) {
+                    $evidence = $db->prepare("SELECT id FROM qbook_financial_evidence WHERE id=? AND source_type='WHT_CERTIFICATE' AND source_record_id=?");
+                    $evidence->execute([$evidenceId, $id]);
+                    if (!$evidence->fetch()) accounts_fail('WHT_CERTIFICATE_EVIDENCE_INVALID', 409);
+                }
+                if ($status === 'CERTIFICATE_RECEIVED' && $evidenceId === null) {
+                    accounts_fail('WHT_CERTIFICATE_EVIDENCE_REQUIRED', 409);
+                }
+                $allocationWht = [
+                    'code' => $code,
+                    'base_minor' => $baseAmount,
+                    'status' => $status,
+                    'evidence_id' => $evidenceId,
+                ];
+            } elseif ($whtAmount > 0 && !$legacyWht) {
+                accounts_fail('WHT_CODE_REQUIRED', 409);
+            } elseif ($whtAmount === 0 && (isset($allocation['wht_tax_code_id']) || isset($allocation['wht_calculation_base_amount']))) {
+                accounts_fail('WHT_AMOUNT_REQUIRED', 409);
+            }
             if ($cashAmount + $whtAmount <= 0 || $cashAmount + $whtAmount > $invoice['outstanding_minor']) {
                 accounts_fail('INVOICE_OVERALLOCATION', 409);
             }
             $cashAllocated += $cashAmount;
             $whtAllocated += $whtAmount;
-            $normalized[] = [$invoice, $cashAmount, $whtAmount];
+            $normalized[] = [$invoice, $cashAmount, $whtAmount, $allocationWht];
         }
+        if ($allocationWhtMode) $wht = $whtAllocated;
         if ($cashAllocated > $cash || $whtAllocated > $wht) accounts_fail('RECEIPT_OVERALLOCATION', 409);
         if ($whtAllocated !== $wht) accounts_fail('WHT_MUST_BE_FULLY_ALLOCATED', 409);
         $unallocatedCash = $cash - $cashAllocated;
         if ($unallocatedCash < 0) accounts_fail('RECEIPT_OVERALLOCATION', 409);
 
-        if ($certificateStatus === 'CERTIFICATE_RECEIVED') {
+        $certificateReceived = $certificateStatus === 'CERTIFICATE_RECEIVED';
+        if ($certificateReceived) {
             $evidence = $db->prepare("SELECT id FROM qbook_financial_evidence WHERE source_type='WHT_CERTIFICATE' AND source_record_id=? LIMIT 1");
             $evidence->execute([$id]);
             if (!$evidence->fetch()) accounts_fail('WHT_CERTIFICATE_EVIDENCE_REQUIRED', 409);
@@ -108,10 +144,21 @@ accounts_endpoint(function () use ($user, $input): array {
         ], $lines);
 
         $insertAllocation = $db->prepare('INSERT INTO qbook_customer_receipt_allocations(receipt_id,invoice_id,cash_amount,wht_amount,allocated_by)VALUES(?,?,?,?,?)');
-        foreach ($normalized as [$invoice, $cashAmount, $whtAmount]) {
+        $insertAllocationWht = $db->prepare('INSERT INTO qbook_customer_receipt_allocation_wht(receipt_allocation_id,tax_code_id,rate_snapshot,calculation_base_snapshot,calculation_base_amount,accepted_amount,certificate_status,certificate_evidence_id,certificate_received_at)VALUES(?,?,?,?,?,?,?,?,?)');
+        foreach ($normalized as [$invoice, $cashAmount, $whtAmount, $allocationWht]) {
             $insertAllocation->execute([$id, $invoice['id'], accounts_minor_decimal($cashAmount), accounts_minor_decimal($whtAmount), $user['id']]);
+            if ($allocationWht !== null) {
+                $allocationId = (int)$db->lastInsertId();
+                $code = $allocationWht['code'];
+                $status = $allocationWht['status'];
+                $insertAllocationWht->execute([
+                    $allocationId, $code['id'], $code['rate_percent'], $code['calculation_base'],
+                    accounts_minor_decimal($allocationWht['base_minor']), accounts_minor_decimal($whtAmount),
+                    $status, $allocationWht['evidence_id'], $status === 'CERTIFICATE_RECEIVED' ? gmdate('Y-m-d H:i:s') : null,
+                ]);
+            }
         }
-        if ($wht > 0) {
+        if ($legacyWht && $wht > 0) {
             $db->prepare('INSERT INTO qbook_receipt_wht(receipt_id,tax_code_id,rate_snapshot,calculation_base_snapshot,accepted_amount,certificate_status,certificate_received_at)VALUES(?,?,?,?,?,?,?)')
                 ->execute([$id, $whtCode['id'], $whtCode['rate_percent'], $whtCode['calculation_base'], accounts_minor_decimal($wht), $certificateStatus, $certificateStatus === 'CERTIFICATE_RECEIVED' ? gmdate('Y-m-d H:i:s') : null]);
         }

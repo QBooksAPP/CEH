@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -536,6 +537,12 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
     if ((event.taxCode ?? '').isNotEmpty) {
       details.add('${event.taxCode} ${formatBillingTaxRate(event.taxRate)}');
     }
+    if ((event.calculationBase ?? '').isNotEmpty) {
+      final amount = event.calculationBaseAmount;
+      details.add(amount == null
+          ? '${formatAccountsStatus(event.calculationBase!)} base'
+          : '${formatAccountsStatus(event.calculationBase!)} base ${formatNaira(amount)}');
+    }
     if ((event.certificateStatus ?? '').isNotEmpty) {
       details.add(formatAccountsStatus(event.certificateStatus!));
     }
@@ -700,15 +707,28 @@ class CustomerPaymentScreen extends StatefulWidget {
   State<CustomerPaymentScreen> createState() => _CustomerPaymentScreenState();
 }
 
+class _PaymentWhtDraft {
+  bool enabled = false;
+  int? taxCodeId;
+  String certificateStatus = 'CERTIFICATE_PENDING';
+  final base = TextEditingController();
+  XFile? certificate;
+
+  void dispose() => base.dispose();
+}
+
 class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
   List<CehClient> clients = const [];
   List<CehBankAccount> banks = const [];
   List<BillingInvoice> invoices = const [];
+  List<Map<String, dynamic>> whtCodes = const [];
   CehClient? client;
   CehBankAccount? bank;
   final amount = TextEditingController();
   final reference = TextEditingController();
   final Map<int, TextEditingController> allocations = {};
+  final Map<int, _PaymentWhtDraft> wht = {};
+  final ImagePicker _picker = ImagePicker();
   bool loadingInvoices = false;
   bool posting = false;
   @override
@@ -716,7 +736,7 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
     super.initState();
     Future.wait([
       widget.api.clients(widget.session),
-      widget.api.bankAccounts(widget.session)
+      widget.api.bankAccounts(widget.session),
     ]).then((v) {
       if (mounted) {
         setState(() {
@@ -724,6 +744,27 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
           banks = v[1] as List<CehBankAccount>;
         });
       }
+    });
+    widget.api.taxConfiguration(widget.session).then((tax) {
+      if (!mounted) return;
+      final today = DateTime.now().toIso8601String().substring(0, 10);
+      setState(() {
+        whtCodes = (tax['tax_codes'] as List? ?? const [])
+            .map((item) => Map<String, dynamic>.from(item as Map))
+            .where((code) {
+          final active = code['is_active'] == true ||
+              code['is_active'] == 1 ||
+              '${code['is_active']}' == '1';
+          final from = '${code['effective_from'] ?? ''}';
+          final to = code['effective_to']?.toString();
+          return active &&
+              code['tax_type'] == 'WHT' &&
+              from.compareTo(today) <= 0 &&
+              (to == null || to.isEmpty || to.compareTo(today) >= 0);
+        }).toList();
+      });
+    }).onError((_, __) {
+      // Tax lookup failure must not block an ordinary cash-only payment.
     });
   }
 
@@ -734,6 +775,9 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
     for (final controller in allocations.values) {
       controller.dispose();
     }
+    for (final draft in wht.values) {
+      draft.dispose();
+    }
     super.dispose();
   }
 
@@ -741,6 +785,27 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
   int get receivedMinor => _minor(amount.text);
   int get allocatedMinor => allocations.values
       .fold(0, (total, controller) => total + _minor(controller.text));
+  int _whtMinor(int invoiceId) {
+    final draft = wht[invoiceId];
+    if (draft == null || !draft.enabled || draft.taxCodeId == null) return 0;
+    Map<String, dynamic>? code;
+    for (final item in whtCodes) {
+      if ((item['id'] as num).toInt() == draft.taxCodeId) {
+        code = item;
+        break;
+      }
+    }
+    if (code == null) return 0;
+    try {
+      return calculateTaxMinorUnits(
+          _minor(draft.base.text), code['rate_percent']);
+    } on FormatException {
+      return 0;
+    }
+  }
+
+  int get whtAllocatedMinor =>
+      invoices.fold(0, (total, invoice) => total + _whtMinor(invoice.id));
   int get unallocatedMinor =>
       receivedMinor > allocatedMinor ? receivedMinor - allocatedMinor : 0;
 
@@ -748,10 +813,14 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
     for (final controller in allocations.values) {
       controller.dispose();
     }
+    for (final draft in wht.values) {
+      draft.dispose();
+    }
     setState(() {
       client = value;
       invoices = const [];
       allocations.clear();
+      wht.clear();
       loadingInvoices = value != null;
     });
     if (value == null) return;
@@ -763,6 +832,7 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
         invoices = rows;
         for (final invoice in rows) {
           allocations[invoice.id] = TextEditingController();
+          wht[invoice.id] = _PaymentWhtDraft();
         }
         loadingInvoices = false;
       });
@@ -786,10 +856,27 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
       return;
     }
     for (final invoice in invoices) {
-      final value = _minor(allocations[invoice.id]?.text ?? '');
-      if (value > (invoice.outstanding * 100).round()) {
+      final cashValue = _minor(allocations[invoice.id]?.text ?? '');
+      final draft = wht[invoice.id]!;
+      final whtValue = _whtMinor(invoice.id);
+      if (draft.enabled) {
+        if (draft.taxCodeId == null ||
+            _minor(draft.base.text) <= 0 ||
+            whtValue <= 0) {
+          _message(
+              '${invoice.reference}: select a WHT Code and enter the calculation base.');
+          return;
+        }
+        if (draft.certificateStatus == 'CERTIFICATE_RECEIVED' &&
+            draft.certificate == null) {
+          _message(
+              '${invoice.reference}: attach the received WHT certificate.');
+          return;
+        }
+      }
+      if (cashValue + whtValue > (invoice.outstanding * 100).round()) {
         _message(
-            '${invoice.reference} allocation exceeds its outstanding balance.');
+            '${invoice.reference} settlement exceeds its outstanding balance.');
         return;
       }
     }
@@ -802,15 +889,40 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
         'cash_amount': ngnMinorUnitsForApi(receivedMinor),
         'bank_reference': reference.text,
       });
+      final whtEvidenceIds = <int, int>{};
+      for (final invoice in invoices) {
+        final certificate = wht[invoice.id]?.certificate;
+        if (certificate != null) {
+          whtEvidenceIds[invoice.id] = await widget.api
+              .uploadFinancialEvidenceRecord(widget.session,
+                  sourceType: 'WHT_CERTIFICATE',
+                  sourceRecordId: (draft['id'] as num).toInt(),
+                  filename: certificate.name,
+                  mimeType: certificate.name.toLowerCase().endsWith('.png')
+                      ? 'image/png'
+                      : 'image/jpeg',
+                  bytes: await certificate.readAsBytes());
+        }
+      }
       await widget.api.postCustomerPayment(widget.session, {
         'receipt_id': draft['id'],
         'allocations': [
           for (final invoice in invoices)
-            if (_minor(allocations[invoice.id]?.text ?? '') > 0)
+            if (_minor(allocations[invoice.id]?.text ?? '') > 0 ||
+                _whtMinor(invoice.id) > 0)
               {
                 'invoice_id': invoice.id,
                 'cash_amount':
                     ngnMinorUnitsForApi(_minor(allocations[invoice.id]!.text)),
+                if (_whtMinor(invoice.id) > 0) ...{
+                  'wht_amount': ngnMinorUnitsForApi(_whtMinor(invoice.id)),
+                  'wht_tax_code_id': wht[invoice.id]!.taxCodeId,
+                  'wht_calculation_base_amount':
+                      ngnMinorUnitsForApi(_minor(wht[invoice.id]!.base.text)),
+                  'certificate_status': wht[invoice.id]!.certificateStatus,
+                  if (whtEvidenceIds[invoice.id] != null)
+                    'wht_certificate_evidence_id': whtEvidenceIds[invoice.id],
+                }
               }
         ],
       });
@@ -882,10 +994,142 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
                               ],
                               onChanged: (_) => setState(() {}),
                               decoration: InputDecoration(
-                                  labelText: 'Allocate to this invoice',
+                                  labelText: 'Cash allocated',
                                   helperText: receivedMinor <= 0
                                       ? 'Enter Amount Received first'
-                                      : null))
+                                      : null)),
+                          SwitchListTile.adaptive(
+                              key: ValueKey('payment-wht-${invoice.id}'),
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('Customer deducted WHT'),
+                              subtitle: const Text(
+                                  'Enable only when the customer explicitly deducted WHT.'),
+                              value: wht[invoice.id]?.enabled ?? false,
+                              onChanged: posting
+                                  ? null
+                                  : (value) => setState(() {
+                                        final draft = wht[invoice.id]!;
+                                        draft.enabled = value;
+                                        if (!value) {
+                                          draft.taxCodeId = null;
+                                          draft.base.clear();
+                                          draft.certificateStatus =
+                                              'CERTIFICATE_PENDING';
+                                          draft.certificate = null;
+                                        }
+                                      })),
+                          if (wht[invoice.id]?.enabled ?? false) ...[
+                            if (whtCodes.isEmpty)
+                              const Text(
+                                  'No active WHT codes are effective for today.'),
+                            DropdownButtonFormField<int>(
+                                key: ValueKey('payment-wht-code-${invoice.id}'),
+                                initialValue: wht[invoice.id]!.taxCodeId,
+                                isExpanded: true,
+                                decoration: const InputDecoration(
+                                    labelText: 'WHT Code / Type'),
+                                items: whtCodes
+                                    .map((code) => DropdownMenuItem<int>(
+                                        value: (code['id'] as num).toInt(),
+                                        child: Text(
+                                            '${code['name']} • ${formatBillingTaxRate(code['rate_percent'])}')))
+                                    .toList(),
+                                onChanged: posting
+                                    ? null
+                                    : (value) => setState(() {
+                                          wht[invoice.id]!.taxCodeId = value;
+                                        })),
+                            const SizedBox(height: 10),
+                            if (wht[invoice.id]!.taxCodeId != null)
+                              Builder(builder: (context) {
+                                final code = whtCodes.firstWhere((item) =>
+                                    (item['id'] as num).toInt() ==
+                                    wht[invoice.id]!.taxCodeId);
+                                return Text(
+                                    'Configured rate: ${formatBillingTaxRate(code['rate_percent'])} • Calculation base: ${formatAccountsStatus('${code['calculation_base']}')}\nEnter the actual amount subject to WHT; it is not inferred from cash or outstanding.');
+                              }),
+                            const SizedBox(height: 8),
+                            TextField(
+                                key: ValueKey('payment-wht-base-${invoice.id}'),
+                                controller: wht[invoice.id]!.base,
+                                enabled: !posting,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                        decimal: true),
+                                inputFormatters: const [
+                                  NgnAmountInputFormatter()
+                                ],
+                                onChanged: (_) => setState(() {}),
+                                decoration: const InputDecoration(
+                                    labelText: 'WHT calculation base amount')),
+                            const SizedBox(height: 8),
+                            DropdownButtonFormField<String>(
+                                key: ValueKey(
+                                    'payment-wht-certificate-${invoice.id}'),
+                                initialValue:
+                                    wht[invoice.id]!.certificateStatus,
+                                decoration: const InputDecoration(
+                                    labelText: 'Certificate status'),
+                                items: const [
+                                  DropdownMenuItem(
+                                      value: 'CERTIFICATE_PENDING',
+                                      child: Text('Certificate Pending')),
+                                  DropdownMenuItem(
+                                      value: 'CERTIFICATE_RECEIVED',
+                                      child: Text('Received')),
+                                ],
+                                onChanged: posting
+                                    ? null
+                                    : (value) => setState(() {
+                                          wht[invoice.id]!.certificateStatus =
+                                              value ?? 'CERTIFICATE_PENDING';
+                                        })),
+                            Align(
+                                alignment: Alignment.centerLeft,
+                                child: TextButton.icon(
+                                    key: ValueKey(
+                                        'payment-wht-evidence-${invoice.id}'),
+                                    onPressed: posting
+                                        ? null
+                                        : () async {
+                                            final file =
+                                                await _picker.pickImage(
+                                                    source: ImageSource.gallery,
+                                                    imageQuality: 90);
+                                            if (file != null && mounted) {
+                                              setState(() => wht[invoice.id]!
+                                                  .certificate = file);
+                                            }
+                                          },
+                                    icon: const Icon(Icons.attach_file),
+                                    label: Text(wht[invoice.id]!.certificate ==
+                                            null
+                                        ? 'Attach certificate photo — optional while pending'
+                                        : wht[invoice.id]!.certificate!.name))),
+                            Card(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .surfaceContainerHighest,
+                                child: Padding(
+                                    padding: const EdgeInsets.all(10),
+                                    child: Column(children: [
+                                      _paymentMetric(
+                                          'Cash allocated',
+                                          _minor(allocations[invoice.id]
+                                                      ?.text ??
+                                                  '') /
+                                              100),
+                                      _paymentMetric('WHT accepted',
+                                          _whtMinor(invoice.id) / 100),
+                                      _paymentMetric(
+                                          'Invoice settlement',
+                                          (_minor(allocations[invoice.id]
+                                                          ?.text ??
+                                                      '') +
+                                                  _whtMinor(invoice.id)) /
+                                              100),
+                                    ])))
+                          ]
                         ]))),
         const SizedBox(height: 12),
         DropdownButtonFormField<CehBankAccount>(
@@ -910,7 +1154,10 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
                 padding: const EdgeInsets.all(14),
                 child: Column(children: [
                   _paymentMetric('Amount Received', receivedMinor / 100),
-                  _paymentMetric('Allocated', allocatedMinor / 100),
+                  _paymentMetric('Cash Allocated', allocatedMinor / 100),
+                  _paymentMetric('WHT Accepted', whtAllocatedMinor / 100),
+                  _paymentMetric('Invoice Settlement',
+                      (allocatedMinor + whtAllocatedMinor) / 100),
                   _paymentMetric(
                       'Unallocated / Customer Credit', unallocatedMinor / 100),
                 ]))),

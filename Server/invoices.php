@@ -39,11 +39,15 @@ accounts_endpoint(function():array{
         $advance->execute([$id]);
         foreach($advance->fetchAll() as $event){$event['reference']=billing_ref('RECEIPT',$event['reference_no']);$events[]=$event;}
         $wht=$db->prepare("SELECT r.receipt_date event_date,'WHT' event_type,a.wht_amount amount,r.reference_no,
-            NULL bank_destination,NULL bank_reference,t.code tax_code,w.rate_snapshot tax_rate,w.certificate_status,a.allocated_at event_timestamp
+            NULL bank_destination,NULL bank_reference,t.code tax_code,COALESCE(aw.rate_snapshot,w.rate_snapshot) tax_rate,
+            COALESCE(aw.calculation_base_snapshot,w.calculation_base_snapshot) calculation_base,
+            aw.calculation_base_amount,
+            COALESCE(aw.certificate_status,w.certificate_status) certificate_status,a.allocated_at event_timestamp
             FROM qbook_customer_receipt_allocations a
             JOIN qbook_customer_receipts r ON r.id=a.receipt_id AND r.status='POSTED'
-            JOIN qbook_receipt_wht w ON w.receipt_id=r.id
-            JOIN qbook_tax_codes t ON t.id=w.tax_code_id
+            LEFT JOIN qbook_customer_receipt_allocation_wht aw ON aw.receipt_allocation_id=a.id
+            LEFT JOIN qbook_receipt_wht w ON w.receipt_id=r.id
+            JOIN qbook_tax_codes t ON t.id=COALESCE(aw.tax_code_id,w.tax_code_id)
             WHERE a.invoice_id=? AND a.wht_amount>0");
         $wht->execute([$id]);
         foreach($wht->fetchAll() as $event){$event['reference']=billing_ref('RECEIPT',$event['reference_no']);$events[]=$event;}

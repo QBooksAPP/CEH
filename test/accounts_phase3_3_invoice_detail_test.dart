@@ -94,6 +94,8 @@ BillingInvoiceDetail _detail(String vatMode, {String status = 'DRAFT'}) =>
                     reference: 'CEH-RCP-000012',
                     taxCode: 'WHT_SERVICES',
                     taxRate: '2.000000',
+                    calculationBase: 'GROSS',
+                    calculationBaseAmount: 500000,
                     certificateStatus: 'CERTIFICATE_PENDING'),
                 InvoiceSettlementEvent(
                     date: '2026-08-27',
@@ -269,6 +271,7 @@ void main() {
     expect(find.textContaining('27-08-2026 • Credit Note'), findsOneWidget);
     expect(find.textContaining('Zenith Bank'), findsOneWidget);
     expect(find.textContaining('WHT_SERVICES 2.00%'), findsOneWidget);
+    expect(find.textContaining('Gross base ₦500,000.00'), findsOneWidget);
     expect(find.textContaining('Certificate Pending'), findsOneWidget);
   });
 }
