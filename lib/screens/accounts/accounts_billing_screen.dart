@@ -1694,11 +1694,11 @@ class ReceivablesAgeingScreen extends StatelessWidget {
 
 String _ageingLabel(String key) =>
     const {
-      'CURRENT': 'CURRENT',
-      '1_30': '1–30',
-      '31_60': '31–60',
-      '61_90': '61–90',
-      'OVER_90': 'OVER–90',
+      'CURRENT': 'Current',
+      '1_30': '1–30 Days Overdue',
+      '31_60': '31–60 Days Overdue',
+      '61_90': '61–90 Days Overdue',
+      'OVER_90': 'Over 90 Days',
     }[key] ??
     key;
 
@@ -1726,10 +1726,9 @@ class ReceivablesAgeingDetailScreen extends StatelessWidget {
     final reconciledMinor = invoices.fold<int>(
         0, (sum, row) => sum + _ageingMinor(row['outstanding']));
     return Scaffold(
-        appBar: AppBar(title: Text('${_ageingLabel(bucket)} Receivables')),
+        appBar: AppBar(title: Text(_ageingLabel(bucket))),
         body: ListView(padding: const EdgeInsets.all(18), children: [
-          _summary('Selected bucket total', totalMinor),
-          _summary('Drill-down total', reconciledMinor),
+          _summary('Total Outstanding', totalMinor),
           if (reconciledMinor != totalMinor)
             const Text('RECEIVABLES_AGEING_RECONCILIATION_ERROR',
                 style:

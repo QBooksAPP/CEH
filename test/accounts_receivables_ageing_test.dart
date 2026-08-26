@@ -92,9 +92,12 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('ageing-bucket-CURRENT')));
     await tester.pumpAndSettle();
-    expect(find.text('CURRENT Receivables'), findsOneWidget);
+    expect(find.text('Current'), findsOneWidget);
+    expect(find.text('Total Outstanding'), findsOneWidget);
+    expect(find.text('Selected bucket total'), findsNothing);
+    expect(find.text('Drill-down total'), findsNothing);
     expect(find.textContaining('ABC Construction'), findsOneWidget);
-    expect(find.text('₦450,040.00'), findsNWidgets(3));
+    expect(find.text('₦450,040.00'), findsNWidgets(2));
     expect(find.text('RECEIVABLES_AGEING_RECONCILIATION_ERROR'), findsNothing);
   });
 
