@@ -44,10 +44,10 @@ try{
 
         public function Footer(): void {
             $this->SetY(-13);
-            $this->SetDrawColor(214,220,226);
+            $this->SetDrawColor(216,225,232);
             $this->Line(15,$this->GetY(),195,$this->GetY());
             $this->Ln(2.5);
-            $this->SetTextColor(103,113,123);
+            $this->SetTextColor(23,62,99);
             $this->SetFont('dejavusans','',7);
             $this->Cell(130,5,'CEH Payment Receipt',0,0,'L');
             $this->Cell(50,5,'Page '.$this->getAliasNumPage().' of '.$this->getAliasNbPages(),0,0,'R');
@@ -64,11 +64,13 @@ try{
     $pdf->setCellPaddings(1.8,1.2,1.8,1.2);
     $pdf->AddPage();
 
-    $ink=[35,48,61];
-    $muted=[91,105,118];
-    $green=[31,111,87];
-    $pale=[239,247,244];
-    $border=[205,214,222];
+    // Exact CEH application colours from lib/core/ceh_theme.dart.
+    $ink=[23,33,43];             // CehTheme.text #17212B
+    $primary=[36,89,133];        // CehTheme.blue #245985
+    $secondary=[23,62,99];       // CehTheme.navy #173E63
+    $pale=[234,241,247];         // CehTheme.paleBlue #EAF1F7
+    $background=[244,247,250];   // CehTheme.background #F4F7FA
+    $border=[216,225,232];       // Input border #D8E1E8
     $pdf->SetTextColor(...$ink);
     $pdf->SetDrawColor(...$border);
 
@@ -78,12 +80,12 @@ try{
     $pdf->MultiCell(113,5.6,(string)$receipt['company_legal_name_snapshot'],0,'R',false,1);
     $pdf->SetX(90);
     $pdf->SetFont('dejavusans','',8);
-    $pdf->SetTextColor(...$muted);
+    $pdf->SetTextColor(...$secondary);
     $pdf->MultiCell(105,4.3,(string)$receipt['company_address_snapshot'],0,'R',false,1);
     $pdf->SetX(90);
     $pdf->MultiCell(105,4.3,'TIN: '.(string)$receipt['tax_identifier_snapshot'],0,'R',false,1);
     $headerBottom=max(35.0,$pdf->GetY()+2);
-    $pdf->SetDrawColor(...$green);
+    $pdf->SetDrawColor(...$primary);
     $pdf->SetLineWidth(0.7);
     $pdf->Line(15,$headerBottom,195,$headerBottom);
 
@@ -92,14 +94,14 @@ try{
     $money=static fn($value):string=>'₦'.number_format((float)$value,2);
 
     $pdf->SetY($headerBottom+6);
-    $pdf->SetTextColor(...$ink);
+    $pdf->SetTextColor(...$primary);
     $pdf->SetFont('dejavusans','B',18);
     $pdf->Cell(105,9,'PAYMENT RECEIPT',0,0,'L');
     $pdf->SetFont('dejavusans','B',10);
-    $pdf->SetTextColor(...$green);
+    $pdf->SetTextColor(...$secondary);
     $pdf->Cell(75,9,$reference,0,1,'R');
     $pdf->SetFont('dejavusans','',8);
-    $pdf->SetTextColor(...$muted);
+    $pdf->SetTextColor(...$secondary);
     $pdf->Cell(105,5,'Official acknowledgement of Client payment',0,0,'L');
     $pdf->Cell(75,5,'Payment date: '.$paymentDate,0,1,'R');
 
@@ -117,7 +119,7 @@ try{
     foreach($info as [$label,$value]){
         $pdf->SetXY(20,$rowY);
         $pdf->SetFont('dejavusans','B',7.5);
-        $pdf->SetTextColor(...$muted);
+        $pdf->SetTextColor(...$secondary);
         $pdf->Cell(34,5,strtoupper($label),0,0,'L');
         $pdf->SetFont('dejavusans','',9);
         $pdf->SetTextColor(...$ink);
@@ -130,8 +132,8 @@ try{
         ['INVOICE',29,'L'],['PROJECT / SITE',39,'L'],['INVOICE TOTAL',30,'R'],
         ['CASH APPLIED',28,'R'],['WHT',24,'R'],['SETTLEMENT',30,'R'],
     ];
-    $drawAllocationHeader=static function(TCPDF $document) use($columns,$green): void {
-        $document->SetFillColor(...$green);
+    $drawAllocationHeader=static function(TCPDF $document) use($columns,$primary): void {
+        $document->SetFillColor(...$primary);
         $document->SetTextColor(255,255,255);
         $document->SetFont('dejavusans','B',7.2);
         foreach($columns as [$label,$width,$align])$document->Cell($width,8,$label,0,0,$align,true);
@@ -163,7 +165,7 @@ try{
             $drawAllocationHeader($pdf);
         }
         $fill=$index%2===1;
-        if($fill)$pdf->SetFillColor(248,250,251);
+        if($fill)$pdf->SetFillColor(...$background);
         $pdf->SetTextColor(...$ink);
         $pdf->SetFont('dejavusans','',7.6);
         foreach($values as $cellIndex=>$value){
@@ -175,7 +177,7 @@ try{
                 .' • '.str_replace('_',' ',(string)$allocation['calculation_base_snapshot'])
                 .' • '.str_replace('_',' ',(string)$allocation['certificate_status']);
             $pdf->SetFont('dejavusans','',7.2);
-            $pdf->SetTextColor(...$muted);
+            $pdf->SetTextColor(...$secondary);
             $pdf->MultiCell(180,5.5,$detail,'LRB','L',false,1);
         }
     }
@@ -193,27 +195,27 @@ try{
     $pdf->Ln(6);
     $pdf->SetX(95);
     $pdf->SetFont('dejavusans','B',9);
-    $pdf->SetTextColor(...$ink);
+    $pdf->SetTextColor(...$primary);
     $pdf->Cell(100,6,'Settlement summary',0,1,'L');
     foreach($totals as [$label,$amount]){
         $highlight=$label==='Total Invoice Settlement';
         $pdf->SetX(95);
         $pdf->SetFillColor(...($highlight?$pale:[255,255,255]));
         $pdf->SetFont('dejavusans',$highlight?'B':'',8.4);
-        $pdf->SetTextColor(...($highlight?$green:$ink));
+        $pdf->SetTextColor(...($highlight?$primary:$ink));
         $pdf->Cell(63,6.5,$label,$highlight?'TB':'B',0,'L',$highlight);
         $pdf->Cell(37,6.5,$money($amount),$highlight?'TB':'B',1,'R',$highlight);
     }
 
     if($wht>0){
         $pdf->Ln(5);
-        $pdf->SetFillColor(250,247,238);
-        $pdf->SetTextColor(93,75,35);
+        $pdf->SetFillColor(...$pale);
+        $pdf->SetTextColor(...$secondary);
         $pdf->SetFont('dejavusans','',7.8);
         $pdf->MultiCell(180,8,'WHT shown above was deducted by the Client and was not cash received by CEH. It is recorded as WHT Receivable.',0,'L',true,1);
     }
 
-    $pdf->SetTextColor(...$muted);
+    $pdf->SetTextColor(...$secondary);
     $pdf->SetFont('dejavusans','',7.5);
     $pdf->Ln(5);
     $pdf->MultiCell(180,5,'This receipt confirms the payment and settlement allocations shown above.',0,'L',false,1);

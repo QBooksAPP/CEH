@@ -89,6 +89,17 @@ void main() {
       expect(pdf, isNot(contains('Powered by TCPDF')));
       expect(pdf, isNot(contains("MultiCell(134,5,\$value,0,'J'")));
     });
+
+    test('receipt uses the authoritative CEH application colour theme', () {
+      final pdf = server('client_payment_pdf.php');
+      expect(pdf, contains(r'$primary=[36,89,133]'));
+      expect(pdf, contains(r'$secondary=[23,62,99]'));
+      expect(pdf, contains(r'$pale=[234,241,247]'));
+      expect(pdf, contains(r'$background=[244,247,250]'));
+      expect(pdf, contains(r'$ink=[23,33,43]'));
+      expect(pdf, contains(r'$border=[216,225,232]'));
+      expect(pdf, isNot(contains(r'$green=')));
+    });
   });
 
   group('Phase 3.5 Estimate schema and lifecycle', () {
