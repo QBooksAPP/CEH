@@ -75,6 +75,20 @@ void main() {
       expect(pdf, contains("Cache-Control: private, no-store"));
       expect(pdf, contains('application/pdf'));
     });
+
+    test('receipt uses professional CEH layout without generator branding', () {
+      final pdf = server('client_payment_pdf.php');
+      expect(pdf, contains("assets/ceh_logo.png"));
+      expect(pdf, contains('PAYMENT RECEIPT'));
+      expect(pdf, contains('Invoice allocation'));
+      expect(pdf, contains('Settlement summary'));
+      expect(pdf, contains('INVOICE TOTAL'));
+      expect(pdf, contains('PROJECT / SITE'));
+      expect(pdf, contains('SetPrintFooter(true)'));
+      expect(pdf, contains("getAliasNumPage()"));
+      expect(pdf, isNot(contains('Powered by TCPDF')));
+      expect(pdf, isNot(contains("MultiCell(134,5,\$value,0,'J'")));
+    });
   });
 
   group('Phase 3.5 Estimate schema and lifecycle', () {

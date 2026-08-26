@@ -1,2 +1,235 @@
 <?php
-declare(strict_types=1);require_once __DIR__.'/billing_common.php';require_once __DIR__.'/production_report_common.php';$user=billing_require_admin();production_require_method('GET');$id=(int)($_GET['payment_id']??0);if($id<=0)qbook_json(['ok'=>false,'error'=>'CLIENT_PAYMENT_REQUIRED'],422);$db=production_db();$s=$db->prepare("SELECT * FROM qbook_customer_receipts WHERE id=? AND status='POSTED'");$s->execute([$id]);$r=$s->fetch();if(!$r)qbook_json(['ok'=>false,'error'=>'POSTED_CLIENT_PAYMENT_NOT_FOUND'],404);foreach(['company_legal_name_snapshot','company_address_snapshot','tax_identifier_snapshot','received_into_snapshot','pdf_template_version']as$f)if(trim((string)($r[$f]??''))==='')qbook_json(['ok'=>false,'error'=>'CLIENT_PAYMENT_SNAPSHOT_MISSING'],409);$a=$db->prepare("SELECT a.*,i.reference_no invoice_reference_no,GROUP_CONCAT(DISTINCT NULLIF(l.project_snapshot,'') ORDER BY l.project_snapshot SEPARATOR ' • ') project_names,t.code wht_code,w.rate_snapshot,w.calculation_base_snapshot,w.calculation_base_amount,w.accepted_amount,w.certificate_status FROM qbook_customer_receipt_allocations a JOIN qbook_invoices i ON i.id=a.invoice_id LEFT JOIN qbook_invoice_lines l ON l.invoice_id=i.id LEFT JOIN qbook_customer_receipt_allocation_wht w ON w.receipt_allocation_id=a.id LEFT JOIN qbook_tax_codes t ON t.id=w.tax_code_id WHERE a.receipt_id=? GROUP BY a.id ORDER BY a.id");$a->execute([$id]);$alloc=$a->fetchAll();try{$cache=production_report_cache_directory();$logo=production_report_normalize_png((string)file_get_contents(__DIR__.'/assets/ceh_logo.png'));if(!defined('K_PATH_CACHE'))define('K_PATH_CACHE',$cache);require_once __DIR__.'/vendor/tcpdf/tcpdf.php';$pdf=new TCPDF('P','mm','A4',true,'UTF-8',false);$pdf->SetPrintHeader(false);$pdf->SetPrintFooter(false);$pdf->SetMargins(15,14,15);$pdf->SetAutoPageBreak(true,18);$pdf->AddPage();$pdf->Image('@'.$logo,15,12,58,0,'PNG');$pdf->SetXY(80,12);$pdf->SetFont('dejavusans','B',11);$pdf->MultiCell(115,6,(string)$r['company_legal_name_snapshot'],0,'R');$pdf->SetX(80);$pdf->SetFont('dejavusans','',8);$pdf->MultiCell(115,4.5,(string)$r['company_address_snapshot'],0,'R');$pdf->SetX(80);$pdf->MultiCell(115,4.5,'TIN: '.(string)$r['tax_identifier_snapshot'],0,'R');$pdf->Ln(8);$ref=billing_ref('RECEIPT',$r['reference_no']);$money=static fn($v):string=>'₦'.number_format((float)$v,2);$date=(new DateTimeImmutable($r['receipt_date']))->format('d-m-Y');$pdf->SetFont('dejavusans','B',20);$pdf->Cell(100,10,'PAYMENT RECEIPT');$pdf->SetFont('dejavusans','B',10);$pdf->Cell(80,10,$ref,0,1,'R');$pdf->Ln(3);foreach([['CLIENT',$r['client_name_snapshot']],['PAYMENT DATE',$date],['RECEIVED INTO',$r['received_into_snapshot']],['BANK REFERENCE',$r['bank_reference']?:'—']]as$m){$pdf->SetFont('dejavusans','B',8);$pdf->Cell(42,6,$m[0]);$pdf->SetFont('dejavusans','',9);$pdf->MultiCell(138,6,(string)$m[1]);}$pdf->Ln(5);$pdf->SetFont('dejavusans','B',8);foreach(['INVOICE / PROJECT'=>72,'CASH APPLIED'=>36,'WHT DEDUCTED'=>36,'SETTLEMENT'=>36]as$h=>$w)$pdf->Cell($w,8,$h,1,0,$h==='INVOICE / PROJECT'?'L':'R',true);$pdf->Ln();$cashApplied=$wht=0;foreach($alloc as$x){$cashApplied+=(float)$x['cash_amount'];$wht+=(float)$x['wht_amount'];$label=billing_ref('INVOICE',$x['invoice_reference_no']).($x['project_names']?"\n".$x['project_names']:'');if((float)$x['wht_amount']>0)$label.="\nWHT ".$x['wht_code'].' '.billing_format_percent($x['rate_snapshot']).' • '.$x['calculation_base_snapshot'].' • '.str_replace('_',' ',(string)$x['certificate_status']);$h=max(10,$pdf->getStringHeight(72,$label)+3);$pdf->MultiCell(72,$h,$label,1,'L',false,0);$pdf->MultiCell(36,$h,$money($x['cash_amount']),1,'R',false,0);$pdf->MultiCell(36,$h,$money($x['wht_amount']),1,'R',false,0);$pdf->MultiCell(36,$h,$money((float)$x['cash_amount']+(float)$x['wht_amount']),1,'R',false,1);}$cash=(float)$r['cash_amount'];$rows=[['Cash Received',$cash],['Cash Applied to Invoices',$cashApplied],['WHT Deducted by Client',$wht],['Total Invoice Settlement',$cashApplied+$wht],['Unallocated Client Credit / Advance',$cash-$cashApplied]];$pdf->Ln(6);foreach($rows as$row){$pdf->SetX(95);$pdf->SetFont('dejavusans',$row[0]==='Cash Received'?'B':'',9);$pdf->Cell(62,7,$row[0]);$pdf->Cell(38,7,$money($row[1]),0,1,'R');}$pdf->Ln(5);$pdf->SetFont('dejavusans','I',8);$pdf->MultiCell(180,5,'WHT shown above was deducted by the Client and was not cash received by CEH.');$bytes=$pdf->Output($ref.'.pdf','S');production_report_cleanup_cache_directory($cache);production_discard_output();header('Content-Type: application/pdf');header('Content-Length: '.strlen($bytes));header('Content-Disposition: attachment; filename="'.$ref.'.pdf"');header('Cache-Control: private, no-store');header('X-Content-Type-Options: nosniff');echo$bytes;exit;}catch(Throwable$e){if(isset($cache))production_report_cleanup_cache_directory($cache);error_log('CEH Client Payment PDF failed type='.get_class($e));qbook_json(['ok'=>false,'error'=>'CLIENT_PAYMENT_PDF_FAILED'],500);}
+declare(strict_types=1);
+
+require_once __DIR__.'/billing_common.php';
+require_once __DIR__.'/production_report_common.php';
+
+$user=billing_require_admin();
+production_require_method('GET');
+$id=(int)($_GET['payment_id']??0);
+if($id<=0)qbook_json(['ok'=>false,'error'=>'CLIENT_PAYMENT_REQUIRED'],422);
+
+$db=production_db();
+$statement=$db->prepare("SELECT * FROM qbook_customer_receipts WHERE id=? AND status='POSTED'");
+$statement->execute([$id]);
+$receipt=$statement->fetch();
+if(!$receipt)qbook_json(['ok'=>false,'error'=>'POSTED_CLIENT_PAYMENT_NOT_FOUND'],404);
+foreach(['company_legal_name_snapshot','company_address_snapshot','tax_identifier_snapshot','received_into_snapshot','pdf_template_version'] as $field){
+    if(trim((string)($receipt[$field]??''))==='')qbook_json(['ok'=>false,'error'=>'CLIENT_PAYMENT_SNAPSHOT_MISSING'],409);
+}
+
+$statement=$db->prepare("SELECT a.*,i.reference_no invoice_reference_no,i.total_amount invoice_total,
+    GROUP_CONCAT(DISTINCT NULLIF(l.project_snapshot,'') ORDER BY l.project_snapshot SEPARATOR ' • ') project_names,
+    t.code wht_code,w.rate_snapshot,w.calculation_base_snapshot,w.calculation_base_amount,
+    w.accepted_amount,w.certificate_status
+    FROM qbook_customer_receipt_allocations a
+    JOIN qbook_invoices i ON i.id=a.invoice_id
+    LEFT JOIN qbook_invoice_lines l ON l.invoice_id=i.id
+    LEFT JOIN qbook_customer_receipt_allocation_wht w ON w.receipt_allocation_id=a.id
+    LEFT JOIN qbook_tax_codes t ON t.id=w.tax_code_id
+    WHERE a.receipt_id=? GROUP BY a.id ORDER BY a.id");
+$statement->execute([$id]);
+$allocations=$statement->fetchAll();
+
+try{
+    $cache=production_report_cache_directory();
+    $logo=production_report_normalize_png((string)file_get_contents(__DIR__.'/assets/ceh_logo.png'));
+    if(!defined('K_PATH_CACHE'))define('K_PATH_CACHE',$cache);
+    require_once __DIR__.'/vendor/tcpdf/tcpdf.php';
+
+    $pdf=new class('P','mm','A4',true,'UTF-8',false) extends TCPDF {
+        public function disableGeneratorLink(): void {
+            $this->tcpdflink=false;
+        }
+
+        public function Footer(): void {
+            $this->SetY(-13);
+            $this->SetDrawColor(214,220,226);
+            $this->Line(15,$this->GetY(),195,$this->GetY());
+            $this->Ln(2.5);
+            $this->SetTextColor(103,113,123);
+            $this->SetFont('dejavusans','',7);
+            $this->Cell(130,5,'CEH Payment Receipt',0,0,'L');
+            $this->Cell(50,5,'Page '.$this->getAliasNumPage().' of '.$this->getAliasNbPages(),0,0,'R');
+        }
+    };
+    $pdf->disableGeneratorLink();
+    $pdf->SetCreator((string) $receipt['company_legal_name_snapshot']);
+    $pdf->SetAuthor((string)$receipt['company_legal_name_snapshot']);
+    $pdf->SetTitle('CEH Client Payment Receipt');
+    $pdf->SetPrintHeader(false);
+    $pdf->SetPrintFooter(true);
+    $pdf->SetMargins(15,13,15);
+    $pdf->SetAutoPageBreak(true,18);
+    $pdf->setCellPaddings(1.8,1.2,1.8,1.2);
+    $pdf->AddPage();
+
+    $ink=[35,48,61];
+    $muted=[91,105,118];
+    $green=[31,111,87];
+    $pale=[239,247,244];
+    $border=[205,214,222];
+    $pdf->SetTextColor(...$ink);
+    $pdf->SetDrawColor(...$border);
+
+    $pdf->Image('@'.$logo,15,13,48,0,'PNG');
+    $pdf->SetXY(82,13);
+    $pdf->SetFont('dejavusans','B',11);
+    $pdf->MultiCell(113,5.6,(string)$receipt['company_legal_name_snapshot'],0,'R',false,1);
+    $pdf->SetX(90);
+    $pdf->SetFont('dejavusans','',8);
+    $pdf->SetTextColor(...$muted);
+    $pdf->MultiCell(105,4.3,(string)$receipt['company_address_snapshot'],0,'R',false,1);
+    $pdf->SetX(90);
+    $pdf->MultiCell(105,4.3,'TIN: '.(string)$receipt['tax_identifier_snapshot'],0,'R',false,1);
+    $headerBottom=max(35.0,$pdf->GetY()+2);
+    $pdf->SetDrawColor(...$green);
+    $pdf->SetLineWidth(0.7);
+    $pdf->Line(15,$headerBottom,195,$headerBottom);
+
+    $reference=billing_ref('RECEIPT',$receipt['reference_no']);
+    $paymentDate=(new DateTimeImmutable($receipt['receipt_date']))->format('d-m-Y');
+    $money=static fn($value):string=>'₦'.number_format((float)$value,2);
+
+    $pdf->SetY($headerBottom+6);
+    $pdf->SetTextColor(...$ink);
+    $pdf->SetFont('dejavusans','B',18);
+    $pdf->Cell(105,9,'PAYMENT RECEIPT',0,0,'L');
+    $pdf->SetFont('dejavusans','B',10);
+    $pdf->SetTextColor(...$green);
+    $pdf->Cell(75,9,$reference,0,1,'R');
+    $pdf->SetFont('dejavusans','',8);
+    $pdf->SetTextColor(...$muted);
+    $pdf->Cell(105,5,'Official acknowledgement of Client payment',0,0,'L');
+    $pdf->Cell(75,5,'Payment date: '.$paymentDate,0,1,'R');
+
+    $pdf->Ln(5);
+    $info=[
+        ['Client',(string)$receipt['client_name_snapshot']],
+        ['Payment Date',$paymentDate],
+        ['Received Into',(string)$receipt['received_into_snapshot']],
+        ['Bank Reference',trim((string)($receipt['bank_reference']??''))?:'Not provided'],
+    ];
+    $infoY=$pdf->GetY();
+    $pdf->SetFillColor(...$pale);
+    $pdf->RoundedRect(15,$infoY,180,30,2,'1111','DF');
+    $rowY=$infoY+3;
+    foreach($info as [$label,$value]){
+        $pdf->SetXY(20,$rowY);
+        $pdf->SetFont('dejavusans','B',7.5);
+        $pdf->SetTextColor(...$muted);
+        $pdf->Cell(34,5,strtoupper($label),0,0,'L');
+        $pdf->SetFont('dejavusans','',9);
+        $pdf->SetTextColor(...$ink);
+        $pdf->MultiCell(134,5,$value,0,'L',false,1);
+        $rowY=max($rowY+6,$pdf->GetY());
+    }
+    $pdf->SetY(max($infoY+35,$rowY+2));
+
+    $columns=[
+        ['INVOICE',29,'L'],['PROJECT / SITE',39,'L'],['INVOICE TOTAL',30,'R'],
+        ['CASH APPLIED',28,'R'],['WHT',24,'R'],['SETTLEMENT',30,'R'],
+    ];
+    $drawAllocationHeader=static function(TCPDF $document) use($columns,$green): void {
+        $document->SetFillColor(...$green);
+        $document->SetTextColor(255,255,255);
+        $document->SetFont('dejavusans','B',7.2);
+        foreach($columns as [$label,$width,$align])$document->Cell($width,8,$label,0,0,$align,true);
+        $document->Ln();
+    };
+    $pdf->SetTextColor(...$ink);
+    $pdf->SetFont('dejavusans','B',10);
+    $pdf->Cell(180,7,'Invoice allocation',0,1,'L');
+    $drawAllocationHeader($pdf);
+
+    $cashApplied=0.0;
+    $wht=0.0;
+    foreach($allocations as $index=>$allocation){
+        $cashApplied+=(float)$allocation['cash_amount'];
+        $wht+=(float)$allocation['wht_amount'];
+        $invoice=billing_ref('INVOICE',$allocation['invoice_reference_no']);
+        $project=trim((string)($allocation['project_names']??''))?:'Not specified';
+        $values=[
+            $invoice,$project,$money($allocation['invoice_total']),$money($allocation['cash_amount']),
+            $money($allocation['wht_amount']),$money((float)$allocation['cash_amount']+(float)$allocation['wht_amount']),
+        ];
+        $height=10.0;
+        foreach($values as $cellIndex=>$value)$height=max($height,$pdf->getStringHeight($columns[$cellIndex][1]-3,$value)+3.5);
+        if($pdf->GetY()+$height>268){
+            $pdf->AddPage();
+            $pdf->SetTextColor(...$ink);
+            $pdf->SetFont('dejavusans','B',10);
+            $pdf->Cell(180,7,'Invoice allocation (continued)',0,1,'L');
+            $drawAllocationHeader($pdf);
+        }
+        $fill=$index%2===1;
+        if($fill)$pdf->SetFillColor(248,250,251);
+        $pdf->SetTextColor(...$ink);
+        $pdf->SetFont('dejavusans','',7.6);
+        foreach($values as $cellIndex=>$value){
+            [$unused,$width,$align]=$columns[$cellIndex];
+            $pdf->MultiCell($width,$height,$value,1,$align,$fill,($cellIndex===count($values)-1?1:0),'','',true,0,false,true,$height,'M');
+        }
+        if((float)$allocation['wht_amount']>0){
+            $detail='WHT '.(string)$allocation['wht_code'].' • '.billing_format_percent($allocation['rate_snapshot'])
+                .' • '.str_replace('_',' ',(string)$allocation['calculation_base_snapshot'])
+                .' • '.str_replace('_',' ',(string)$allocation['certificate_status']);
+            $pdf->SetFont('dejavusans','',7.2);
+            $pdf->SetTextColor(...$muted);
+            $pdf->MultiCell(180,5.5,$detail,'LRB','L',false,1);
+        }
+    }
+
+    $cash=(float)$receipt['cash_amount'];
+    $totals=[
+        ['Cash Received',$cash],
+        ['Cash Applied to Invoices',$cashApplied],
+        ['WHT Deducted by Client',$wht],
+        ['Total Invoice Settlement',$cashApplied+$wht],
+        ['Unallocated Client Credit / Advance',$cash-$cashApplied],
+    ];
+    $totalsHeight=count($totals)*6.5+9;
+    if($pdf->GetY()+$totalsHeight>268)$pdf->AddPage();
+    $pdf->Ln(6);
+    $pdf->SetX(95);
+    $pdf->SetFont('dejavusans','B',9);
+    $pdf->SetTextColor(...$ink);
+    $pdf->Cell(100,6,'Settlement summary',0,1,'L');
+    foreach($totals as [$label,$amount]){
+        $highlight=$label==='Total Invoice Settlement';
+        $pdf->SetX(95);
+        $pdf->SetFillColor(...($highlight?$pale:[255,255,255]));
+        $pdf->SetFont('dejavusans',$highlight?'B':'',8.4);
+        $pdf->SetTextColor(...($highlight?$green:$ink));
+        $pdf->Cell(63,6.5,$label,$highlight?'TB':'B',0,'L',$highlight);
+        $pdf->Cell(37,6.5,$money($amount),$highlight?'TB':'B',1,'R',$highlight);
+    }
+
+    if($wht>0){
+        $pdf->Ln(5);
+        $pdf->SetFillColor(250,247,238);
+        $pdf->SetTextColor(93,75,35);
+        $pdf->SetFont('dejavusans','',7.8);
+        $pdf->MultiCell(180,8,'WHT shown above was deducted by the Client and was not cash received by CEH. It is recorded as WHT Receivable.',0,'L',true,1);
+    }
+
+    $pdf->SetTextColor(...$muted);
+    $pdf->SetFont('dejavusans','',7.5);
+    $pdf->Ln(5);
+    $pdf->MultiCell(180,5,'This receipt confirms the payment and settlement allocations shown above.',0,'L',false,1);
+
+    $bytes=$pdf->Output($reference.'.pdf','S');
+    production_report_cleanup_cache_directory($cache);
+    production_discard_output();
+    header('Content-Type: application/pdf');
+    header('Content-Length: '.strlen($bytes));
+    header('Content-Disposition: attachment; filename="'.$reference.'.pdf"');
+    header('Cache-Control: private, no-store');
+    header('X-Content-Type-Options: nosniff');
+    echo $bytes;
+    exit;
+}catch(Throwable $error){
+    if(isset($cache))production_report_cleanup_cache_directory($cache);
+    error_log('CEH Client Payment PDF failed type='.get_class($error));
+    qbook_json(['ok'=>false,'error'=>'CLIENT_PAYMENT_PDF_FAILED'],500);
+}
