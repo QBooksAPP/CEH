@@ -108,7 +108,7 @@ CREATE TABLE qbook_estimate_lines (
     REFERENCES qbook_projects(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
   CONSTRAINT fk_estimate_line_mixer FOREIGN KEY (mixer_id)
     REFERENCES qbook_mixers(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
-  CONSTRAINT chk_estimate_line_amount CHECK (entered_amount>0 AND net_amount>=0 AND vat_amount>=0 AND gross_amount=net_amount+vat_amount),
+  CONSTRAINT chk_estimate_line_amount CHECK (entered_amount>0 AND net_amount>0 AND vat_amount>=0 AND gross_amount=net_amount+vat_amount),
   CONSTRAINT chk_estimate_line_qty CHECK (quantity IS NULL OR quantity>0),
   CONSTRAINT chk_estimate_line_price CHECK (unit_price IS NULL OR unit_price>0),
   CONSTRAINT chk_estimate_line_pair CHECK ((quantity IS NULL)=(unit_price IS NULL)),
@@ -161,6 +161,6 @@ CREATE TABLE qbook_estimate_invoice_conversions (
     REFERENCES qbook_invoice_lines(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
   CONSTRAINT fk_estimate_conversion_creator FOREIGN KEY (created_by)
     REFERENCES qbook_users(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
-  CONSTRAINT chk_estimate_conversion_amounts CHECK (converted_entered_amount>0 AND converted_net_amount>=0),
+  CONSTRAINT chk_estimate_conversion_amounts CHECK (converted_entered_amount>0 AND converted_net_amount>0),
   CONSTRAINT chk_estimate_conversion_quantity CHECK (converted_quantity IS NULL OR converted_quantity>0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

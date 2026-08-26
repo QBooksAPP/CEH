@@ -192,4 +192,19 @@ void main() {
     expect(upper, isNot(contains('INSERT INTO QBOOK_FINANCIAL_JOURNALS')));
     expect(migration, contains('No financial posting, historical backfill'));
   });
+
+  test('v1.20 enforces positive economic net values', () {
+    expect(migration,
+        contains('entered_amount>0 AND net_amount>0 AND vat_amount>=0'));
+    expect(migration,
+        contains('converted_entered_amount>0 AND converted_net_amount>0'));
+    expect(
+        migration,
+        isNot(
+            contains('entered_amount>0 AND net_amount>=0 AND vat_amount>=0')));
+    expect(
+        migration,
+        isNot(contains(
+            'converted_entered_amount>0 AND converted_net_amount>=0')));
+  });
 }
