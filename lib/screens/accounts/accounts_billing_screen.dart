@@ -12,6 +12,7 @@ import '../../models/client.dart';
 import '../../models/session.dart';
 import '../../widgets/accounts_widgets.dart';
 import 'accounts_billing_settings_screen.dart';
+import 'accounts_estimates_screen.dart';
 
 class AccountsBillingScreen extends StatefulWidget {
   const AccountsBillingScreen(
@@ -62,20 +63,32 @@ class _AccountsBillingScreenState extends State<AccountsBillingScreen> {
             Wrap(spacing: 10, runSpacing: 8, children: [
               OutlinedButton.icon(
                   icon: const Icon(Icons.payments_outlined),
-                  label: const Text('Customer Payment'),
+                  label: const Text('Client Payments'),
                   onPressed: () => Navigator.push(
                       context,
                       MaterialPageRoute(
-                          builder: (_) => CustomerPaymentScreen(
-                              session: widget.session, api: widget.api)))),
+                          builder: (_) => ClientPaymentsScreen(
+                              session: widget.session,
+                              api: widget.api,
+                              newPaymentBuilder: (_) => CustomerPaymentScreen(
+                                  session: widget.session, api: widget.api))))),
               OutlinedButton.icon(
                   key: const ValueKey('apply-customer-credit'),
                   icon: const Icon(Icons.account_balance_wallet_outlined),
-                  label: const Text('Apply Customer Credit'),
+                  label: const Text('Apply Client Credit'),
                   onPressed: () => Navigator.push(
                       context,
                       MaterialPageRoute(
                           builder: (_) => ApplyCustomerCreditScreen(
+                              session: widget.session, api: widget.api)))),
+              OutlinedButton.icon(
+                  key: const ValueKey('estimates'),
+                  icon: const Icon(Icons.request_quote_outlined),
+                  label: const Text('Estimates'),
+                  onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => EstimatesScreen(
                               session: widget.session, api: widget.api)))),
               OutlinedButton.icon(
                   icon: const Icon(Icons.schedule_outlined),
@@ -518,8 +531,8 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
   }
 
   String _settlementType(String type) => switch (type) {
-        'CUSTOMER_PAYMENT' => 'Customer Payment',
-        'CUSTOMER_CREDIT' => 'Customer Credit Applied',
+        'CUSTOMER_PAYMENT' => 'Client Payment',
+        'CUSTOMER_CREDIT' => 'Client Credit Applied',
         'WHT' => 'WHT Allocated',
         'CREDIT_NOTE' => 'Credit Note',
         _ => formatAccountsStatus(type),
@@ -589,7 +602,10 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
                                 : formatBillingTaxRate(i.vatRate)),
                         _metric('Net', formatNaira(i.net)),
                         _metric('VAT', formatNaira(i.vat)),
-                        _metric('Total', formatNaira(i.total))
+                        _metric('Total', formatNaira(i.total)),
+                        if (i.originEstimateReference != null)
+                          _metric('Originating Estimate',
+                              i.originEstimateReference!)
                       ]))),
               const AccountsSectionTitle('Invoice lines'),
               for (final line in i.lines)
@@ -630,7 +646,7 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
                                   : displayAccountsTimestampDate(i.issuedAt!)),
                           _metric('Invoice Total', formatNaira(i.total)),
                           _metric('Cash Payments', formatNaira(i.amountPaid)),
-                          _metric('Customer Credit Applied',
+                          _metric('Client Credit Applied',
                               formatNaira(i.customerCreditApplied)),
                           _metric('WHT Allocated', formatNaira(i.whtAllocated)),
                           _metric(
@@ -658,7 +674,21 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
                                 '${displayAccountsDate(event.date)} • ${_settlementType(event.type)} • ${formatNaira(event.amount)}'),
                             subtitle: _settlementDetails(event).isEmpty
                                 ? null
-                                : Text(_settlementDetails(event))))
+                                : Text(_settlementDetails(event)),
+                            trailing: event.receiptId == null ||
+                                    !['CUSTOMER_PAYMENT', 'WHT']
+                                        .contains(event.type)
+                                ? null
+                                : IconButton(
+                                    tooltip: 'View / Share Receipt PDF',
+                                    icon:
+                                        const Icon(Icons.receipt_long_outlined),
+                                    onPressed: () => shareClientPaymentPdf(
+                                        context,
+                                        widget.api,
+                                        widget.session,
+                                        event.receiptId!,
+                                        event.reference ?? 'Client Payment'))))
               ],
               if (draft)
                 Row(children: [
@@ -1064,10 +1094,10 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-      appBar: AppBar(title: const Text('Customer Payment')),
+      appBar: AppBar(title: const Text('New Client Payment')),
       body: ListView(padding: const EdgeInsets.all(18), children: [
         const Text(
-            'Allocate this payment to outstanding invoices. Any remainder is retained automatically as Customer Credit / Advance.'),
+            'Allocate this payment to outstanding invoices. Any remainder is retained automatically as Client Credit / Advance.'),
         const SizedBox(height: 12),
         DropdownButtonFormField<CehClient>(
             initialValue: client,
@@ -1154,9 +1184,9 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
                             SwitchListTile.adaptive(
                                 key: ValueKey('payment-wht-${invoice.id}'),
                                 contentPadding: EdgeInsets.zero,
-                                title: const Text('Customer deducted WHT'),
+                                title: const Text('Client deducted WHT'),
                                 subtitle: const Text(
-                                    'Enable only when the customer explicitly deducted WHT.'),
+                                    'Enable only when the Client explicitly deducted WHT.'),
                                 value: wht[invoice.id]?.enabled ?? false,
                                 onChanged: posting
                                     ? null
@@ -1388,7 +1418,7 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
                   _paymentMetric('Invoice Settlement',
                       (allocatedMinor + whtAllocatedMinor) / 100),
                   _paymentMetric(
-                      'Unallocated / Customer Credit', unallocatedMinor / 100),
+                      'Unallocated / Client Credit', unallocatedMinor / 100),
                 ]))),
         const SizedBox(height: 12),
         TextField(
@@ -1499,7 +1529,7 @@ class _ApplyCustomerCreditScreenState extends State<ApplyCustomerCreditScreen> {
       return;
     }
     if (appliedMinor > availableMinor) {
-      _message('Total Applied cannot exceed Available Customer Credit.');
+      _message('Total Applied cannot exceed Available Client Credit.');
       return;
     }
     for (final invoice in invoices) {
@@ -1535,10 +1565,10 @@ class _ApplyCustomerCreditScreenState extends State<ApplyCustomerCreditScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-      appBar: AppBar(title: const Text('Apply Customer Credit')),
+      appBar: AppBar(title: const Text('Apply Client Credit')),
       body: ListView(padding: const EdgeInsets.all(18), children: [
         const Text(
-            'Apply previously received Customer Credit / Advance to outstanding invoices. No new cash movement is created.'),
+            'Apply previously received Client Credit / Advance to outstanding invoices. No new cash movement is created.'),
         const SizedBox(height: 12),
         DropdownButtonFormField<CehClient>(
             initialValue: client,
@@ -1551,7 +1581,7 @@ class _ApplyCustomerCreditScreenState extends State<ApplyCustomerCreditScreen> {
         Card(
             child: Padding(
                 padding: const EdgeInsets.all(14),
-                child: _paymentMetric('Available Customer Credit / Advance',
+                child: _paymentMetric('Available Client Credit / Advance',
                     availableMinor / 100))),
         const SizedBox(height: 12),
         const Text('Outstanding Invoice(s)',
@@ -1603,13 +1633,13 @@ class _ApplyCustomerCreditScreenState extends State<ApplyCustomerCreditScreen> {
                 child: Column(children: [
                   _paymentMetric('Total Applied', appliedMinor / 100),
                   _paymentMetric(
-                      'Remaining Customer Credit', remainingMinor / 100),
+                      'Remaining Client Credit', remainingMinor / 100),
                 ]))),
         const SizedBox(height: 20),
         FilledButton(
             key: const ValueKey('apply-customer-credit-submit'),
             onPressed: applying ? null : applyCredit,
-            child: Text(applying ? 'Applying…' : 'Apply Customer Credit'))
+            child: Text(applying ? 'Applying…' : 'Apply Client Credit'))
       ]));
 
   Widget _paymentMetric(String label, double value) => Padding(

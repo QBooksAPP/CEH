@@ -321,7 +321,9 @@ class BillingInvoiceDetail {
       this.settlementHistory = const [],
       this.issuedAt,
       this.journalId,
-      this.postingStatus});
+      this.postingStatus,
+      this.originEstimateId,
+      this.originEstimateReference});
   final int id;
   final String reference;
   final int clientId;
@@ -347,6 +349,8 @@ class BillingInvoiceDetail {
   final String? issuedAt;
   final int? journalId;
   final String? postingStatus;
+  final int? originEstimateId;
+  final String? originEstimateReference;
   factory BillingInvoiceDetail.fromJson(Map<String, dynamic> data) {
     final json = Map<String, dynamic>.from(data['invoice'] as Map);
     return BillingInvoiceDetail(
@@ -384,7 +388,11 @@ class BillingInvoiceDetail {
             .toList(),
         issuedAt: json['issued_at']?.toString(),
         journalId: json['journal_id'] == null ? null : _int(json['journal_id']),
-        postingStatus: json['posting_status']?.toString());
+        postingStatus: json['posting_status']?.toString(),
+        originEstimateId: json['origin_estimate_id'] == null
+            ? null
+            : _int(json['origin_estimate_id']),
+        originEstimateReference: json['origin_estimate_reference']?.toString());
   }
 }
 
@@ -400,7 +408,8 @@ class InvoiceSettlementEvent {
       this.taxRate,
       this.calculationBase,
       this.calculationBaseAmount,
-      this.certificateStatus});
+      this.certificateStatus,
+      this.receiptId});
 
   final String date;
   final String type;
@@ -413,6 +422,7 @@ class InvoiceSettlementEvent {
   final String? calculationBase;
   final double? calculationBaseAmount;
   final String? certificateStatus;
+  final int? receiptId;
 
   factory InvoiceSettlementEvent.fromJson(Map<String, dynamic> json) =>
       InvoiceSettlementEvent(
@@ -428,7 +438,65 @@ class InvoiceSettlementEvent {
           calculationBaseAmount: json['calculation_base_amount'] == null
               ? null
               : _double(json['calculation_base_amount']),
-          certificateStatus: json['certificate_status']?.toString());
+          certificateStatus: json['certificate_status']?.toString(),
+          receiptId:
+              json['receipt_id'] == null ? null : _int(json['receipt_id']));
+}
+
+class ClientPayment {
+  const ClientPayment(
+      {required this.id,
+      required this.reference,
+      required this.client,
+      required this.date,
+      required this.cash,
+      required this.receivedInto,
+      this.bankReference});
+  final int id;
+  final String reference;
+  final String client;
+  final String date;
+  final double cash;
+  final String receivedInto;
+  final String? bankReference;
+  factory ClientPayment.fromJson(Map<String, dynamic> j) => ClientPayment(
+      id: _int(j['id']),
+      reference: '${j['reference'] ?? ''}',
+      client: '${j['client_name_snapshot'] ?? ''}',
+      date: '${j['receipt_date'] ?? ''}',
+      cash: _double(j['cash_amount']),
+      receivedInto:
+          '${j['received_into_snapshot'] ?? j['current_bank_name'] ?? ''}',
+      bankReference: j['bank_reference']?.toString());
+}
+
+class EstimateSummary {
+  const EstimateSummary(
+      {required this.id,
+      required this.reference,
+      required this.client,
+      required this.status,
+      required this.total,
+      required this.estimateDate,
+      required this.validUntil,
+      required this.expiredWarning});
+  final int id;
+  final String reference;
+  final String client;
+  final String status;
+  final double total;
+  final String estimateDate;
+  final String validUntil;
+  final bool expiredWarning;
+  factory EstimateSummary.fromJson(Map<String, dynamic> j) => EstimateSummary(
+      id: _int(j['id']),
+      reference: '${j['reference'] ?? ''}',
+      client: '${j['client_name_snapshot'] ?? ''}',
+      status: '${j['status'] ?? ''}',
+      total: _double(j['total_amount']),
+      estimateDate: '${j['estimate_date'] ?? ''}',
+      validUntil: '${j['valid_until'] ?? ''}',
+      expiredWarning: _bool(j['expired_warning']));
 }
 
 class BillableProductionReport {

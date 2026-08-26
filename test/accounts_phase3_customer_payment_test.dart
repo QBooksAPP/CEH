@@ -356,7 +356,7 @@ void main() {
         MaterialApp(home: CustomerPaymentScreen(session: _admin, api: api)));
     await tester.pumpAndSettle();
 
-    expect(find.text('Customer Payment'), findsOneWidget);
+    expect(find.text('New Client Payment'), findsOneWidget);
     expect(find.text('Accounting destination'), findsNothing);
     expect(find.text('Save / Post Payment'), findsOneWidget);
 
@@ -883,7 +883,7 @@ void main() {
     await tester
         .tap(find.byKey(const ValueKey('apply-customer-credit-submit')));
     await tester.pump();
-    expect(find.text('Total Applied cannot exceed Available Customer Credit.'),
+    expect(find.text('Total Applied cannot exceed Available Client Credit.'),
         findsOneWidget);
     expect(api.creditApplied, isNull);
   });

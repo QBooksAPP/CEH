@@ -4,12 +4,12 @@ require_once __DIR__ . '/accounts_common.php';
 
 function billing_require_admin(): array { $u=qbook_require_user(); qbook_require_role($u,['ADMIN']); return $u; }
 function billing_ref(string $type, mixed $number): string {
-    $prefix=['INVOICE'=>'CEH-INV','RECEIPT'=>'CEH-RCP','CREDIT_NOTE'=>'CEH-CN'][$type]??null;
+    $prefix=['INVOICE'=>'CEH-INV','RECEIPT'=>'CEH-RCP','CREDIT_NOTE'=>'CEH-CN','ESTIMATE'=>'CEH-EST'][$type]??null;
     $n=(int)$number; if($prefix===null||$n<=0) accounts_fail('INVALID_BILLING_REFERENCE',500);
     return $prefix.'-'.str_pad((string)$n,6,'0',STR_PAD_LEFT);
 }
 function billing_allocate_reference(PDO $db,string $table): int {
-    if(!in_array($table,['qbook_invoice_references','qbook_customer_receipt_references','qbook_credit_note_references'],true)) accounts_fail('INVALID_REFERENCE_TABLE',500);
+    if(!in_array($table,['qbook_invoice_references','qbook_customer_receipt_references','qbook_credit_note_references','qbook_estimate_references'],true)) accounts_fail('INVALID_REFERENCE_TABLE',500);
     $db->exec("INSERT INTO {$table}() VALUES()"); return (int)$db->lastInsertId();
 }
 function billing_account_role(PDO $db,string $role): int {

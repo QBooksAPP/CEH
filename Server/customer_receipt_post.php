@@ -120,9 +120,19 @@ accounts_endpoint(function () use ($user, $input): array {
             if (!$evidence->fetch()) accounts_fail('WHT_CERTIFICATE_EVIDENCE_REQUIRED', 409);
         }
 
-        $bank = $db->prepare('SELECT ledger_account_id FROM qbook_bank_accounts WHERE id=?');
+        $settingsStatement = $db->query('SELECT * FROM qbook_invoice_settings WHERE id=1 FOR UPDATE');
+        $settings = $settingsStatement->fetch();
+        foreach (['company_legal_name','company_address','tax_identifier'] as $field) {
+            if (trim((string)($settings[$field] ?? '')) === '') {
+                accounts_fail('CLIENT_PAYMENT_SETTINGS_INCOMPLETE', 409);
+            }
+        }
+
+        $bank = $db->prepare('SELECT ledger_account_id,name FROM qbook_bank_accounts WHERE id=? AND is_active=1 FOR UPDATE');
         $bank->execute([$receipt['bank_account_id']]);
-        $bankAccount = (int)$bank->fetchColumn();
+        $bankRow = $bank->fetch();
+        if (!$bankRow) accounts_fail('ACTIVE_BANK_ACCOUNT_REQUIRED', 409);
+        $bankAccount = (int)$bankRow['ledger_account_id'];
         $reference = billing_ref('RECEIPT', $receipt['reference_no']);
         $lines = [[
             'account_id' => $bankAccount, 'debit_minor' => $cash, 'credit_minor' => 0,
@@ -183,8 +193,8 @@ accounts_endpoint(function () use ($user, $input): array {
         }
         // Retained for compatibility only. Allocation and journal lines are authoritative.
         $legacyDestination = $arCredit > 0 ? 'TRADE_RECEIVABLES' : 'CUSTOMER_ADVANCES';
-        $db->prepare("UPDATE qbook_customer_receipts SET destination=?,status='POSTED',journal_id=?,posted_by=?,posted_at=UTC_TIMESTAMP() WHERE id=?")
-            ->execute([$legacyDestination, $journal['id'], $user['id'], $id]);
+        $db->prepare("UPDATE qbook_customer_receipts SET destination=?,status='POSTED',journal_id=?,posted_by=?,posted_at=UTC_TIMESTAMP(),company_legal_name_snapshot=?,company_address_snapshot=?,tax_identifier_snapshot=?,payment_bank_details_snapshot=?,received_into_snapshot=?,pdf_template_version='CLIENT_PAYMENT_V1' WHERE id=?")
+            ->execute([$legacyDestination, $journal['id'], $user['id'], trim((string)$settings['company_legal_name']), trim((string)$settings['company_address']), trim((string)$settings['tax_identifier']), trim((string)($settings['payment_bank_details'] ?? '')) ?: null, trim((string)$bankRow['name']), $id]);
         accounts_audit($db, $user, 'CUSTOMER_RECEIPT_POSTED', 'CUSTOMER_RECEIPT', $id, [
             'journal_id' => $journal['id'],
             'cash_allocated' => accounts_minor_decimal($cashAllocated),

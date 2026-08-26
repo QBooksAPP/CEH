@@ -128,6 +128,9 @@ accounts_endpoint(function () use ($user, $input): array {
         $db->prepare(
             "UPDATE qbook_invoice_production_allocations pa JOIN qbook_invoice_lines l ON l.id=pa.invoice_line_id SET pa.status='COMMITTED' WHERE l.invoice_id=?"
         )->execute([$id]);
+        $db->prepare(
+            "UPDATE qbook_estimate_invoice_conversions c JOIN qbook_invoice_lines l ON l.id=c.invoice_line_id SET c.status='COMMITTED',c.committed_at=UTC_TIMESTAMP() WHERE l.invoice_id=? AND c.status='DRAFT'"
+        )->execute([$id]);
         accounts_audit($db, $user, 'INVOICE_ISSUED', 'INVOICE', $id, [
             'journal_id' => $journal['id'],
             'issued_company_settings_snapshotted' => true,

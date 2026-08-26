@@ -808,20 +808,154 @@ class CehApiClient {
         .toList();
   }
 
-  Future<BillingInvoiceDetail> invoiceDetails(CehSession session,int invoiceId) async {
-    final uri=Uri.parse('$baseUrl/invoices.php').replace(queryParameters:{'id':'$invoiceId'});
-    final response=await http.get(uri,headers:authHeaders(session)).timeout(const Duration(seconds:25));
-    final data=_decodeObject(response);_requireOk(response,data,'INVOICE_DETAILS_FAILED');
+  Future<BillingInvoiceDetail> invoiceDetails(
+      CehSession session, int invoiceId) async {
+    final uri = Uri.parse('$baseUrl/invoices.php')
+        .replace(queryParameters: {'id': '$invoiceId'});
+    final response = await http
+        .get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'INVOICE_DETAILS_FAILED');
     return BillingInvoiceDetail.fromJson(data);
   }
 
-  Future<ProductionReportFile> invoicePdf(CehSession session,int invoiceId) async {
-    final uri=Uri.parse('$baseUrl/invoice_pdf.php').replace(queryParameters:{'invoice_id':'$invoiceId'});
-    final response=await http.get(uri,headers:authHeaders(session)).timeout(const Duration(seconds:40));
-    if(response.statusCode<200||response.statusCode>=300){var error='INVOICE_PDF_FAILED';try{final data=jsonDecode(utf8.decode(response.bodyBytes));if(data is Map&&data['error']!=null)error='${data['error']}';}catch(_){}throw ApiException(error,statusCode:response.statusCode);}
-    if(!(response.headers['content-type']??'').toLowerCase().startsWith('application/pdf')||response.bodyBytes.length<5||String.fromCharCodes(response.bodyBytes.take(5))!='%PDF-')throw const ApiException('INVALID_INVOICE_PDF');
-    final disposition=response.headers['content-disposition']??'';final match=RegExp(r'filename="?([^";]+)"?',caseSensitive:false).firstMatch(disposition);final filename=match?.group(1)??'CEH-Invoice.pdf';
-    return ProductionReportFile(bytes:response.bodyBytes,filename:filename);
+  Future<ProductionReportFile> invoicePdf(
+      CehSession session, int invoiceId) async {
+    final uri = Uri.parse('$baseUrl/invoice_pdf.php')
+        .replace(queryParameters: {'invoice_id': '$invoiceId'});
+    final response = await http
+        .get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 40));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      var error = 'INVOICE_PDF_FAILED';
+      try {
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
+        if (data is Map && data['error'] != null) error = '${data['error']}';
+      } catch (_) {}
+      throw ApiException(error, statusCode: response.statusCode);
+    }
+    if (!(response.headers['content-type'] ?? '')
+            .toLowerCase()
+            .startsWith('application/pdf') ||
+        response.bodyBytes.length < 5 ||
+        String.fromCharCodes(response.bodyBytes.take(5)) != '%PDF-') {
+      throw const ApiException('INVALID_INVOICE_PDF');
+    }
+    final disposition = response.headers['content-disposition'] ?? '';
+    final match = RegExp(r'filename="?([^";]+)"?', caseSensitive: false)
+        .firstMatch(disposition);
+    final filename = match?.group(1) ?? 'CEH-Invoice.pdf';
+    return ProductionReportFile(bytes: response.bodyBytes, filename: filename);
+  }
+
+  Future<List<ClientPayment>> clientPayments(CehSession session) async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/client_payments.php'),
+            headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'CLIENT_PAYMENTS_FAILED');
+    return (data['payments'] as List? ?? const [])
+        .map((e) => ClientPayment.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> clientPaymentDetails(
+      CehSession session, int id) async {
+    final uri = Uri.parse('$baseUrl/client_payments.php')
+        .replace(queryParameters: {'id': '$id'});
+    final response = await http
+        .get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'CLIENT_PAYMENT_DETAILS_FAILED');
+    return data;
+  }
+
+  Future<ProductionReportFile> clientPaymentPdf(
+          CehSession session, int id) async =>
+      _billingPdf(session, 'client_payment_pdf.php', {'payment_id': '$id'},
+          'CLIENT_PAYMENT_PDF_FAILED', 'CEH-Client-Payment.pdf');
+  Future<List<EstimateSummary>> estimates(CehSession session) async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/estimates.php'), headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'ESTIMATES_FAILED');
+    return (data['estimates'] as List? ?? const [])
+        .map((e) =>
+            EstimateSummary.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> estimateDetails(
+      CehSession session, int id) async {
+    final uri = Uri.parse('$baseUrl/estimates.php')
+        .replace(queryParameters: {'id': '$id'});
+    final response = await http
+        .get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'ESTIMATE_DETAILS_FAILED');
+    return data;
+  }
+
+  Future<Map<String, dynamic>> saveEstimate(
+          CehSession session, Map<String, dynamic> payload) =>
+      _postJson(session, 'estimate_save.php', payload, 'ESTIMATE_SAVE_FAILED');
+  Future<void> estimateAction(
+          CehSession session, String endpoint, Map<String, dynamic> payload) =>
+      _postJson(session, endpoint, payload, 'ESTIMATE_ACTION_FAILED')
+          .then((_) {});
+  Future<Map<String, dynamic>> convertEstimate(
+          CehSession session, Map<String, dynamic> payload) =>
+      _postJson(
+          session, 'estimate_convert.php', payload, 'ESTIMATE_CONVERT_FAILED');
+  Future<int> uploadEstimateAcceptanceEvidence(CehSession session,
+      int estimateId, String filename, String mimeType, Uint8List bytes) async {
+    final data = await _postJson(
+        session,
+        'estimate_acceptance_evidence_upload.php',
+        {
+          'estimate_id': estimateId,
+          'filename': filename,
+          'mime_type': mimeType,
+          'data_base64': base64Encode(bytes)
+        },
+        'ESTIMATE_ACCEPTANCE_EVIDENCE_UPLOAD_FAILED');
+    return ((data['evidence'] as Map)['id'] as num).toInt();
+  }
+
+  Future<ProductionReportFile> estimatePdf(CehSession session, int id) async =>
+      _billingPdf(session, 'estimate_pdf.php', {'estimate_id': '$id'},
+          'ESTIMATE_PDF_FAILED', 'CEH-Estimate.pdf');
+  Future<ProductionReportFile> _billingPdf(CehSession session, String endpoint,
+      Map<String, String> query, String fallback, String filename) async {
+    final uri = Uri.parse('$baseUrl/$endpoint').replace(queryParameters: query);
+    final response = await http
+        .get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 40));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      var error = fallback;
+      try {
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
+        if (data is Map && data['error'] != null) error = '${data['error']}';
+      } catch (_) {}
+      throw ApiException(error, statusCode: response.statusCode);
+    }
+    if (!(response.headers['content-type'] ?? '')
+            .toLowerCase()
+            .startsWith('application/pdf') ||
+        response.bodyBytes.length < 5 ||
+        String.fromCharCodes(response.bodyBytes.take(5)) != '%PDF-') {
+      throw ApiException(fallback);
+    }
+    final disposition = response.headers['content-disposition'] ?? '';
+    final match = RegExp(r'filename="?([^";]+)"?', caseSensitive: false)
+        .firstMatch(disposition);
+    return ProductionReportFile(
+        bytes: response.bodyBytes, filename: match?.group(1) ?? filename);
   }
 
   Future<List<BillableProductionReport>> billableProductionReports(

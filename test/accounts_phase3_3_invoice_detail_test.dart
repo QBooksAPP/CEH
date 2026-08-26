@@ -171,7 +171,7 @@ void main() {
         contains('INVOICE_SETTINGS_INCOMPLETE'));
     expect(endpoint, contains("'quantity'"));
     expect(endpoint, contains("'unit_price'"));
-    expect(api, contains("headers:authHeaders(session)"));
+    expect(api, contains("headers: authHeaders(session)"));
     expect(api, contains("startsWith('application/pdf')"));
   });
 
@@ -261,11 +261,10 @@ void main() {
     await tester.drag(find.byType(ListView), const Offset(0, -1100));
     await tester.pumpAndSettle();
     expect(find.text('Cash Payments'), findsOneWidget);
-    expect(find.text('Customer Credit Applied'), findsOneWidget);
+    expect(find.text('Client Credit Applied'), findsOneWidget);
     expect(find.text('₦116,250.00'), findsWidgets);
-    expect(
-        find.textContaining('24-08-2026 • Customer Payment'), findsOneWidget);
-    expect(find.textContaining('25-08-2026 • Customer Credit Applied'),
+    expect(find.textContaining('24-08-2026 • Client Payment'), findsOneWidget);
+    expect(find.textContaining('25-08-2026 • Client Credit Applied'),
         findsOneWidget);
     expect(find.textContaining('26-08-2026 • WHT Allocated'), findsOneWidget);
     expect(find.textContaining('27-08-2026 • Credit Note'), findsOneWidget);
