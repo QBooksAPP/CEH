@@ -1665,15 +1665,99 @@ class ReceivablesAgeingScreen extends StatelessWidget {
             if (!s.hasData) {
               return const Center(child: CircularProgressIndicator());
             }
-            final buckets =
-                Map<String, dynamic>.from(s.data!['buckets'] as Map);
+            final data = s.data!;
+            final buckets = Map<String, dynamic>.from(data['buckets'] as Map);
+            final invoices = (data['invoices'] as List? ?? const [])
+                .map((row) => Map<String, dynamic>.from(row as Map))
+                .toList();
+            const order = ['CURRENT', '1_30', '31_60', '61_90', 'OVER_90'];
             return ListView(padding: const EdgeInsets.all(18), children: [
-              for (final entry in buckets.entries)
+              for (final key in order)
                 Card(
                     child: ListTile(
-                        title: Text(entry.key.replaceAll('_', '–')),
+                        key: ValueKey('ageing-bucket-$key'),
+                        title: Text(_ageingLabel(key)),
                         trailing: Text(formatNaira(
-                            double.tryParse('${entry.value}') ?? 0))))
+                            double.tryParse('${buckets[key]}') ?? 0)),
+                        onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => ReceivablesAgeingDetailScreen(
+                                    bucket: key,
+                                    totalMinor: _ageingMinor(buckets[key]),
+                                    invoices: invoices
+                                        .where((row) => row['bucket'] == key)
+                                        .toList())))))
             ]);
           }));
+}
+
+String _ageingLabel(String key) =>
+    const {
+      'CURRENT': 'CURRENT',
+      '1_30': '1–30',
+      '31_60': '31–60',
+      '61_90': '61–90',
+      'OVER_90': 'OVER–90',
+    }[key] ??
+    key;
+
+int _ageingMinor(dynamic value) {
+  final match =
+      RegExp(r'^(-?\d+)(?:\.(\d{1,2}))?$').firstMatch('$value'.trim());
+  if (match == null) return 0;
+  final whole = int.parse(match.group(1)!);
+  final fraction = int.parse((match.group(2) ?? '').padRight(2, '0'));
+  return whole < 0 ? whole * 100 - fraction : whole * 100 + fraction;
+}
+
+class ReceivablesAgeingDetailScreen extends StatelessWidget {
+  const ReceivablesAgeingDetailScreen(
+      {super.key,
+      required this.bucket,
+      required this.totalMinor,
+      required this.invoices});
+  final String bucket;
+  final int totalMinor;
+  final List<Map<String, dynamic>> invoices;
+
+  @override
+  Widget build(BuildContext context) {
+    final reconciledMinor = invoices.fold<int>(
+        0, (sum, row) => sum + _ageingMinor(row['outstanding']));
+    return Scaffold(
+        appBar: AppBar(title: Text('${_ageingLabel(bucket)} Receivables')),
+        body: ListView(padding: const EdgeInsets.all(18), children: [
+          _summary('Selected bucket total', totalMinor),
+          _summary('Drill-down total', reconciledMinor),
+          if (reconciledMinor != totalMinor)
+            const Text('RECEIVABLES_AGEING_RECONCILIATION_ERROR',
+                style:
+                    TextStyle(color: Colors.red, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 10),
+          if (invoices.isEmpty)
+            const Text('No outstanding invoices in this bucket.'),
+          for (final row in invoices)
+            Card(
+                child: ListTile(
+                    title: Text(
+                        '${row['reference']} • ${row['client_name_snapshot']}'),
+                    subtitle: Text(
+                        'Invoice ${displayAccountsDate('${row['invoice_date']}')} • Due ${row['due_date'] == null ? 'Not set' : displayAccountsDate('${row['due_date']}')}\n'
+                        'Original ${formatNaira(double.tryParse('${row['original_amount'] ?? row['total_amount']}') ?? 0)} • Payments/Credits ${formatNaira(double.tryParse('${row['payments_credits_applied'] ?? row['settled']}') ?? 0)}\n'
+                        '${row['days_outstanding'] ?? 0} days outstanding • ${row['days_overdue'] ?? 0} days overdue • ${_ageingLabel('${row['bucket']}')}'),
+                    trailing: Text(
+                        formatNaira(
+                            double.tryParse('${row['outstanding']}') ?? 0),
+                        style: const TextStyle(fontWeight: FontWeight.w800))))
+        ]));
+  }
+
+  Widget _summary(String label, int valueMinor) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        Text(label),
+        Text(formatNaira(valueMinor / 100),
+            style: const TextStyle(fontWeight: FontWeight.w800))
+      ]));
 }

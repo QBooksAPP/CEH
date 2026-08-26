@@ -25,6 +25,23 @@ class ApiException implements Exception {
   String toString() => code;
 }
 
+Map<String, dynamic> decodeApiObjectResponse(http.Response response) {
+  try {
+    return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+  } catch (_) {
+    if (response.statusCode == 404) {
+      throw ApiException(
+        'BACKEND_UPDATE_REQUIRED',
+        statusCode: response.statusCode,
+      );
+    }
+    throw ApiException(
+      'INVALID_SERVER_RESPONSE',
+      statusCode: response.statusCode,
+    );
+  }
+}
+
 class ProductionReportFile {
   const ProductionReportFile({required this.bytes, required this.filename});
   final Uint8List bytes;
@@ -1438,14 +1455,7 @@ class CehApiClient {
   }
 
   Map<String, dynamic> _decodeObject(http.Response response) {
-    try {
-      return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
-    } catch (_) {
-      throw ApiException(
-        'INVALID_SERVER_RESPONSE',
-        statusCode: response.statusCode,
-      );
-    }
+    return decodeApiObjectResponse(response);
   }
 
   Map<String, String> authHeaders(CehSession session) {
