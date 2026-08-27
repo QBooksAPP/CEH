@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/accounts_formatters.dart';
@@ -11,6 +12,60 @@ import '../../models/project.dart';
 import '../../models/session.dart';
 import '../../widgets/accounts_widgets.dart';
 import 'accounts_general_expense_screen.dart';
+
+String accountsExpenseFilterLabel(String value) => switch (value) {
+      'PETTY_CASH' => 'Petty Cash',
+      _ => value[0] + value.substring(1).toLowerCase(),
+    };
+
+class AccountsOriginalJournalRow extends StatelessWidget {
+  const AccountsOriginalJournalRow(this.reference, {super.key});
+
+  final String reference;
+
+  Future<void> _show(BuildContext context) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Original Journal'),
+        content: SelectableText(reference, key: const Key('journal-reference')),
+        actions: [
+          TextButton.icon(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: reference));
+              if (dialogContext.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Journal reference copied.')),
+                );
+              }
+            },
+            icon: const Icon(Icons.copy_outlined),
+            label: const Text('Copy'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => Row(
+        children: [
+          const Expanded(
+            child: Text('Original Journal',
+                style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+          TextButton(
+            key: const Key('view-original-journal'),
+            onPressed: () => _show(context),
+            child: const Text('View'),
+          ),
+        ],
+      );
+}
 
 class _AccountsLivePage extends StatelessWidget {
   const _AccountsLivePage({
@@ -590,7 +645,7 @@ class _AccountsExpensesScreenState extends State<AccountsExpensesScreen> {
                 'BANK'
               ])
                 ChoiceChip(
-                  label: Text(filter[0] + filter.substring(1).toLowerCase()),
+                  label: Text(accountsExpenseFilterLabel(filter)),
                   selected: _filter == filter,
                   onSelected: (_) => setState(() => _filter = filter),
                 ),
@@ -663,8 +718,12 @@ class _AccountsExpensesScreenState extends State<AccountsExpensesScreen> {
                           AccountsMetricLine('Receipt',
                               expense.hasEvidence ? 'Attached' : 'No receipt'),
                           AccountsMetricLine('Posting status', expense.status),
-                          AccountsMetricLine('Original journal',
-                              expense.originalJournalReference ?? 'Not posted'),
+                          if (expense.originalJournalReference == null)
+                            const AccountsMetricLine(
+                                'Original Journal', 'Not posted')
+                          else
+                            AccountsOriginalJournalRow(
+                                expense.originalJournalReference!),
                           if (expense.reversalJournalReference != null)
                             AccountsMetricLine('Reversal journal',
                                 expense.reversalJournalReference!),
@@ -1022,8 +1081,8 @@ class _AccountsPettyCashScreenState extends State<AccountsPettyCashScreen> {
               evidenceCount == 0 ? 'No receipt' : 'Attached'),
           AccountsMetricLine('Approval / posting status', postingStatus),
           if (expense['original_journal_reference'] != null)
-            AccountsMetricLine(
-                'Original journal', '${expense['original_journal_reference']}'),
+            AccountsOriginalJournalRow(
+                '${expense['original_journal_reference']}'),
           if (expense['reversal_journal_reference'] != null)
             AccountsMetricLine(
                 'Reversal journal', '${expense['reversal_journal_reference']}'),

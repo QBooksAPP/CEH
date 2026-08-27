@@ -104,6 +104,42 @@ function accounts_general_expense_reference(mixed $number): ?string {
     return 'CEH-EX-' . str_pad((string)$value, 6, '0', STR_PAD_LEFT);
 }
 
+/**
+ * Derive a display-only allocation summary from authoritative expense lines.
+ *
+ * A dimension is summarized independently: one common allocated value is shown,
+ * all-null values remain null (rendered as "Not allocated" by clients), and any
+ * differing or partially allocated set is reported as "Multiple allocations".
+ */
+function accounts_expense_allocation_summary(array $lines, string $field): ?string {
+    if ($lines === []) return null;
+    $common = null;
+    $sawAllocated = false;
+    $sawUnallocated = false;
+    foreach ($lines as $line) {
+        $raw = $line[$field] ?? null;
+        $value = $raw === null ? '' : trim((string)$raw);
+        if ($value === '') {
+            $sawUnallocated = true;
+            continue;
+        }
+        if (!$sawAllocated) {
+            $common = $value;
+            $sawAllocated = true;
+        } elseif ($common !== $value) {
+            return 'Multiple allocations';
+        }
+    }
+    if ($sawAllocated && $sawUnallocated) return 'Multiple allocations';
+    return $sawAllocated ? $common : null;
+}
+
+function accounts_apply_expense_allocation_summary(array &$expense, array $lines): void {
+    $expense['client_name'] = accounts_expense_allocation_summary($lines, 'client_name');
+    $expense['project_name'] = accounts_expense_allocation_summary($lines, 'project_name');
+    $expense['mixer_code'] = accounts_expense_allocation_summary($lines, 'mixer_code');
+}
+
 function accounts_normalized_name(mixed $value): string {
     $name = production_clean_text($value, 200, 'SUPPLIER_REQUIRED');
     $collapsed = trim((string)preg_replace('/\s+/u', ' ', $name));
