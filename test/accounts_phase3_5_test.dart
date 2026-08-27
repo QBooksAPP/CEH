@@ -154,6 +154,43 @@ void main() {
           isNot(contains('qbook_invoice_settings')));
     });
 
+    test('Estimate PDF uses approved monochrome CEH presentation', () {
+      final pdf = server('estimate_pdf.php');
+      expect(pdf, contains(r'$primary=[18,18,18]'));
+      expect(pdf, contains(r'$secondary=[75,75,75]'));
+      expect(pdf, contains(r'$pale=[245,245,245]'));
+      expect(pdf, contains(r'$background=[250,250,250]'));
+      expect(pdf, contains(r'$ink=[20,20,20]'));
+      expect(pdf, contains(r'$border=[190,190,190]'));
+      expect(pdf, contains('disableGeneratorLink'));
+      expect(pdf, isNot(contains('Powered by TCPDF')));
+      expect(pdf, contains('SetPrintFooter(true)'));
+      expect(pdf, contains('getAliasNumPage()'));
+      expect(pdf, contains('Estimate lines (continued)'));
+    });
+
+    test('Estimate disclaimer is exact and left aligned', () {
+      final pdf = server('estimate_pdf.php');
+      expect(
+          pdf,
+          contains(
+              'This Estimate is a non-accounting commercial document and does not constitute an invoice or proof of payment.'));
+      expect(
+          pdf,
+          isNot(contains(
+              'This Estimate is a non-accounting commercial document. It is not an invoice or proof of payment.')));
+      expect(pdf, contains("MultiCell(180,5,\$disclaimer,0,'L'"));
+    });
+
+    test('Estimate PDF is read-only and does not post accounting', () {
+      final pdf = server('estimate_pdf.php');
+      expect(pdf, contains("status<>'DRAFT'"));
+      expect(pdf, isNot(contains('accounts_post_journal')));
+      expect(pdf, isNot(contains('UPDATE qbook_estimates')));
+      expect(pdf, isNot(contains('INSERT INTO')));
+      expect(pdf, isNot(contains('DELETE FROM')));
+    });
+
     test('revisions retain the original and receive a new reference', () {
       final revision = server('estimate_revision.php');
       expect(revision, contains('revision_of_estimate_id'));
