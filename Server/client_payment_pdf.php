@@ -44,10 +44,10 @@ try{
 
         public function Footer(): void {
             $this->SetY(-13);
-            $this->SetDrawColor(216,225,232);
+            $this->SetDrawColor(190,190,190);
             $this->Line(15,$this->GetY(),195,$this->GetY());
             $this->Ln(2.5);
-            $this->SetTextColor(23,62,99);
+            $this->SetTextColor(90,90,90);
             $this->SetFont('dejavusans','',7);
             $this->Cell(130,5,'CEH Payment Receipt',0,0,'L');
             $this->Cell(50,5,'Page '.$this->getAliasNumPage().' of '.$this->getAliasNbPages(),0,0,'R');
@@ -64,13 +64,13 @@ try{
     $pdf->setCellPaddings(1.8,1.2,1.8,1.2);
     $pdf->AddPage();
 
-    // Exact CEH application colours from lib/core/ceh_theme.dart.
-    $ink=[23,33,43];             // CehTheme.text #17212B
-    $primary=[36,89,133];        // CehTheme.blue #245985
-    $secondary=[23,62,99];       // CehTheme.navy #173E63
-    $pale=[234,241,247];         // CehTheme.paleBlue #EAF1F7
-    $background=[244,247,250];   // CehTheme.background #F4F7FA
-    $border=[216,225,232];       // Input border #D8E1E8
+    // CEH receipt palette follows the approved monochrome company logo.
+    $ink=[20,20,20];
+    $primary=[18,18,18];
+    $secondary=[75,75,75];
+    $pale=[245,245,245];
+    $background=[250,250,250];
+    $border=[190,190,190];
     $pdf->SetTextColor(...$ink);
     $pdf->SetDrawColor(...$border);
 
