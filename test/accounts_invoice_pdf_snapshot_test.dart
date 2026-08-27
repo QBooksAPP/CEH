@@ -72,6 +72,28 @@ void main() {
     expect(pdf, contains("'Cache-Control: private, no-store"));
   });
 
+  test('invoice PDF uses the approved monochrome CEH document palette', () {
+    expect(pdf, contains(r'$primary = [18, 18, 18]'));
+    expect(pdf, contains(r'$ink = [20, 20, 20]'));
+    expect(pdf, contains(r'$secondary = [75, 75, 75]'));
+    expect(pdf, contains(r'$border = [190, 190, 190]'));
+    expect(pdf, contains(r'$pale = [245, 245, 245]'));
+    expect(pdf, contains(r'$background = [250, 250, 250]'));
+    expect(pdf, contains(r'$this->tcpdflink = false'));
+    expect(pdf, contains("'Invoice lines (continued)'"));
+    expect(pdf, contains("'Invoice summary'"));
+  });
+
+  test('invoice PDF remains an authenticated read-only renderer', () {
+    expect(pdf, contains('billing_require_admin()'));
+    expect(pdf, contains("production_require_method('GET')"));
+    expect(
+      RegExp(r'\b(INSERT|UPDATE|DELETE|REPLACE|ALTER|DROP|TRUNCATE)\b')
+          .hasMatch(pdf),
+      isFalse,
+    );
+  });
+
   test('VAT stays separate and line values use quantity rate and net', () {
     expect(pdf, contains("'QUANTITY'"));
     expect(pdf, contains("'RATE'"));
@@ -86,14 +108,14 @@ void main() {
   });
 
   test('multi-line dimensions and long content wrap across pages', () {
-    expect(pdf, contains('foreach (\$lines as \$line)'));
+    expect(pdf, contains('foreach (\$lines as \$index => \$line)'));
     expect(pdf, contains("\$line['project_snapshot']"));
     expect(pdf, contains("\$line['mixer_snapshot']"));
-    expect(pdf, contains('getStringHeight(70, \$description)'));
-    expect(pdf, contains('MultiCell(70, \$rowHeight'));
-    expect(pdf, contains('MultiCell(109, 4.5'));
+    expect(pdf, contains('getStringHeight(\$columns[\$cellIndex][1] - 3'));
+    expect(pdf, contains('MultiCell(\$width, \$rowHeight'));
+    expect(pdf, contains('MultiCell(105, 4.3'));
     expect(pdf, contains('MultiCell(180, 5'));
-    expect(pdf, contains('if (\$pdf->GetY() + \$rowHeight > 258)'));
+    expect(pdf, contains('if (\$pdf->GetY() + \$rowHeight > 242)'));
     expect(pdf, contains('\$pdf->AddPage()'));
   });
 }

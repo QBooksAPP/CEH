@@ -68,28 +68,21 @@ final class CehInvoicePdf extends TCPDF {
 
     public function embedLogo(string $png): void {
         $before = count($this->images);
-        $this->Image('@' . $png, 15, 12, 65, 0, 'PNG');
+        $this->Image('@' . $png, 15, 13, 48, 0, 'PNG');
         if (count($this->images) <= $before) {
             throw new RuntimeException('PDF_LOGO_EMBED_FAILED');
         }
     }
 
     public function Footer(): void {
-        $this->SetY(-14);
-        $this->SetDrawColor(165, 165, 165);
-        $this->SetLineWidth(0.2);
+        $this->SetY(-13);
+        $this->SetDrawColor(190, 190, 190);
         $this->Line(15, $this->GetY(), 195, $this->GetY());
-        $this->Ln(1.5);
-        $this->SetFont('dejavusans', '', 7.5);
-        $this->SetTextColor(89, 89, 89);
-        $this->Cell(
-            0,
-            7,
-            $this->invoiceReference . '  |  Page ' . $this->getAliasNumPage() . '/' . $this->getAliasNbPages(),
-            0,
-            0,
-            'C'
-        );
+        $this->Ln(2.5);
+        $this->SetFont('dejavusans', '', 7);
+        $this->SetTextColor(90, 90, 90);
+        $this->Cell(130, 5, $this->invoiceReference, 0, 0, 'L');
+        $this->Cell(50, 5, 'Page ' . $this->getAliasNumPage() . ' of ' . $this->getAliasNbPages(), 0, 0, 'R');
     }
 }
 
@@ -117,71 +110,94 @@ try {
     $pdf->SetPrintHeader(false);
     $pdf->SetPrintFooter(true);
     $pdf->SetMargins(15, 13, 15);
-    $pdf->SetAutoPageBreak(true, 22);
+    $pdf->SetAutoPageBreak(true, 18);
+    $pdf->setCellPaddings(1.8, 1.2, 1.8, 1.2);
     $pdf->setFontSubsetting(true);
     $pdf->AddPage();
 
-    $black = [0, 0, 0];
-    $darkGray = [89, 89, 89];
-    $midGray = [165, 165, 165];
-    $lightGray = [244, 244, 244];
+    // Approved CEH customer-document palette, derived from the monochrome logo.
+    $ink = [20, 20, 20];
+    $primary = [18, 18, 18];
+    $secondary = [75, 75, 75];
+    $border = [190, 190, 190];
+    $pale = [245, 245, 245];
+    $background = [250, 250, 250];
     $white = [255, 255, 255];
+    $pdf->SetTextColor(...$ink);
+    $pdf->SetDrawColor(...$border);
 
     $pdf->embedLogo($logoPng);
-    $pdf->SetXY(86, 12);
+    $pdf->SetXY(82, 13);
     $pdf->SetFont('dejavusans', 'B', 11);
-    $pdf->SetTextColor(...$black);
-    $pdf->MultiCell(109, 6, (string)$invoice['company_legal_name_snapshot'], 0, 'R', false, 1);
-    $pdf->SetX(86);
+    $pdf->SetTextColor(...$ink);
+    $pdf->MultiCell(113, 5.6, (string)$invoice['company_legal_name_snapshot'], 0, 'R', false, 1);
+    $pdf->SetX(90);
     $pdf->SetFont('dejavusans', '', 8);
-    $pdf->SetTextColor(...$darkGray);
-    $pdf->MultiCell(109, 4.5, (string)$invoice['company_address_snapshot'], 0, 'R', false, 1);
-    $pdf->SetX(86);
-    $pdf->MultiCell(109, 4.5, 'TIN: ' . (string)$invoice['tax_identifier_snapshot'], 0, 'R', false, 1);
+    $pdf->SetTextColor(...$secondary);
+    $pdf->MultiCell(105, 4.3, (string)$invoice['company_address_snapshot'], 0, 'R', false, 1);
+    $pdf->SetX(90);
+    $pdf->MultiCell(105, 4.3, 'TIN: ' . (string)$invoice['tax_identifier_snapshot'], 0, 'R', false, 1);
 
-    $headerBottom = max(39.0, $pdf->GetY() + 2.0);
-    $pdf->SetDrawColor(...$black);
-    $pdf->SetLineWidth(0.55);
+    $headerBottom = max(35.0, $pdf->GetY() + 2.0);
+    $pdf->SetDrawColor(...$primary);
+    $pdf->SetLineWidth(0.7);
     $pdf->Line(15, $headerBottom, 195, $headerBottom);
     $pdf->SetY($headerBottom + 6);
 
-    $pdf->SetFont('dejavusans', 'B', 22);
-    $pdf->SetTextColor(...$black);
-    $pdf->Cell(95, 10, 'INVOICE', 0, 0, 'L');
-    $pdf->SetFont('dejavusans', 'B', 11);
-    $pdf->Cell(85, 10, $reference, 0, 1, 'R');
-    $pdf->Ln(3);
+    $pdf->SetFont('dejavusans', 'B', 18);
+    $pdf->SetTextColor(...$primary);
+    $pdf->Cell(105, 9, 'INVOICE', 0, 0, 'L');
+    $pdf->SetFont('dejavusans', 'B', 10);
+    $pdf->SetTextColor(...$secondary);
+    $pdf->Cell(75, 9, $reference, 0, 1, 'R');
+    $pdf->SetFont('dejavusans', '', 8);
+    $pdf->Cell(105, 5, 'Tax invoice', 0, 0, 'L');
+    $pdf->Cell(75, 5, 'Invoice date: ' . $date((string)$invoice['invoice_date']), 0, 1, 'R');
+    $pdf->Ln(5);
 
     $meta = [
-        ['BILL TO', (string)$invoice['client_name_snapshot']],
-        ['INVOICE DATE', $date((string)$invoice['invoice_date'])],
-        ['PAYMENT TERMS', str_replace('_', ' ', (string)$invoice['payment_term'])],
+        ['Bill To', (string)$invoice['client_name_snapshot']],
+        ['Invoice Date', $date((string)$invoice['invoice_date'])],
+        ['Payment Terms', ucwords(strtolower(str_replace('_', ' ', (string)$invoice['payment_term'])))],
     ];
-    if ($invoice['due_date']) $meta[] = ['DUE DATE', $date((string)$invoice['due_date'])];
+    if ($invoice['due_date']) $meta[] = ['Due Date', $date((string)$invoice['due_date'])];
+    $panelY = $pdf->GetY();
+    $rowY = $panelY + 3;
+    foreach ($meta as [$unused, $value]) $rowY += max(6.0, $pdf->getStringHeight(134, $value) + 1);
+    $panelHeight = max(24.0, $rowY - $panelY + 2);
+    $pdf->SetFillColor(...$pale);
+    $pdf->SetDrawColor(...$border);
+    $pdf->RoundedRect(15, $panelY, 180, $panelHeight, 2, '1111', 'DF');
+    $rowY = $panelY + 3;
     foreach ($meta as [$label, $value]) {
+        $pdf->SetXY(20, $rowY);
         $pdf->SetFont('dejavusans', 'B', 7.5);
-        $pdf->SetTextColor(...$darkGray);
-        $pdf->Cell(38, 6, $label, 0, 0);
+        $pdf->SetTextColor(...$secondary);
+        $pdf->Cell(34, 5, strtoupper($label), 0, 0, 'L');
         $pdf->SetFont('dejavusans', '', 9);
-        $pdf->SetTextColor(...$black);
-        $pdf->MultiCell(142, 6, $value, 0, 'L', false, 1);
+        $pdf->SetTextColor(...$ink);
+        $pdf->MultiCell(134, 5, $value, 0, 'L', false, 1);
+        $rowY = max($rowY + 6, $pdf->GetY());
     }
-    $pdf->Ln(6);
+    $pdf->SetY($panelY + $panelHeight + 5);
 
-    $drawTableHeader = static function (CehInvoicePdf $document) use ($black, $white): void {
-        $document->SetFillColor(...$black);
-        $document->SetDrawColor(...$black);
+    $columns = [
+        ['DESCRIPTION / PROJECT', 65, 'L'], ['QUANTITY', 24, 'R'], ['RATE', 31, 'R'],
+        ['NET', 30, 'R'], ['VAT', 30, 'R'],
+    ];
+    $drawTableHeader = static function (CehInvoicePdf $document) use ($columns, $primary, $white): void {
+        $document->SetFillColor(...$primary);
         $document->SetTextColor(...$white);
-        $document->SetFont('dejavusans', 'B', 8);
-        $document->Cell(70, 8, 'DESCRIPTION', 1, 0, 'L', true);
-        $document->Cell(25, 8, 'QUANTITY', 1, 0, 'R', true);
-        $document->Cell(30, 8, 'RATE', 1, 0, 'R', true);
-        $document->Cell(30, 8, 'NET', 1, 0, 'R', true);
-        $document->Cell(25, 8, 'VAT', 1, 1, 'R', true);
+        $document->SetFont('dejavusans', 'B', 7.2);
+        foreach ($columns as [$label, $width, $align]) $document->Cell($width, 8, $label, 0, 0, $align, true);
+        $document->Ln();
     };
+    $pdf->SetTextColor(...$ink);
+    $pdf->SetFont('dejavusans', 'B', 10);
+    $pdf->Cell(180, 7, 'Invoice lines', 0, 1, 'L');
     $drawTableHeader($pdf);
 
-    foreach ($lines as $line) {
+    foreach ($lines as $index => $line) {
         $description = (string)$line['description'];
         if (trim((string)($line['project_snapshot'] ?? '')) !== '') {
             $description .= "\nProject: " . (string)$line['project_snapshot'];
@@ -193,58 +209,70 @@ try {
             ? '—'
             : number_format((float)$line['quantity'], 2) . ' ' . $unitFor($line);
         $rate = $line['unit_price'] === null ? '—' : $money($line['unit_price']);
-        $rowHeight = max(9.0, $pdf->getStringHeight(70, $description) + 3.0);
-        if ($pdf->GetY() + $rowHeight > 258) {
+        $values = [$description, $quantity, $rate, $money($line['net_amount']), $money($line['vat_amount'])];
+        $rowHeight = 10.0;
+        foreach ($values as $cellIndex => $value) {
+            $rowHeight = max($rowHeight, $pdf->getStringHeight($columns[$cellIndex][1] - 3, $value) + 3.5);
+        }
+        if ($pdf->GetY() + $rowHeight > 242) {
             $pdf->AddPage();
+            $pdf->SetTextColor(...$ink);
+            $pdf->SetFont('dejavusans', 'B', 10);
+            $pdf->Cell(180, 7, 'Invoice lines (continued)', 0, 1, 'L');
             $drawTableHeader($pdf);
         }
-        $x = $pdf->GetX();
-        $y = $pdf->GetY();
-        $pdf->SetDrawColor(...$midGray);
-        $pdf->SetTextColor(...$black);
-        $pdf->SetFont('dejavusans', '', 8);
-        $pdf->MultiCell(70, $rowHeight, $description, 1, 'L', false, 0, $x, $y, true, 0, false, true, $rowHeight, 'M');
-        $pdf->MultiCell(25, $rowHeight, $quantity, 1, 'R', false, 0, $x + 70, $y, true, 0, false, true, $rowHeight, 'M');
-        $pdf->MultiCell(30, $rowHeight, $rate, 1, 'R', false, 0, $x + 95, $y, true, 0, false, true, $rowHeight, 'M');
-        $pdf->MultiCell(30, $rowHeight, $money($line['net_amount']), 1, 'R', false, 0, $x + 125, $y, true, 0, false, true, $rowHeight, 'M');
-        $pdf->MultiCell(25, $rowHeight, $money($line['vat_amount']), 1, 'R', false, 0, $x + 155, $y, true, 0, false, true, $rowHeight, 'M');
-        $pdf->SetXY(15, $y + $rowHeight);
+        $fill = $index % 2 === 1;
+        if ($fill) $pdf->SetFillColor(...$background);
+        $pdf->SetDrawColor(...$border);
+        $pdf->SetTextColor(...$ink);
+        $pdf->SetFont('dejavusans', '', 7.6);
+        foreach ($values as $cellIndex => $value) {
+            [$unused, $width, $align] = $columns[$cellIndex];
+            $pdf->MultiCell($width, $rowHeight, $value, 1, $align, $fill, ($cellIndex === count($values) - 1 ? 1 : 0), '', '', true, 0, false, true, $rowHeight, 'M');
+        }
     }
 
-    $pdf->Ln(5);
-    if ($pdf->GetY() > 221) $pdf->AddPage();
-    $pdf->SetX(118);
-    $pdf->SetFillColor(...$lightGray);
-    $pdf->SetTextColor(...$black);
-    $pdf->SetFont('dejavusans', '', 9);
-    $pdf->Cell(39, 8, 'Net', 0, 0, 'L', true);
-    $pdf->Cell(38, 8, $money($invoice['net_amount']), 0, 1, 'R', true);
-    $pdf->SetX(118);
     $vatLabel = 'VAT ' . billing_format_percent($invoice['vat_rate_snapshot'] ?? 0);
-    $pdf->Cell(39, 8, $vatLabel, 0, 0, 'L', true);
-    $pdf->Cell(38, 8, $money($invoice['vat_amount']), 0, 1, 'R', true);
-    $pdf->SetX(118);
-    $pdf->SetFillColor(...$black);
-    $pdf->SetTextColor(...$white);
-    $pdf->SetFont('dejavusans', 'B', 12);
-    $pdf->Cell(39, 11, 'TOTAL', 0, 0, 'L', true);
-    $pdf->Cell(38, 11, $money($invoice['total_amount']), 0, 1, 'R', true);
+    $totals = [['Net', $invoice['net_amount']], [$vatLabel, $invoice['vat_amount']], ['TOTAL', $invoice['total_amount']]];
+    if ($pdf->GetY() + 38 > 265) $pdf->AddPage();
+    $pdf->Ln(6);
+    $pdf->SetX(95);
+    $pdf->SetFont('dejavusans', 'B', 9);
+    $pdf->SetTextColor(...$primary);
+    $pdf->Cell(100, 6, 'Invoice summary', 0, 1, 'L');
+    foreach ($totals as [$label, $amount]) {
+        $highlight = $label === 'TOTAL';
+        $pdf->SetX(95);
+        $pdf->SetFillColor(...($highlight ? $pale : $white));
+        $pdf->SetFont('dejavusans', $highlight ? 'B' : '', 8.7);
+        $pdf->SetTextColor(...($highlight ? $primary : $ink));
+        $pdf->Cell(63, 7, $label, $highlight ? 'TB' : 'B', 0, 'L', $highlight);
+        $pdf->Cell(37, 7, $money($amount), $highlight ? 'TB' : 'B', 1, 'R', $highlight);
+    }
 
-    $pdf->Ln(8);
-    if ($pdf->GetY() > 225) $pdf->AddPage();
-    $pdf->SetTextColor(...$black);
-    $pdf->SetFont('dejavusans', 'B', 10);
+    $paymentDetails = trim((string)$invoice['payment_bank_details_snapshot']);
+    $paymentHeight = max(12.0, $pdf->getStringHeight(176, $paymentDetails) + 5);
+    $terms = trim((string)$invoice['terms_snapshot']);
+    $termsHeight = max(12.0, $pdf->getStringHeight(176, $terms) + 5);
+    if ($pdf->GetY() + $paymentHeight + $termsHeight + 29 > 265) $pdf->AddPage();
+    $pdf->Ln(6);
+    $pdf->SetTextColor(...$primary);
+    $pdf->SetFont('dejavusans', 'B', 9);
     $pdf->Cell(0, 6, 'PAYMENT DETAILS', 0, 1);
-    $pdf->SetDrawColor(...$midGray);
-    $pdf->Line(15, $pdf->GetY(), 195, $pdf->GetY());
-    $pdf->Ln(3);
+    $pdf->SetFillColor(...$pale);
+    $pdf->SetDrawColor(...$border);
+    $pdf->SetTextColor(...$ink);
     $pdf->SetFont('dejavusans', '', 8.5);
-    $pdf->MultiCell(180, 5, (string)$invoice['payment_bank_details_snapshot'], 0, 'L', false, 1);
-    $pdf->Ln(5);
+    $pdf->MultiCell(180, 5, $paymentDetails, 1, 'L', true, 1);
+    $pdf->Ln(6);
+    $pdf->SetTextColor(...$primary);
     $pdf->SetFont('dejavusans', 'B', 9);
     $pdf->Cell(0, 5, 'TERMS', 0, 1);
+    $pdf->SetFillColor(...$pale);
+    $pdf->SetDrawColor(...$border);
+    $pdf->SetTextColor(...$ink);
     $pdf->SetFont('dejavusans', '', 8.5);
-    $pdf->MultiCell(180, 5, (string)$invoice['terms_snapshot'], 0, 'L', false, 1);
+    $pdf->MultiCell(180, 5, $terms, 1, 'L', true, 1);
 
     $bytes = $pdf->Output($reference . '.pdf', 'S');
     unset($pdf);
