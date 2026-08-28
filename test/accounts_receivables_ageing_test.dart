@@ -48,7 +48,7 @@ class _AgeingApi extends CehApiClient {
 }
 
 void main() {
-  final backend = File('Server/receivables_ageing.php').readAsStringSync();
+  final backend = File('Server/reports_common.php').readAsStringSync();
 
   test('authoritative ageing excludes settled and uses remaining balance', () {
     expect(backend, contains('if(\$outstanding<=0)continue'));

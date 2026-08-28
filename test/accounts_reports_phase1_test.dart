@@ -1,0 +1,115 @@
+import 'dart:io';
+
+import 'package:ceh/core/ceh_theme.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+String source(String path) => File(path).readAsStringSync();
+
+void main() {
+  test('overview uses authoritative sources and document-date monthly expenses',
+      () {
+    final reports = source('Server/reports_common.php');
+    expect(reports, contains("j.status='POSTED'"));
+    expect(reports, contains("e.expense_date>=?"));
+    expect(reports, contains('reports_receivables'));
+    expect(reports, contains('accounts_custodian_balance'));
+    expect(reports, isNot(contains('Net Operating Position')));
+  });
+
+  test('expense filtering totals matched lines without duplicating headers',
+      () {
+    final reports = source('Server/reports_common.php');
+    expect(reports, contains('reports_line_matches'));
+    expect(reports, contains("'matched_amount'"));
+    expect(reports, contains("'header_amount'"));
+    expect(reports, contains('array_sum(array_map'));
+  });
+
+  test('receivables JSON and PDF share the same ageing calculation', () {
+    final ageing = source('Server/receivables_ageing.php');
+    final report = source('Server/receivables_report.php');
+    final pdf = source('Server/receivables_report_pdf.php');
+    for (final file in [ageing, report, pdf]) {
+      expect(file, contains('reports_receivables'));
+    }
+    final common = source('Server/reports_common.php');
+    for (final bucket in ['CURRENT', '1_30', '31_60', '61_90', 'OVER_90']) {
+      expect(common, contains(bucket));
+    }
+    expect(common, contains(r"$row['due_date']===null"));
+  });
+
+  test('audit packs enforce evidence integrity and private PDF import', () {
+    final pdf = source('Server/report_pdf_common.php');
+    expect(pdf, contains("hash_equals"));
+    expect(pdf, contains("getimagesizefromstring"));
+    expect(pdf, contains("setSourceFile"));
+    expect(pdf, contains("importPage"));
+    expect(pdf, contains("private_report_imports"));
+    expect(pdf, contains("random_bytes(16)"));
+    expect(pdf, contains("finally"));
+    expect(pdf, contains("No receipt attached"));
+    expect(pdf, contains("Recorded reason:"));
+    expect(pdf, contains('Supporting Evidence - '));
+    expect(pdf, contains('Evidence file'));
+    expect(pdf, contains('SHA-256'));
+    expect(source('Server/vendor/setasign/fpdi/composer.json'),
+        contains('setasign/fpdi'));
+  });
+
+  test('report PDFs use accountant-facing monochrome presentation', () {
+    final pdf = source('Server/report_pdf_common.php');
+    final fullExpense = source('Server/expense_audit_pack.php');
+    expect(pdf, contains("return '₦'.number_format"));
+    expect(pdf, contains('Transaction amount'));
+    expect(pdf, contains('Transaction total'));
+    expect(pdf, contains('Amount matching filter'));
+    expect(pdf, contains('Total Outstanding'));
+    expect(pdf, contains('Report period'));
+    expect(pdf, contains('Concrete Equipment Hire Limited'));
+    expect(pdf, isNot(contains('Powered by TCPDF')));
+    expect(pdf, isNot(contains("['Header'")));
+    expect(pdf, isNot(contains("['Matched'")));
+    expect(fullExpense, contains('Full Expense Audit Pack'));
+  });
+
+  test('report endpoints are authenticated Admin-only GET operations', () {
+    for (final path in [
+      'Server/accounts_overview.php',
+      'Server/petty_cash_report.php',
+      'Server/expense_report.php',
+      'Server/receivables_report.php',
+      'Server/petty_cash_audit_pack.php',
+      'Server/expense_audit_pack.php',
+      'Server/receivables_report_pdf.php',
+    ]) {
+      final contents = source(path);
+      expect(contents, contains('billing_require_admin()'));
+      expect(contents, contains("production_require_method('GET')"));
+      expect(contents, isNot(contains('INSERT ')));
+      expect(contents, isNot(contains('UPDATE ')));
+      expect(contents, isNot(contains('DELETE ')));
+    }
+  });
+
+  test('monochrome corporate palette preserves semantic status colours', () {
+    final theme = CehTheme.light();
+    expect(CehTheme.ink, const Color(0xFF121212));
+    expect(CehTheme.text, const Color(0xFF141414));
+    expect(theme.colorScheme.primary, CehTheme.ink);
+    expect(theme.colorScheme.error, isNot(CehTheme.ink));
+    final widgets = source('lib/widgets/accounts_widgets.dart');
+    expect(widgets, contains('Color(0xFFE3F4E8)'));
+    expect(widgets, contains('Color(0xFFFFF0D7)'));
+    expect(widgets, contains('Color(0xFFFFE3E3)'));
+  });
+
+  test('legacy petty cash and evidence types remain supported', () {
+    final reports = source('Server/reports_common.php');
+    expect(reports, contains("line_model_version']===0"));
+    final pdf = source('Server/report_pdf_common.php');
+    expect(pdf, contains("'image/jpeg', 'image/png'"));
+    expect(pdf, contains("'application/pdf'"));
+  });
+}

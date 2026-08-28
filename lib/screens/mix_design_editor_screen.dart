@@ -308,9 +308,9 @@ class _MixDesignEditorScreenState extends State<MixDesignEditorScreen> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: CehTheme.paleBlue,
+        color: CehTheme.panel,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: CehTheme.blue.withValues(alpha: .18)),
+        border: Border.all(color: CehTheme.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -323,7 +323,7 @@ class _MixDesignEditorScreenState extends State<MixDesignEditorScreen> {
           Text(
             '${volume.toStringAsFixed(4)} m³',
             style: const TextStyle(
-              color: CehTheme.navy,
+              color: CehTheme.ink,
               fontSize: 30,
               fontWeight: FontWeight.w900,
             ),
@@ -715,7 +715,7 @@ class _MixDesignEditorScreenState extends State<MixDesignEditorScreen> {
                               fontWeight: FontWeight.w900,
                               color: _balancedSand == null
                                   ? Theme.of(context).colorScheme.error
-                                  : CehTheme.navy,
+                                  : CehTheme.ink,
                             ),
                           ),
                         ),

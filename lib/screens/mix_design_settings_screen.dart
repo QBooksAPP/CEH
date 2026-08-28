@@ -460,7 +460,7 @@ class _OperatorSettingsResult extends StatelessWidget {
         key: const Key('operator-mixer-settings-result'),
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-            color: CehTheme.navy, borderRadius: BorderRadius.circular(22)),
+            color: CehTheme.ink, borderRadius: BorderRadius.circular(22)),
         child:
             Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Text('MIXER ${result.mixer['code'] ?? result.mixer['name'] ?? ''}',
@@ -500,7 +500,7 @@ class _OperatorSettingsResult extends StatelessWidget {
           Text(label,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                  color: CehTheme.blue,
+                  color: CehTheme.ink,
                   fontSize: 13,
                   fontWeight: FontWeight.w900,
                   letterSpacing: .7)),

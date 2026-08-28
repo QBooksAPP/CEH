@@ -500,7 +500,7 @@ class _ProductionSessionScreenState extends State<ProductionSessionScreen> {
                         Container(
                             padding: const EdgeInsets.all(20),
                             decoration: BoxDecoration(
-                                color: CehTheme.navy,
+                                color: CehTheme.ink,
                                 borderRadius: BorderRadius.circular(20)),
                             child: Column(children: [
                               Text('MIXER ${r.mixer['code']}',
@@ -724,7 +724,7 @@ class _ProductionSignoffScreenState extends State<ProductionSignoffScreen> {
                   height: 190,
                   decoration: BoxDecoration(
                       color: Colors.white,
-                      border: Border.all(color: CehTheme.blue, width: 2),
+                      border: Border.all(color: CehTheme.ink, width: 2),
                       borderRadius: BorderRadius.circular(12))),
             ),
           ),

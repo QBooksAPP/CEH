@@ -1081,6 +1081,56 @@ class CehApiClient {
     return data;
   }
 
+  Future<Map<String, dynamic>> accountsOverview(CehSession session) async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/accounts_overview.php'),
+            headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'ACCOUNTS_OVERVIEW_FAILED');
+    return Map<String, dynamic>.from(data['overview'] as Map);
+  }
+
+  Future<Map<String, dynamic>> accountsReport(CehSession session,
+      {required String endpoint,
+      Map<String, String> filters = const {}}) async {
+    final uri = Uri.parse('$baseUrl/$endpoint')
+        .replace(queryParameters: filters.isEmpty ? null : filters);
+    final response = await http
+        .get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 40));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'ACCOUNTS_REPORT_FAILED');
+    return data;
+  }
+
+  Future<ProductionReportFile> accountsReportPdf(CehSession session,
+      {required String endpoint,
+      required String filename,
+      Map<String, String> filters = const {}}) async {
+    final uri = Uri.parse('$baseUrl/$endpoint')
+        .replace(queryParameters: filters.isEmpty ? null : filters);
+    final response = await http
+        .get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 90));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      var error = 'ACCOUNTS_REPORT_PDF_FAILED';
+      try {
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
+        if (data is Map && data['error'] != null) error = '${data['error']}';
+      } catch (_) {}
+      throw ApiException(error, statusCode: response.statusCode);
+    }
+    if (!(response.headers['content-type'] ?? '')
+            .toLowerCase()
+            .startsWith('application/pdf') ||
+        response.bodyBytes.length < 5 ||
+        String.fromCharCodes(response.bodyBytes.take(5)) != '%PDF-') {
+      throw const ApiException('ACCOUNTS_REPORT_PDF_FAILED');
+    }
+    return ProductionReportFile(bytes: response.bodyBytes, filename: filename);
+  }
+
   Future<List<CehBankAccount>> bankAccounts(CehSession session) async {
     final response = await http
         .get(Uri.parse('$baseUrl/bank_accounts.php'),

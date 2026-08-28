@@ -111,7 +111,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     width: 92,
                     height: 92,
                     decoration: BoxDecoration(
-                      color: CehTheme.navy,
+                      color: CehTheme.ink,
                       borderRadius: BorderRadius.circular(24),
                     ),
                     alignment: Alignment.center,

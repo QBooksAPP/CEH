@@ -45,7 +45,7 @@ class AccountsSummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final iconWidget = Icon(icon,
-        color: emphasized ? Colors.white : CehTheme.blue,
+        color: emphasized ? Colors.white : CehTheme.ink,
         size: compact ? 20 : 30);
     final figures = Column(
       mainAxisSize: MainAxisSize.min,
@@ -77,7 +77,7 @@ class AccountsSummaryCard extends StatelessWidget {
       ],
     );
     return Card(
-      color: emphasized ? CehTheme.navy : Colors.white,
+      color: emphasized ? CehTheme.ink : Colors.white,
       child: Padding(
         padding: EdgeInsets.all(compact ? 12 : 18),
         child: compact
@@ -164,9 +164,9 @@ class AccountsMenuCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                    color: CehTheme.paleBlue,
+                    color: CehTheme.panel,
                     borderRadius: BorderRadius.circular(14)),
-                child: Icon(icon, color: CehTheme.blue, size: 28),
+                child: Icon(icon, color: CehTheme.ink, size: 28),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -201,14 +201,18 @@ class AccountsStatusChip extends StatelessWidget {
         .contains(label.toUpperCase());
     final warning = ['PENDING', 'PART PAID', 'OUTSTANDING', 'NEEDS RECEIPT']
         .contains(label.toUpperCase());
+    final destructive = ['REJECTED', 'VOIDED', 'DELETED', 'ERROR']
+        .contains(label.toUpperCase());
     return Chip(
       visualDensity: VisualDensity.compact,
       label: Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
       backgroundColor: positive
           ? const Color(0xFFE3F4E8)
-          : warning
-              ? const Color(0xFFFFF0D7)
-              : CehTheme.paleBlue,
+          : destructive
+              ? const Color(0xFFFFE3E3)
+              : warning
+                  ? const Color(0xFFFFF0D7)
+                  : CehTheme.panel,
     );
   }
 }
@@ -233,7 +237,7 @@ class AccountsMetricLine extends StatelessWidget {
               style: TextStyle(
                   fontSize: prominent ? 17 : 14,
                   fontWeight: FontWeight.w900,
-                  color: prominent ? CehTheme.navy : CehTheme.text)),
+                  color: prominent ? CehTheme.ink : CehTheme.text)),
         ]),
       );
 }

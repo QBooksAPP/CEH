@@ -182,7 +182,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [CehTheme.navy, CehTheme.blue],
+                colors: [CehTheme.ink, CehTheme.secondaryText],
               ),
               borderRadius: BorderRadius.circular(20),
             ),
@@ -209,7 +209,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         const Icon(
                           Icons.system_update,
                           size: 34,
-                          color: CehTheme.blue,
+                          color: CehTheme.ink,
                         ),
                         const SizedBox(width: 12),
                         Expanded(

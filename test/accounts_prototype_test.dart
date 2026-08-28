@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:ceh/core/ceh_theme.dart';
+import 'package:ceh/core/api_client.dart';
 import 'package:ceh/core/view_mode.dart';
 import 'package:ceh/models/accounts_mock_data.dart';
 import 'package:ceh/models/session.dart';
@@ -59,6 +60,17 @@ class MemoryAccountsFiguresPreference implements AccountsFiguresPreference {
     value = showFigures;
     writes++;
   }
+}
+
+class LiveOverviewApi extends CehApiClient {
+  const LiveOverviewApi();
+  @override
+  Future<Map<String, dynamic>> accountsOverview(CehSession session) async => {
+        'bank_balance': '1250000.00',
+        'petty_cash_outstanding': '175000.00',
+        'trade_receivables': '333750.00',
+        'expenses_this_month': '230000.00',
+      };
 }
 
 DashboardScreen dashboard(CehSession session) => DashboardScreen(
@@ -241,16 +253,24 @@ void main() {
         findsOneWidget);
   });
 
-  testWidgets('sample overview remains clearly identified', (tester) async {
+  testWidgets(
+      'live overview removes sample warning and uses authoritative labels',
+      (tester) async {
     await tester.pumpWidget(app(AccountsHomeScreen(
       session: adminSession,
       liveData: true,
+      api: const LiveOverviewApi(),
       figuresPreference: MemoryAccountsFiguresPreference(false),
     )));
     await tester.pumpAndSettle();
-    expect(find.text('Prototype • sample data only'), findsOneWidget);
-    expect(find.text('Sample overview figures — not live balances'),
-        findsOneWidget);
+    expect(find.text('Prototype • sample data only'), findsNothing);
+    expect(
+        find.text('Sample overview figures — not live balances'), findsNothing);
+    expect(find.text('Bank Balance'), findsOneWidget);
+    expect(find.text('Petty Cash Outstanding'), findsOneWidget);
+    expect(find.text('Trade Receivables'), findsOneWidget);
+    expect(find.text('Expenses This Month'), findsOneWidget);
+    expect(find.text('₦••••••'), findsNWidgets(4));
   });
 
   testWidgets('navigation opens every Accounts prototype area', (tester) async {
@@ -285,11 +305,10 @@ void main() {
     }
   });
 
-  test('Accounts prototype has no backend or QuickBooks client dependency', () {
+  test('retained prototype fixtures have no backend or QuickBooks dependency',
+      () {
     final files = [
-      'lib/screens/accounts/accounts_home_screen.dart',
       'lib/screens/accounts/accounts_detail_screens.dart',
-      'lib/screens/accounts/accounts_phase1_screens.dart',
       'lib/models/accounts_mock_data.dart',
     ].map((path) => File(path).readAsStringSync()).join('\n');
     expect(files, isNot(contains('CehApiClient')));

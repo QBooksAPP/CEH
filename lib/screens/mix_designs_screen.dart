@@ -364,7 +364,7 @@ class _MixDesignsScreenState extends State<MixDesignsScreen> {
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: CehTheme.paleBlue,
+                          color: CehTheme.panel,
                           borderRadius: BorderRadius.circular(16),
                         ),
                         child: Text(

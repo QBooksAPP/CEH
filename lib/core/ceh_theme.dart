@@ -1,20 +1,27 @@
 import 'package:flutter/material.dart';
 
 class CehTheme {
-  static const Color navy = Color(0xFF173E63);
-  static const Color blue = Color(0xFF245985);
-  static const Color paleBlue = Color(0xFFEAF1F7);
-  static const Color background = Color(0xFFF4F7FA);
-  static const Color text = Color(0xFF17212B);
+  static const Color ink = Color(0xFF121212);
+  static const Color text = Color(0xFF141414);
+  static const Color secondaryText = Color(0xFF4B4B4B);
+  static const Color border = Color(0xFFBEBEBE);
+  static const Color panel = Color(0xFFF5F5F5);
+  static const Color background = Color(0xFFFAFAFA);
 
   static ThemeData light() {
     final scheme = ColorScheme.fromSeed(
-      seedColor: blue,
+      seedColor: ink,
       brightness: Brightness.light,
+      dynamicSchemeVariant: DynamicSchemeVariant.monochrome,
     ).copyWith(
-      primary: blue,
-      secondary: navy,
+      primary: ink,
+      onPrimary: Colors.white,
+      secondary: secondaryText,
+      onSecondary: Colors.white,
       surface: Colors.white,
+      onSurface: text,
+      outline: border,
+      error: const Color(0xFFB3261E),
     );
 
     return ThemeData(
@@ -31,15 +38,15 @@ class CehTheme {
         fillColor: Colors.white,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFD8E1E8)),
+          borderSide: const BorderSide(color: border),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFD8E1E8)),
+          borderSide: const BorderSide(color: border),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: blue, width: 1.5),
+          borderSide: const BorderSide(color: ink, width: 1.5),
         ),
       ),
       cardTheme: CardThemeData(
@@ -47,7 +54,7 @@ class CehTheme {
         color: Colors.white,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(18),
-          side: const BorderSide(color: Color(0xFFE3E9EE)),
+          side: const BorderSide(color: border),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(

@@ -158,7 +158,7 @@ class _CalibrationRecordsScreenState extends State<CalibrationRecordsScreen> {
         'APPROVED' => Colors.green,
         'REJECTED' => Colors.red,
         'SUBMITTED' => Colors.orange,
-        _ => Colors.blue,
+        _ => Colors.grey,
       };
 
   @override
