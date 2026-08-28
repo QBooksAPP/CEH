@@ -2,10 +2,13 @@ import 'dart:io';
 
 import 'package:ceh/core/accounts_formatters.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:timezone/data/latest.dart' as tz;
 
 String source(String path) => File(path).readAsStringSync();
 
 void main() {
+  setUpAll(tz.initializeTimeZones);
+
   test('CEH date and date-time presentation is consistent', () {
     expect(displayCehDate('2026-08-28'), '28-08-2026');
     expect(displayCehDateTime('2026-08-28 14:30:59'), '28-08-2026 14:30');
