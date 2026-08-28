@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/reports_common.php';
+require_once __DIR__.'/company_regional_common.php';
 require_once __DIR__.'/vendor/tcpdf/tcpdf.php';
 require_once __DIR__.'/vendor/setasign/fpdi/src/autoload.php';
 
@@ -13,7 +14,7 @@ const REPORT_PDF_PANEL = [245, 245, 245];
 const REPORT_PDF_ALT = [250, 250, 250];
 
 function reports_pdf_money(mixed $amount): string {
-    return '₦'.number_format((float)$amount, 2);
+    return company_money($amount, (string)($GLOBALS['ceh_report_currency'] ?? 'NGN'));
 }
 
 function reports_pdf_text(mixed $value): string {
@@ -23,7 +24,22 @@ function reports_pdf_text(mixed $value): string {
 
 function reports_pdf_date(mixed $value): string {
     $value = trim((string)$value);
-    return $value === '' ? 'Not specified' : (new DateTimeImmutable($value))->format('d-m-Y');
+    if ($value === '') return 'Not specified';
+    $format=(string)($GLOBALS['ceh_report_date_format']??'DD-MM-YYYY');
+    $php=['DD-MM-YYYY'=>'d-m-Y','MM-DD-YYYY'=>'m-d-Y','YYYY-MM-DD'=>'Y-m-d'][$format]??'d-m-Y';
+    return (new DateTimeImmutable($value))->format($php);
+}
+
+function reports_pdf_company(?array $company = null): array {
+    if ($company === null) {
+        $company = production_db()->query('SELECT s.company_legal_name,s.company_address,s.tax_identifier,r.time_zone,r.date_format,r.time_format,r.base_currency FROM qbook_invoice_settings s JOIN qbook_company_regional_settings r ON r.company_id=1 WHERE s.id=1')->fetch() ?: [];
+    }
+    foreach (['company_legal_name', 'company_address', 'tax_identifier'] as $field) {
+        if (trim((string)($company[$field] ?? '')) === '') {
+            accounts_fail('REPORT_SETTINGS_INCOMPLETE', 409);
+        }
+    }
+    return $company;
 }
 
 function reports_pdf_line_filter_active(array $filters): bool {
@@ -92,7 +108,10 @@ function reports_pdf_filter_rows(string $title, array $filters): array {
     return $rows;
 }
 
-function reports_pdf_document(string $title, array $filters): \setasign\Fpdi\Tcpdf\Fpdi {
+function reports_pdf_document(string $title, array $filters, ?array $company = null): \setasign\Fpdi\Tcpdf\Fpdi {
+    $company = reports_pdf_company($company);
+    $GLOBALS['ceh_report_currency']=(string)($company['base_currency']??'NGN');
+    $GLOBALS['ceh_report_date_format']=(string)($company['date_format']??'DD-MM-YYYY');
     $pdf = new class('L', 'mm', 'A4', true, 'UTF-8', false) extends \setasign\Fpdi\Tcpdf\Fpdi {
         public function Footer(): void {
             $this->SetY(-12);
@@ -112,16 +131,30 @@ function reports_pdf_document(string $title, array $filters): \setasign\Fpdi\Tcp
     if ($logo !== false) {
         $pdf->Image('@'.$logo, 12, 8, 50, 0, 'PNG');
     }
-    $pdf->SetXY(68, 10);
+    $pdf->SetXY(66, 8);
+    $pdf->SetFont('dejavusans', 'B', 9.5);
+    $pdf->SetTextColor(...REPORT_PDF_INK);
+    $pdf->MultiCell(107, 5, (string)$company['company_legal_name'], 0, 'L', false, 1);
+    $pdf->SetX(66);
+    $pdf->SetFont('dejavusans', '', 7.2);
+    $pdf->SetTextColor(...REPORT_PDF_SECONDARY);
+    $pdf->MultiCell(107, 4, (string)$company['company_address'], 0, 'L', false, 1);
+    $pdf->SetX(66);
+    $pdf->Cell(107, 4, 'TIN: '.(string)$company['tax_identifier'], 0, 1, 'L');
+    $pdf->SetXY(178, 8);
     $pdf->SetFont('dejavusans', 'B', strlen($title) > 24 ? 14.5 : 17);
     $pdf->SetTextColor(...REPORT_PDF_INK);
-    $pdf->Cell(217, 9, strtoupper($title), 0, 1, 'R');
-    $pdf->SetX(68);
-    $pdf->SetFont('dejavusans', '', 8);
+    $pdf->MultiCell(107, 8, strtoupper($title), 0, 'R', false, 1);
+    $pdf->SetX(178);
+    $pdf->SetFont('dejavusans', '', 7.5);
     $pdf->SetTextColor(...REPORT_PDF_SECONDARY);
-    $pdf->Cell(217, 5, 'Generated '.gmdate('d-m-Y H:i').' UTC', 0, 1, 'R');
-    $pdf->SetX(68);
-    $pdf->Cell(217, 5, 'Read-only financial report', 0, 1, 'R');
+    $zone=new DateTimeZone((string)($company['time_zone']??'Africa/Lagos'));
+    $generated=(new DateTimeImmutable('now',new DateTimeZone('UTC')))->setTimezone($zone);
+    $datePattern=['DD-MM-YYYY'=>'d-m-Y','MM-DD-YYYY'=>'m-d-Y','YYYY-MM-DD'=>'Y-m-d'][(string)($company['date_format']??'DD-MM-YYYY')]??'d-m-Y';
+    $timePattern=(string)($company['time_format']??'24_HOUR')==='12_HOUR'?'h:i A':'H:i';
+    $pdf->Cell(107, 4.5, 'Generated '.$generated->format($datePattern.' '.$timePattern).' '.(string)($company['time_zone']??'Africa/Lagos'), 0, 1, 'R');
+    $pdf->SetX(178);
+    $pdf->Cell(107, 4.5, 'Read-only financial report', 0, 1, 'R');
     $pdf->SetDrawColor(...REPORT_PDF_INK);
     $pdf->SetLineWidth(0.35);
     $pdf->Line(12, 34, 285, 34);
@@ -159,19 +192,24 @@ function reports_pdf_table_header(\TCPDF $pdf, array $columns): void {
     }
 }
 
-function reports_pdf_expenses(string $title, array $data, bool $withEvidence, ?callable $evidenceLoader = null): string {
-    $pdf = reports_pdf_document($title, $data['filters']);
+function reports_pdf_expenses(string $title, array $data, bool $withEvidence, ?callable $evidenceLoader = null, ?array $company = null): string {
+    $pdf = reports_pdf_document($title, $data['filters'], $company);
+    $evidenceByRow = $withEvidence ? reports_pdf_collect_evidence($data['rows'], $evidenceLoader) : [];
     $filtered = reports_pdf_line_filter_active($data['filters']);
     $columns = [
         ['Reference', 25, 'L'], ['Date', 19, 'C'], ['Source / custodian', 30, 'L'],
-        ['Paid to / description', $filtered ? 55 : 65, 'L'],
-        ['Client / project / equipment', $filtered ? 48 : 55, 'L'],
-        ['Status / journal', $filtered ? 35 : 46, 'L'],
-        [$filtered ? 'Transaction total' : 'Transaction amount', $filtered ? 28 : 33, 'R'],
+        ['Paid to / description', $filtered ? 44 : 55, 'L'],
+        ['Client / project / equipment', $filtered ? 40 : 48, 'L'],
+        ['Status / journal', $filtered ? 32 : 38, 'L'],
+        ['Evidence', $filtered ? 17 : 18, 'C'],
+        [$filtered ? 'Transaction total' : 'Transaction amount', $filtered ? 27 : 33, 'R'],
     ];
     if ($filtered) {
         $columns[] = ['Amount matching filter', 28, 'R'];
     }
+    $pdf->SetFont('dejavusans', 'B', 11);
+    $pdf->SetTextColor(...REPORT_PDF_INK);
+    $pdf->Cell(0, 7, 'SECTION 1 - TRANSACTION REGISTER', 0, 1, 'L');
     reports_pdf_table_header($pdf, $columns);
     $fill = false;
     foreach ($data['rows'] as $row) {
@@ -181,6 +219,7 @@ function reports_pdf_expenses(string $title, array $data, bool $withEvidence, ?c
             reports_pdf_text($row['supplier_paid_to'])."\n".reports_pdf_text($row['description']),
             reports_pdf_text($row['client_name'])."\n".reports_pdf_text($row['project_name']).' • '.reports_pdf_text($row['mixer_code']),
             reports_pdf_text($row['status'])."\n".reports_pdf_text($row['original_journal_reference']),
+            $evidenceByRow[reports_pdf_evidence_key($row)] === [] ? 'Missing' : 'Attached',
             reports_pdf_money($row['amount']),
         ];
         if ($filtered) {
@@ -222,47 +261,102 @@ function reports_pdf_expenses(string $title, array $data, bool $withEvidence, ?c
     $pdf->Cell(220, 8, $label, 0, 0, 'R');
     $pdf->Cell(45, 8, reports_pdf_money($total), 0, 1, 'R');
     if ($withEvidence) {
-        reports_pdf_append_evidence($pdf, $data['rows'], $evidenceLoader);
+        reports_pdf_append_missing_evidence_summary($pdf, $data['rows'], $evidenceByRow);
+        reports_pdf_append_evidence($pdf, $data['rows'], $evidenceByRow);
     }
     return $pdf->Output('report.pdf', 'S');
 }
 
 function reports_pdf_evidence_heading(\TCPDF $pdf, string $reference): void {
-    $pdf->SetFont('dejavusans', 'B', 12);
+    $pdf->SetFont('dejavusans', 'B', 10);
     $pdf->SetTextColor(...REPORT_PDF_INK);
-    $pdf->Cell(0, 8, 'Supporting Evidence - '.$reference, 0, 1, 'L');
+    $pdf->MultiCell($pdf->getPageWidth() - 24, 6, 'Supporting Evidence - '.$reference, 0, 'L', false, 1);
     $pdf->SetDrawColor(...REPORT_PDF_INK);
     $pdf->Line($pdf->GetX(), $pdf->GetY(), $pdf->getPageWidth() - 12, $pdf->GetY());
     $pdf->Ln(3);
 }
 
-function reports_pdf_append_evidence(\setasign\Fpdi\Tcpdf\Fpdi $pdf, array $rows, ?callable $evidenceLoader = null): void {
+function reports_pdf_evidence_key(array $row): string {
+    return (string)$row['source_type'].':'.(int)$row['id'];
+}
+
+function reports_pdf_collect_evidence(array $rows, ?callable $evidenceLoader = null): array {
     $db = $evidenceLoader === null ? production_db() : null;
+    $result = [];
+    foreach ($rows as $row) {
+        $source = $row['source_type'] === 'BANK' ? 'GENERAL_EXPENSE' : 'PETTY_CASH_EXPENSE';
+        $result[reports_pdf_evidence_key($row)] = $evidenceLoader === null
+            ? reports_evidence($db, $source, (int)$row['id'])
+            : (array)$evidenceLoader($row);
+    }
+    return $result;
+}
+
+function reports_pdf_append_missing_evidence_summary(\TCPDF $pdf, array $rows, array $evidenceByRow): void {
+    $missing = array_values(array_filter($rows, static fn(array $row): bool => $evidenceByRow[reports_pdf_evidence_key($row)] === []));
+    $value = array_sum(array_map(static fn(array $row): int => accounts_money_minor($row['amount'], false), $missing));
+    $pdf->AddPage('L');
+    $pdf->SetFont('dejavusans', 'B', 14);
+    $pdf->SetTextColor(...REPORT_PDF_INK);
+    $pdf->Cell(0, 8, 'SECTION 2 - MISSING EVIDENCE SUMMARY', 0, 1, 'L');
+    $pdf->SetFont('dejavusans', '', 8.5);
+    $pdf->SetTextColor(...REPORT_PDF_SECONDARY);
+    $pdf->Cell(0, 6, 'Transactions without supporting evidence: '.count($missing).'   •   Value without supporting evidence: '.reports_pdf_money(accounts_minor_decimal($value)), 0, 1, 'L');
+    $pdf->Ln(2);
+    $columns = [
+        ['CEH reference', 27, 'L'], ['Date', 21, 'C'], ['Paid to / supplier', 48, 'L'],
+        ['Description', 78, 'L'], ['Amount', 32, 'R'], ['Missing evidence reason', 67, 'L'],
+    ];
+    reports_pdf_table_header($pdf, $columns);
+    $fill = false;
+    foreach ($missing as $row) {
+        $reason = trim((string)($row['no_receipt_reason'] ?? '')) ?: 'No receipt attached';
+        $values = [(string)$row['reference_no'], reports_pdf_date($row['expense_date']), reports_pdf_text($row['supplier_paid_to']), reports_pdf_text($row['description']), reports_pdf_money($row['amount']), $reason];
+        $height = 7.0;
+        foreach ($values as $index => $cell) {
+            $height = max($height, $pdf->getStringHeight($columns[$index][1] - 2, $cell) + 2);
+        }
+        if ($pdf->GetY() + $height > 188) {
+            $pdf->AddPage('L');
+            reports_pdf_table_header($pdf, $columns);
+        }
+        if ($fill) $pdf->SetFillColor(...REPORT_PDF_ALT);
+        $pdf->SetDrawColor(...REPORT_PDF_BORDER);
+        $pdf->SetTextColor(...REPORT_PDF_TEXT);
+        $pdf->SetFont('dejavusans', '', 6.5);
+        foreach ($values as $index => $cell) {
+            $pdf->MultiCell($columns[$index][1], $height, $cell, 1, $columns[$index][2], $fill, $index === count($values) - 1 ? 1 : 0, '', '', true, 0, false, true, $height, 'M');
+        }
+        $fill = !$fill;
+    }
+    if ($missing === []) {
+        $pdf->SetFont('dejavusans', '', 9);
+        $pdf->Cell(0, 8, 'All qualifying transactions have supporting evidence attached.', 1, 1, 'L');
+    }
+}
+
+function reports_pdf_append_evidence(\setasign\Fpdi\Tcpdf\Fpdi $pdf, array $rows, array $evidenceByRow): void {
     $tempDir = __DIR__.'/runtime/private_report_imports';
     if (!is_dir($tempDir) && !mkdir($tempDir, 0700, true) && !is_dir($tempDir)) {
         accounts_fail('REPORT_TEMPORARY_STORAGE_FAILED', 500);
     }
     @chmod($tempDir, 0700);
+    $firstEvidence = true;
     foreach ($rows as $row) {
-        $source = $row['source_type'] === 'BANK' ? 'GENERAL_EXPENSE' : 'PETTY_CASH_EXPENSE';
-        $evidence = $evidenceLoader === null
-            ? reports_evidence($db, $source, (int)$row['id'])
-            : (array)$evidenceLoader($row);
+        $evidence = $evidenceByRow[reports_pdf_evidence_key($row)];
         if ($evidence === []) {
-            $pdf->AddPage('P');
-            reports_pdf_evidence_heading($pdf, (string)$row['reference_no']);
-            $pdf->SetFont('dejavusans', 'B', 10);
-            $pdf->Cell(0, 8, 'No receipt attached', 0, 1);
-            if (trim((string)($row['no_receipt_reason'] ?? '')) !== '') {
-                $pdf->SetFont('dejavusans', '', 9);
-                $pdf->MultiCell(0, 6, 'Recorded reason: '.$row['no_receipt_reason'], 0, 'L');
-            }
             continue;
         }
         foreach ($evidence as $item) {
             $bytes = reports_evidence_bytes($item);
             $mime = strtolower((string)$item['mime_type']);
             $pdf->AddPage('P');
+            if ($firstEvidence) {
+                $pdf->SetFont('dejavusans', 'B', 11);
+                $pdf->SetTextColor(...REPORT_PDF_INK);
+                $pdf->Cell(0, 7, 'SECTION 3 - SUPPORTING EVIDENCE', 0, 1, 'L');
+                $firstEvidence = false;
+            }
             reports_pdf_evidence_heading($pdf, (string)$row['reference_no']);
             $pdf->SetFillColor(...REPORT_PDF_PANEL);
             $pdf->SetDrawColor(...REPORT_PDF_BORDER);
@@ -313,8 +407,8 @@ function reports_pdf_append_evidence(\setasign\Fpdi\Tcpdf\Fpdi $pdf, array $rows
     }
 }
 
-function reports_pdf_receivables(array $data): string {
-    $pdf = reports_pdf_document('Receivables Report', $data['filters']);
+function reports_pdf_receivables(array $data, ?array $company = null): string {
+    $pdf = reports_pdf_document('Receivables Report', $data['filters'], $company);
     $columns = [
         ['Client', 52, 'L'], ['Invoice', 32, 'L'], ['Invoice date', 23, 'C'], ['Due date', 23, 'C'],
         ['Original', 35, 'R'], ['Payments / credits', 35, 'R'], ['Outstanding', 35, 'R'],

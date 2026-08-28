@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__.'/estimate_common.php';
 require_once __DIR__.'/production_report_common.php';
+require_once __DIR__.'/company_regional_common.php';
 
 $user=billing_require_admin();
 production_require_method('GET');
@@ -78,7 +79,8 @@ try{
     $reference=billing_ref('ESTIMATE',$estimate['reference_no']);
     $estimateDate=(new DateTimeImmutable($estimate['estimate_date']))->format('d-m-Y');
     $validUntil=(new DateTimeImmutable($estimate['valid_until']))->format('d-m-Y');
-    $money=static fn($value):string=>'₦'.number_format((float)$value,2);
+    $currency=company_document_currency($estimate['currency_code_snapshot']??null);
+    $money=static fn($value):string=>company_money($value,$currency);
 
     $pdf->SetY($headerBottom+6);
     $pdf->SetTextColor(...$primary);

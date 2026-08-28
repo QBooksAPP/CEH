@@ -14,8 +14,10 @@ if ($login === '' || $password === '') qbook_json(['ok' => false, 'error' => 'LO
 
 $db = qbook_db();
 $stmt = $db->prepare(
-    "SELECT id, full_name, username, email, phone, role, password_hash, is_active
-     FROM qbook_users
+    "SELECT u.id,u.company_id,u.full_name,u.username,u.email,u.phone,u.role,u.password_hash,u.is_active,
+            r.time_zone,r.date_format,r.time_format,r.base_currency,c.company_code,c.display_name company_name
+     FROM qbook_users u JOIN qbook_company_regional_settings r ON r.company_id=u.company_id
+     JOIN qbook_companies c ON c.id=u.company_id AND c.is_active=1
      WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)
      LIMIT 1"
 );

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:timezone/data/latest.dart' as tz;
 
 import 'core/ceh_theme.dart';
+import 'core/ceh_date_formatters.dart';
 import 'core/session_store.dart';
 import 'core/view_mode.dart';
 import 'models/session.dart';
@@ -9,6 +11,7 @@ import 'screens/login_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  tz.initializeTimeZones();
   runApp(const CehApp());
 }
 
@@ -47,9 +50,11 @@ class _CehAppState extends State<CehApp> {
       _session = session;
       _loading = false;
     });
+    if (session != null) CehRegionalFormats.use(session.user.regionalSettings);
   }
 
   Future<void> _onLoggedIn(CehSession session) async {
+    CehRegionalFormats.use(session.user.regionalSettings);
     _viewMode.returnToAdmin();
     if (mounted) {
       setState(() => _session = session);

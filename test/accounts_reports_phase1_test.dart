@@ -50,7 +50,12 @@ void main() {
     expect(pdf, contains("random_bytes(16)"));
     expect(pdf, contains("finally"));
     expect(pdf, contains("No receipt attached"));
-    expect(pdf, contains("Recorded reason:"));
+    expect(pdf, contains('SECTION 1 - TRANSACTION REGISTER'));
+    expect(pdf, contains('SECTION 2 - MISSING EVIDENCE SUMMARY'));
+    expect(pdf, contains('SECTION 3 - SUPPORTING EVIDENCE'));
+    expect(pdf, contains('Transactions without supporting evidence:'));
+    expect(pdf, contains('Value without supporting evidence:'));
+    expect(pdf, contains("continue;"));
     expect(pdf, contains('Supporting Evidence - '));
     expect(pdf, contains('Evidence file'));
     expect(pdf, contains('SHA-256'));
@@ -61,17 +66,64 @@ void main() {
   test('report PDFs use accountant-facing monochrome presentation', () {
     final pdf = source('Server/report_pdf_common.php');
     final fullExpense = source('Server/expense_audit_pack.php');
-    expect(pdf, contains("return '₦'.number_format"));
+    expect(pdf, contains('company_money'));
+    expect(pdf, contains('qbook_company_regional_settings'));
     expect(pdf, contains('Transaction amount'));
     expect(pdf, contains('Transaction total'));
     expect(pdf, contains('Amount matching filter'));
     expect(pdf, contains('Total Outstanding'));
     expect(pdf, contains('Report period'));
     expect(pdf, contains('Concrete Equipment Hire Limited'));
+    expect(pdf, contains('company_legal_name'));
+    expect(pdf, contains('company_address'));
+    expect(pdf, contains('tax_identifier'));
+    expect(pdf, contains('REPORT_SETTINGS_INCOMPLETE'));
+    expect(pdf, contains('REPORT_PDF_ALT'));
     expect(pdf, isNot(contains('Powered by TCPDF')));
     expect(pdf, isNot(contains("['Header'")));
     expect(pdf, isNot(contains("['Matched'")));
     expect(fullExpense, contains('Full Expense Audit Pack'));
+  });
+
+  test('missing evidence is summarized and never gets a blank evidence page',
+      () {
+    final pdf = source('Server/report_pdf_common.php');
+    final emptyBranch = RegExp(
+            r"if \(\$evidence === \[\]\) \{\s*continue;\s*\}",
+            multiLine: true)
+        .hasMatch(pdf);
+    expect(emptyBranch, isTrue);
+    expect(pdf, contains("?: 'No receipt attached'"));
+    expect(pdf, contains('reports_pdf_collect_evidence'));
+    expect(pdf, contains('reports_pdf_append_missing_evidence_summary'));
+  });
+
+  test('audit evidence matrix supports zero one many mixed and all missing',
+      () {
+    final pdf = source('Server/report_pdf_common.php');
+    expect(pdf, contains(r"$missing = array_values(array_filter"));
+    expect(pdf, contains(r"count($missing)"));
+    expect(pdf, contains(r"array_sum(array_map"));
+    expect(pdf, contains("?: 'No receipt attached'"));
+    expect(pdf, contains(r"if ($evidence === [])"));
+    expect(pdf, contains('continue;'));
+    expect(pdf, contains(r"if ($firstEvidence)"));
+    expect(pdf, contains("['image/jpeg', 'image/png']"));
+    expect(pdf, contains(r"$mime !== 'application/pdf'"));
+    expect(pdf, contains(r"for ($page = 1; $page <= $pages; $page++)"));
+    expect(pdf, contains('original_filename'));
+    expect(pdf, contains('byte_size'));
+    expect(pdf, contains('sha256'));
+  });
+
+  test('report PDF dates use CEH presentation without changing API filters',
+      () {
+    final pdf = source('Server/report_pdf_common.php');
+    expect(pdf, contains("'DD-MM-YYYY'=>'d-m-Y'"));
+    expect(pdf, contains('DateTimeZone'));
+    final reports = source('Server/reports_common.php');
+    expect(reports, contains("'date_from'=>\$dateFrom"));
+    expect(reports, contains('accounts_date'));
   });
 
   test('report endpoints are authenticated Admin-only GET operations', () {

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/billing_common.php';
+require_once __DIR__ . '/company_regional_common.php';
 $user = billing_require_admin();
 production_require_method('POST');
 $input = production_input();
@@ -122,6 +123,7 @@ accounts_endpoint(function () use ($user, $input): array {
 
         $settingsStatement = $db->query('SELECT * FROM qbook_invoice_settings WHERE id=1 FOR UPDATE');
         $settings = $settingsStatement->fetch();
+        $regional = company_regional_settings($db, $user, true);
         foreach (['company_legal_name','company_address','tax_identifier'] as $field) {
             if (trim((string)($settings[$field] ?? '')) === '') {
                 accounts_fail('CLIENT_PAYMENT_SETTINGS_INCOMPLETE', 409);
@@ -193,8 +195,8 @@ accounts_endpoint(function () use ($user, $input): array {
         }
         // Retained for compatibility only. Allocation and journal lines are authoritative.
         $legacyDestination = $arCredit > 0 ? 'TRADE_RECEIVABLES' : 'CUSTOMER_ADVANCES';
-        $db->prepare("UPDATE qbook_customer_receipts SET destination=?,status='POSTED',journal_id=?,posted_by=?,posted_at=UTC_TIMESTAMP(),company_legal_name_snapshot=?,company_address_snapshot=?,tax_identifier_snapshot=?,payment_bank_details_snapshot=?,received_into_snapshot=?,pdf_template_version='CLIENT_PAYMENT_V1' WHERE id=?")
-            ->execute([$legacyDestination, $journal['id'], $user['id'], trim((string)$settings['company_legal_name']), trim((string)$settings['company_address']), trim((string)$settings['tax_identifier']), trim((string)($settings['payment_bank_details'] ?? '')) ?: null, trim((string)$bankRow['name']), $id]);
+        $db->prepare("UPDATE qbook_customer_receipts SET destination=?,status='POSTED',journal_id=?,posted_by=?,posted_at=UTC_TIMESTAMP(),company_legal_name_snapshot=?,company_address_snapshot=?,tax_identifier_snapshot=?,payment_bank_details_snapshot=?,received_into_snapshot=?,currency_code_snapshot=?,pdf_template_version='CLIENT_PAYMENT_V1' WHERE id=?")
+            ->execute([$legacyDestination, $journal['id'], $user['id'], trim((string)$settings['company_legal_name']), trim((string)$settings['company_address']), trim((string)$settings['tax_identifier']), trim((string)($settings['payment_bank_details'] ?? '')) ?: null, trim((string)$bankRow['name']), $regional['base_currency'], $id]);
         accounts_audit($db, $user, 'CUSTOMER_RECEIPT_POSTED', 'CUSTOMER_RECEIPT', $id, [
             'journal_id' => $journal['id'],
             'cash_allocated' => accounts_minor_decimal($cashAllocated),

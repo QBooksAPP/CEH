@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
+import '../core/ceh_date_formatters.dart';
 import '../core/internal_navigation.dart';
 import '../core/view_mode.dart';
 import '../core/calibration_math.dart';
@@ -139,9 +140,7 @@ class _CalibrationFieldSheetScreenState
     super.dispose();
   }
 
-  String get dateText => '${_date.day.toString().padLeft(2, '0')}/'
-      '${_date.month.toString().padLeft(2, '0')}/'
-      '${_date.year}';
+  String get dateText => displayCehDate(canonicalCehDate(_date));
 
   double n(TextEditingController c) => double.tryParse(c.text.trim()) ?? 0;
 

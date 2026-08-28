@@ -1091,8 +1091,11 @@ class _AccountsPettyCashScreenState extends State<AccountsPettyCashScreen> {
                 '${expense['reclassification_journal_reference']}'),
             AccountsMetricLine('Reclassified by',
                 '${expense['reclassified_by_name'] ?? 'Admin'}'),
-            AccountsMetricLine('Reclassification date',
-                '${expense['reclassified_at'] ?? 'Not recorded'}'),
+            AccountsMetricLine(
+                'Reclassification date',
+                expense['reclassified_at'] == null
+                    ? 'Not recorded'
+                    : displayCehDateTime('${expense['reclassified_at']}')),
             AccountsMetricLine('Reclassification reason',
                 '${expense['reclassification_reason'] ?? 'Not recorded'}'),
           ],
@@ -1100,7 +1103,10 @@ class _AccountsPettyCashScreenState extends State<AccountsPettyCashScreen> {
             AccountsMetricLine(
                 'Voided by', '${expense['voided_by_name'] ?? 'Admin'}'),
             AccountsMetricLine(
-                'Void date', '${expense['voided_at'] ?? 'Not recorded'}'),
+                'Void date',
+                expense['voided_at'] == null
+                    ? 'Not recorded'
+                    : displayCehDateTime('${expense['voided_at']}')),
             AccountsMetricLine(
                 'Void reason', '${expense['void_reason'] ?? 'Not recorded'}'),
           ],
@@ -1486,7 +1492,7 @@ class _AccountsFundPettyCashScreenState
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true),
                     inputFormatters: const [NgnAmountInputFormatter()],
-                    decoration: const InputDecoration(labelText: 'Amount (₦)')),
+                    decoration: const InputDecoration(labelText: 'Amount')),
                 const SizedBox(height: 12),
                 AccountsDatePickerField(
                     initialCanonicalDate: _date,
@@ -1619,8 +1625,7 @@ class _AccountsPettyExpenseScreenState
     super.initState();
     final expense = widget.expense;
     if (expense != null) {
-      _amount.text = formatNgn(double.tryParse('${expense['amount']}') ?? 0)
-          .replaceFirst('₦', '');
+      _amount.text = completeNgnInput('${expense['amount']}');
       _supplier.text = '${expense['supplier_paid_to'] ?? ''}';
       _supplierId = (expense['supplier_id'] as num?)?.toInt();
       _description.text = '${expense['description'] ?? ''}';
@@ -1804,7 +1809,7 @@ class _AccountsPettyExpenseScreenState
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true),
                     inputFormatters: const [NgnAmountInputFormatter()],
-                    decoration: const InputDecoration(labelText: 'Total (₦)'),
+                    decoration: const InputDecoration(labelText: 'Total'),
                     onChanged: (_) => _refreshPettyHeaderTotal()),
                 Row(children: [
                   Expanded(
@@ -2216,8 +2221,8 @@ class _AccountsPettyExpenseScreenState
                         keyboardType: const TextInputType.numberWithOptions(
                             decimal: true),
                         inputFormatters: const [NgnAmountInputFormatter()],
-                        decoration: const InputDecoration(
-                            labelText: 'Line amount (₦)')),
+                        decoration:
+                            const InputDecoration(labelText: 'Line amount')),
                     const SizedBox(height: 10),
                     TextField(
                         controller: quantity,

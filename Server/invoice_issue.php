@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/billing_common.php';
+require_once __DIR__ . '/company_regional_common.php';
 $user = billing_require_admin();
 production_require_method('POST');
 $input = production_input();
@@ -21,6 +22,7 @@ accounts_endpoint(function () use ($user, $input): array {
         // the exact settings validated here are the values snapshotted below.
         $settingsStatement = $db->query('SELECT * FROM qbook_invoice_settings WHERE id=1 FOR UPDATE');
         $settings = $settingsStatement->fetch();
+        $regional = company_regional_settings($db, $user, true);
         $snapshotFields = [
             'company_legal_name',
             'company_address',
@@ -111,7 +113,7 @@ accounts_endpoint(function () use ($user, $input): array {
 
         $issue = $db->prepare(
             "UPDATE qbook_invoices SET status='ISSUED',journal_id=?,issued_at=UTC_TIMESTAMP(),issued_by=?,"
-            . 'company_legal_name_snapshot=?,company_address_snapshot=?,tax_identifier_snapshot=?,payment_bank_details_snapshot=? '
+            . 'company_legal_name_snapshot=?,company_address_snapshot=?,tax_identifier_snapshot=?,payment_bank_details_snapshot=?,currency_code_snapshot=? '
             . "WHERE id=? AND status='DRAFT'"
         );
         $issue->execute([
@@ -121,6 +123,7 @@ accounts_endpoint(function () use ($user, $input): array {
             trim((string)$settings['company_address']),
             trim((string)$settings['tax_identifier']),
             trim((string)$settings['payment_bank_details']),
+            $regional['base_currency'],
             $id,
         ]);
         if ($issue->rowCount() !== 1) accounts_fail('INVOICE_ISSUE_CONFLICT', 409);

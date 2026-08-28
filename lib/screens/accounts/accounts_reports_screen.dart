@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../core/api_client.dart';
+import '../../core/accounts_formatters.dart';
 import '../../models/session.dart';
 import '../../widgets/accounts_widgets.dart';
 
@@ -117,8 +118,8 @@ class AccountsReportDetailScreen extends StatefulWidget {
 
 class _AccountsReportDetailScreenState
     extends State<AccountsReportDetailScreen> {
-  final _from = TextEditingController();
-  final _to = TextEditingController();
+  String _fromDate = '';
+  String _toDate = '';
   final _reference = TextEditingController();
   final _paidTo = TextEditingController();
   final _custodian = TextEditingController();
@@ -141,10 +142,10 @@ class _AccountsReportDetailScreenState
     }
 
     if (widget.kind == ReportKind.receivables) {
-      add('as_of', _to.text);
+      add('as_of', _toDate);
     } else {
-      add('date_from', _from.text);
-      add('date_to', _to.text);
+      add('date_from', _fromDate);
+      add('date_to', _toDate);
       add('reference', _reference.text);
       add('paid_to', _paidTo.text);
       add('custodian', _custodian.text);
@@ -208,22 +209,20 @@ class _AccountsReportDetailScreenState
         Wrap(spacing: 12, runSpacing: 12, children: [
           SizedBox(
               width: 190,
-              child: TextField(
-                  controller: _from,
-                  decoration: InputDecoration(
-                      labelText: widget.kind == ReportKind.receivables
-                          ? 'Invoice date from (optional)'
-                          : 'Date from',
-                      hintText: 'YYYY-MM-DD'))),
+              child: _ReportDatePickerField(
+                  label: widget.kind == ReportKind.receivables
+                      ? 'Invoice date from (optional)'
+                      : 'Date from',
+                  value: _fromDate,
+                  onChanged: (value) => setState(() => _fromDate = value))),
           SizedBox(
               width: 190,
-              child: TextField(
-                  controller: _to,
-                  decoration: InputDecoration(
-                      labelText: widget.kind == ReportKind.receivables
-                          ? 'As of date'
-                          : 'Date to',
-                      hintText: 'YYYY-MM-DD'))),
+              child: _ReportDatePickerField(
+                  label: widget.kind == ReportKind.receivables
+                      ? 'As of date'
+                      : 'Date to',
+                  value: _toDate,
+                  onChanged: (value) => setState(() => _toDate = value))),
           if (widget.kind != ReportKind.receivables) ...[
             SizedBox(
                 width: 190,
@@ -274,6 +273,7 @@ class _AccountsReportDetailScreenState
             SizedBox(
                 width: 190,
                 child: DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: _status,
                     decoration: const InputDecoration(labelText: 'Status'),
                     items: const [
@@ -292,6 +292,7 @@ class _AccountsReportDetailScreenState
               SizedBox(
                   width: 180,
                   child: DropdownButtonFormField<String>(
+                      isExpanded: true,
                       initialValue: _source,
                       decoration: const InputDecoration(labelText: 'Source'),
                       items: const ['ALL', 'BANK', 'PETTY_CASH']
@@ -307,6 +308,7 @@ class _AccountsReportDetailScreenState
             SizedBox(
                 width: 190,
                 child: DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: _evidence,
                     decoration:
                         const InputDecoration(labelText: 'Receipt / evidence'),
@@ -372,7 +374,7 @@ class _ReportResults extends StatelessWidget {
                         '${r['reference']} • ${r['client_name_snapshot']}',
                         style: const TextStyle(fontWeight: FontWeight.w800)),
                     subtitle: Text(
-                        'Invoice ${r['invoice_date']} • Due ${r['due_date'] ?? 'Not set'} • ${r['days_overdue']} days overdue • ${r['bucket']}'),
+                        'Invoice ${displayAccountsDate('${r['invoice_date']}')} • Due ${r['due_date'] == null ? 'Not set' : displayAccountsDate('${r['due_date']}')} • ${r['days_overdue']} days overdue • ${r['bucket']}'),
                     trailing: Text(
                         formatNaira(
                             double.tryParse('${r['outstanding']}') ?? 0),
@@ -398,7 +400,7 @@ class _ReportResults extends StatelessWidget {
                   title: Text('${r['reference_no']} • ${r['supplier_paid_to']}',
                       style: const TextStyle(fontWeight: FontWeight.w800)),
                   subtitle: Text(
-                      '${r['expense_date']} • ${r['source_type']} • ${r['status']}'),
+                      '${displayAccountsDate('${r['expense_date']}')} • ${r['source_type']} • ${r['status']}'),
                   trailing: Text(
                       formatNaira(
                           double.tryParse('${r['matched_amount']}') ?? 0),
@@ -422,4 +424,42 @@ class _ReportResults extends StatelessWidget {
         }),
     ]);
   }
+}
+
+class _ReportDatePickerField extends StatelessWidget {
+  const _ReportDatePickerField(
+      {required this.label, required this.value, required this.onChanged});
+
+  final String label;
+  final String value;
+  final ValueChanged<String> onChanged;
+
+  Future<void> _pick(BuildContext context) async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: parseCanonicalAccountsDate(value) ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null) onChanged(canonicalAccountsDate(picked));
+  }
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+        key: ValueKey('report-date-$label'),
+        onTap: () => _pick(context),
+        child: InputDecorator(
+          decoration: InputDecoration(
+            labelText: label,
+            suffixIcon: value.isEmpty
+                ? const Icon(Icons.calendar_today_outlined)
+                : IconButton(
+                    tooltip: 'Clear date',
+                    onPressed: () => onChanged(''),
+                    icon: const Icon(Icons.clear)),
+          ),
+          child:
+              Text(value.isEmpty ? 'Select date' : displayAccountsDate(value)),
+        ),
+      );
 }

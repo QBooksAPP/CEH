@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
+import '../core/ceh_date_formatters.dart';
 import '../core/internal_navigation.dart';
 import '../models/session.dart';
 import '../models/calibration_record.dart';
@@ -272,7 +273,7 @@ class _CalibrationReviewScreenState extends State<CalibrationReviewScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Date: ${c['calibration_date']}'),
+        Text('Date: ${displayCehDate('${c['calibration_date']}')}'),
         Text('Operator: ${c['entered_by_name']}'),
         if ((c['calibration_notes'] ?? '').toString().isNotEmpty)
           Text('Site / notes: ${c['calibration_notes']}'),

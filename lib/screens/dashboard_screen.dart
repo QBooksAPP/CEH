@@ -3,12 +3,15 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/ceh_theme.dart';
+import '../core/api_client.dart';
+import '../core/ceh_date_formatters.dart';
 import '../core/update_service.dart';
 import '../core/view_mode.dart';
 import '../models/session.dart';
 import 'accounts/accounts_home_screen.dart';
 import 'accounts/accounts_live_screens.dart';
 import 'concrete_operations_screen.dart';
+import 'company_regional_settings_screen.dart';
 import 'module_placeholder_screen.dart';
 import 'user_management_screen.dart';
 
@@ -40,7 +43,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
+    _refreshRegionalSettings();
     if (widget.checkForUpdates) _checkForUpdate(silent: true);
+  }
+
+  Future<void> _refreshRegionalSettings() async {
+    try {
+      CehRegionalFormats.use(
+          await const CehApiClient().companyRegionalSettings(session));
+    } catch (_) {
+      // The authenticated session's CEH-compatible settings remain usable.
+    }
   }
 
   Future<void> _checkForUpdate({bool silent = false}) async {
@@ -138,6 +151,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
           't': 'Administration',
           's': 'Users, history, approvals and audit trail',
           'i': Icons.admin_panel_settings_outlined,
+          'e': true,
+        },
+      if (admin)
+        {
+          't': 'Company Settings',
+          's': 'Regional formats, time zone and base currency',
+          'i': Icons.public_outlined,
           'e': true,
         },
     ];
@@ -290,6 +310,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       context,
                       MaterialPageRoute(
                         builder: (_) => AccountsHomeScreen(session: session),
+                      ),
+                    );
+                  } else if (m['t'] == 'Company Settings') {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            CompanyRegionalSettingsScreen(session: session),
                       ),
                     );
                   } else if (m['t'] == 'Petty Cash') {

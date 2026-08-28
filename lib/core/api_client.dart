@@ -13,6 +13,7 @@ import '../models/mixer_context.dart';
 import '../models/production_settings.dart';
 import '../models/production_session.dart';
 import '../models/session.dart';
+import '../models/company_regional_settings.dart';
 
 class ApiException implements Exception {
   const ApiException(this.code, {this.statusCode, this.details = const {}});
@@ -1462,6 +1463,43 @@ class CehApiClient {
       'FINANCIAL_EVIDENCE_UPLOAD_FAILED',
     );
     return ((data['evidence'] as Map)['id'] as num).toInt();
+  }
+
+  Future<CompanyRegionalSettings> companyRegionalSettings(
+      CehSession session) async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/company_regional_settings.php'),
+            headers: authHeaders(session))
+        .timeout(const Duration(seconds: 20));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'COMPANY_SETTINGS_FAILED');
+    return CompanyRegionalSettings.fromJson(
+        Map<String, dynamic>.from(data['regional_settings'] as Map));
+  }
+
+  Future<CompanyRegionalSettings> updateCompanyRegionalSettings(
+    CehSession session, {
+    required String timeZone,
+    required String dateFormat,
+    required String timeFormat,
+    required String baseCurrency,
+    String? changeReason,
+  }) async {
+    final data = await _postJson(
+      session,
+      'company_regional_settings_update.php',
+      {
+        'time_zone': timeZone,
+        'date_format': dateFormat,
+        'time_format': timeFormat,
+        'base_currency': baseCurrency,
+        if (changeReason?.trim().isNotEmpty == true)
+          'change_reason': changeReason!.trim(),
+      },
+      'COMPANY_SETTINGS_UPDATE_FAILED',
+    );
+    return CompanyRegionalSettings.fromJson(
+        Map<String, dynamic>.from(data['regional_settings'] as Map));
   }
 
   Future<Map<String, dynamic>> _postJson(

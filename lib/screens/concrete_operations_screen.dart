@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
+import '../core/ceh_date_formatters.dart';
 import '../core/internal_navigation.dart';
 import '../core/view_mode.dart';
 import '../models/mixer_context.dart';
@@ -280,7 +281,9 @@ class _MixerOperationsScreenState extends State<MixerOperationsScreen> {
                 ListTile(
                     title: Text('${item.clientName} • ${item.projectName}'),
                     subtitle: Text(item.isActive ? 'ACTIVE' : 'INACTIVE'),
-                    trailing: Text(item.updatedAt ?? ''))
+                    trailing: Text(item.updatedAt == null
+                        ? ''
+                        : displayCehDateTime(item.updatedAt!)))
             ]),
           _tile(
               'Client / Project',

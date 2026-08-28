@@ -141,7 +141,9 @@ class BankingPrototypeScreen extends StatelessWidget {
               ),
               subtitle: Row(
                 children: [
-                  Expanded(child: Text('${row.date} • Ref ${row.reference}')),
+                  Expanded(
+                      child: Text(
+                          '${displayAccountsDate(row.date)} • Ref ${row.reference}')),
                   AccountsStatusChip(row.status),
                 ],
               ),
@@ -339,7 +341,7 @@ class _FundPettyCashPrototypeScreenState
           const TextField(
             keyboardType: TextInputType.numberWithOptions(decimal: true),
             inputFormatters: [NgnAmountInputFormatter()],
-            decoration: InputDecoration(labelText: 'Amount (₦)'),
+            decoration: InputDecoration(labelText: 'Amount'),
           ),
           const SizedBox(height: 12),
           AccountsDatePickerField(onChanged: (_) {}),
@@ -421,7 +423,7 @@ class _AddPettyCashExpensePrototypeScreenState
           const TextField(
               keyboardType: TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [NgnAmountInputFormatter()],
-              decoration: InputDecoration(labelText: 'Amount (₦)')),
+              decoration: InputDecoration(labelText: 'Amount')),
           const SizedBox(height: 12),
           const TextField(decoration: InputDecoration(labelText: 'Category')),
           const SizedBox(height: 12),
@@ -512,7 +514,8 @@ class CustodianTransactionsPrototypeScreen extends StatelessWidget {
               child: ListTile(
                 title: Text(entry.description,
                     style: const TextStyle(fontWeight: FontWeight.w800)),
-                subtitle: Text('${entry.date} • ${entry.type}'),
+                subtitle:
+                    Text('${displayAccountsDate(entry.date)} • ${entry.type}'),
                 trailing: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.end,

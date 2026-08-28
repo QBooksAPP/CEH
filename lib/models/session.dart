@@ -1,3 +1,5 @@
+import 'company_regional_settings.dart';
+
 class CehUser {
   const CehUser({
     required this.id,
@@ -7,6 +9,8 @@ class CehUser {
     required this.isActive,
     this.username,
     this.phone,
+    this.companyId = 1,
+    this.regionalSettings = const CompanyRegionalSettings(),
   });
 
   final int id;
@@ -16,6 +20,8 @@ class CehUser {
   final String? phone;
   final String role;
   final bool isActive;
+  final int companyId;
+  final CompanyRegionalSettings regionalSettings;
 
   bool get isAdmin => role.toUpperCase() == 'ADMIN';
   bool get isSupervisor => role.toUpperCase() == 'SUPERVISOR';
@@ -32,6 +38,12 @@ class CehUser {
       isActive: json['is_active'] == true ||
           json['is_active'] == 1 ||
           json['is_active']?.toString() == '1',
+      companyId: (json['company_id'] as num?)?.toInt() ?? 1,
+      regionalSettings: CompanyRegionalSettings.fromJson(
+        json['regional_settings'] is Map
+            ? Map<String, dynamic>.from(json['regional_settings'] as Map)
+            : null,
+      ),
     );
   }
 
@@ -44,6 +56,8 @@ class CehUser {
       'phone': phone,
       'role': role,
       'is_active': isActive,
+      'company_id': companyId,
+      'regional_settings': regionalSettings.toJson(),
     };
   }
 }

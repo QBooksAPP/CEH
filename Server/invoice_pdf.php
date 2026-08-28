@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/billing_common.php';
 require_once __DIR__ . '/production_report_common.php';
+require_once __DIR__ . '/company_regional_common.php';
 
 $user = billing_require_admin();
 production_require_method('GET');
@@ -87,7 +88,8 @@ final class CehInvoicePdf extends TCPDF {
 }
 
 $reference = billing_ref('INVOICE', $invoice['reference_no']);
-$money = static fn(mixed $value): string => '₦' . number_format((float)$value, 2);
+$currency = company_document_currency($invoice['currency_code_snapshot'] ?? null);
+$money = static fn(mixed $value): string => company_money($value, $currency);
 $date = static fn(string $value): string => (new DateTimeImmutable($value))->format('d-m-Y');
 $unitFor = static function (array $line): string {
     $unit = trim((string)($line['unit_name'] ?? ''));

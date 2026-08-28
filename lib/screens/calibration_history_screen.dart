@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
+import '../core/ceh_date_formatters.dart';
 import '../core/internal_navigation.dart';
 import '../models/calibration_record.dart';
 import '../models/session.dart';
@@ -80,7 +81,7 @@ class _CalibrationHistoryScreenState extends State<CalibrationHistoryScreen> {
                           'Rev ${item['revision_no']} — ${item['status']} — Current',
                         ),
                         subtitle: Text(
-                          'Reviewed: ${item['reviewed_at'] ?? 'Not yet reviewed'}\n'
+                          'Reviewed: ${item['reviewed_at'] == null ? 'Not yet reviewed' : displayCehDateTime('${item['reviewed_at']}')}\n'
                           'Current values are the operational record.',
                         ),
                         isThreeLine: true,
@@ -104,7 +105,7 @@ class _CalibrationHistoryScreenState extends State<CalibrationHistoryScreen> {
                         child: ListTile(
                           title: Text('${raw['event_type']}'),
                           subtitle: Text(
-                            '${raw['created_at']} • ${raw['user_name']}\n${_pretty(raw['details'])}',
+                            '${displayCehDateTime('${raw['created_at']}')} • ${raw['user_name']}\n${_pretty(raw['details'])}',
                           ),
                           isThreeLine: true,
                         ),
@@ -130,7 +131,7 @@ class _SnapshotCard extends StatelessWidget {
           'Rev ${snapshot['revision_no']} — ${snapshot['status']} — Superseded',
         ),
         subtitle: Text(
-          '${snapshot['captured_at']} • ${snapshot['captured_by_name']}\n'
+          '${displayCehDateTime('${snapshot['captured_at']}')} • ${snapshot['captured_by_name']}\n'
           '${snapshot['reason'] ?? 'No reason recorded'}',
         ),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),

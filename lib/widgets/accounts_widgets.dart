@@ -61,7 +61,10 @@ class AccountsSummaryCard extends StatelessWidget {
         FittedBox(
           fit: BoxFit.scaleDown,
           alignment: Alignment.centerLeft,
-          child: Text(showValue ? formatNaira(value) : '₦••••••',
+          child: Text(
+              showValue
+                  ? formatNaira(value)
+                  : '${companyCurrencySymbol()}••••••',
               style: TextStyle(
                   color: emphasized ? Colors.white : CehTheme.text,
                   fontSize: compact ? 19 : 22,

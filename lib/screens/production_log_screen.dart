@@ -10,6 +10,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../core/api_client.dart';
 import '../core/ceh_theme.dart';
+import '../core/ceh_date_formatters.dart';
 import '../core/internal_navigation.dart';
 import '../core/view_mode.dart';
 import '../models/client.dart';
@@ -152,7 +153,7 @@ class _ProductionLogScreenState extends State<ProductionLogScreen> {
                                       style: const TextStyle(
                                           fontWeight: FontWeight.w900)),
                                   subtitle: Text(
-                                      '${item.productionDate} • ${item.projectSite}\n${item.status}${isUiAdmin(context, widget.session) ? ' • ${item.operator['name']}' : ''}'),
+                                      '${displayCehDate(item.productionDate)} • ${item.projectSite}\n${item.status}${isUiAdmin(context, widget.session) ? ' • ${item.operator['name']}' : ''}'),
                                   isThreeLine: true,
                                   trailing: const Icon(Icons.chevron_right),
                                   onTap: () async {
@@ -592,7 +593,7 @@ class _ProductionSessionScreenState extends State<ProductionSessionScreen> {
             Text('${r.clientName} • ${r.projectSite}',
                 style:
                     const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
-            Text('${r.productionDate} • ${r.status}'),
+            Text('${displayCehDate(r.productionDate)} • ${r.status}'),
             Text('Operator: ${r.operator['name']}'),
             if (r.notes.isNotEmpty) Text('Notes: ${r.notes}')
           ])));
@@ -689,7 +690,7 @@ class _ProductionSignoffScreenState extends State<ProductionSignoffScreen> {
         Text('${r.clientName} • ${r.projectSite}',
             textAlign: TextAlign.center,
             style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
-        Text('${r.productionDate} • Mixer ${r.mixer['code']}',
+        Text('${displayCehDate(r.productionDate)} • Mixer ${r.mixer['code']}',
             textAlign: TextAlign.center),
         Text('Operator: ${r.operator['name']}', textAlign: TextAlign.center),
         const SizedBox(height: 14),

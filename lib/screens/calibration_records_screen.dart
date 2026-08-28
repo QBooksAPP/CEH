@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
+import '../core/ceh_date_formatters.dart';
 import '../core/internal_navigation.dart';
 import '../core/view_mode.dart';
 import '../models/session.dart';
@@ -277,7 +278,7 @@ class _CalibrationRecordsScreenState extends State<CalibrationRecordsScreen> {
                                             Text(
                                                 'Operator: ${record.enteredByName}'),
                                           Text(
-                                            'Calibration date: ${record.calibrationDate}',
+                                            'Calibration date: ${displayCehDate(record.calibrationDate)}',
                                           ),
                                           if (record.notes.isNotEmpty)
                                             Text('Notes: ${record.notes}'),
@@ -291,7 +292,7 @@ class _CalibrationRecordsScreenState extends State<CalibrationRecordsScreen> {
                                               ),
                                             ),
                                             Text(
-                                              'Rejected: ${record.reviewedAt ?? 'Date unavailable'}',
+                                              'Rejected: ${record.reviewedAt == null ? 'Date unavailable' : displayCehDateTime(record.reviewedAt!)}',
                                             ),
                                           ],
                                           if (_admin &&

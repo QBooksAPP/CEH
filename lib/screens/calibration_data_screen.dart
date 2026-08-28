@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
+import '../core/ceh_date_formatters.dart';
 import '../core/internal_navigation.dart';
 import '../models/session.dart';
 
@@ -93,8 +94,7 @@ class _CalibrationDataScreenState extends State<CalibrationDataScreen> {
           ],
         ),
         subtitle: Text(
-          '${c['calibration_date']}'
-          '${(c['calibration_notes'] ?? '').toString().isEmpty ? '' : ' • ${c['calibration_notes']}'}',
+          "${displayCehDate(c['calibration_date'].toString())}${(c['calibration_notes'] ?? '').toString().isEmpty ? '' : ' • ${c['calibration_notes']}'}",
         ),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         children: [
@@ -142,7 +142,8 @@ class _CalibrationDataScreenState extends State<CalibrationDataScreen> {
           if ((c['reviewed_at'] ?? '').toString().isNotEmpty)
             Align(
               alignment: Alignment.centerLeft,
-              child: Text('Approved: ${c['reviewed_at']}'),
+              child: Text(
+                  'Approved: ${displayCehDateTime('${c['reviewed_at']}')}'),
             ),
         ],
       ),

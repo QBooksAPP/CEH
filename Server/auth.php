@@ -25,15 +25,24 @@ function qbook_require_user(): array {
     $s = qbook_db()->prepare(
         "SELECT
             u.id,
+            u.company_id,
             u.full_name,
             u.username,
             u.email,
             u.phone,
             u.role,
-            u.is_active
+            u.is_active,
+            r.time_zone,
+            r.date_format,
+            r.time_format,
+            r.base_currency
+            ,c.company_code,c.display_name company_name
          FROM qbook_auth_tokens t
          JOIN qbook_users u
             ON u.id = t.user_id
+         JOIN qbook_company_regional_settings r
+            ON r.company_id = u.company_id
+         JOIN qbook_companies c ON c.id=u.company_id AND c.is_active=1
          WHERE t.token_hash = ?
            AND t.revoked_at IS NULL
            AND t.expires_at > UTC_TIMESTAMP()

@@ -108,7 +108,7 @@ String displayProductionTime(String? value) {
   final local = productionUtcToLocal(value);
   if (local == null) return value ?? '';
   String two(int number) => number.toString().padLeft(2, '0');
-  return '${two(local.day)}/${two(local.month)}/${local.year} '
+  return '${two(local.day)}-${two(local.month)}-${local.year} '
       '${two(local.hour)}:${two(local.minute)}';
 }
 

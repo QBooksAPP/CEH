@@ -94,7 +94,7 @@ class BillingPrototypeScreen extends StatelessWidget {
                   AccountsStatusChip(invoice.status),
                 ]),
                 subtitle: Text(
-                    '${invoice.client}\n${invoice.project} • ${invoice.date}'),
+                    '${invoice.client}\n${invoice.project} • ${displayAccountsDate(invoice.date)}'),
                 isThreeLine: true,
                 trailing: Text(formatNaira(invoice.amount),
                     style: const TextStyle(fontWeight: FontWeight.w900)),
@@ -135,7 +135,8 @@ class ExpensesPrototypeScreen extends StatelessWidget {
                   Text(formatNaira(expense.amount),
                       style: const TextStyle(fontWeight: FontWeight.w900)),
                 ]),
-                subtitle: Text('${expense.category} • ${expense.date}'),
+                subtitle: Text(
+                    '${expense.category} • ${displayAccountsDate(expense.date)}'),
                 children: [
                   AccountsMetricLine('Project', expense.project),
                   AccountsMetricLine('Equipment', expense.equipment),
@@ -210,7 +211,7 @@ class _AddExpensePrototypeScreenState extends State<AddExpensePrototypeScreen> {
               const TextField(
                   keyboardType: TextInputType.numberWithOptions(decimal: true),
                   inputFormatters: [NgnAmountInputFormatter()],
-                  decoration: InputDecoration(labelText: 'Amount (₦)')),
+                  decoration: InputDecoration(labelText: 'Amount')),
               const SizedBox(height: 12),
               const TextField(
                   maxLines: 3,

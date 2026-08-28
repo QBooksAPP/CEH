@@ -1,33 +1,47 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-String canonicalAccountsDate(DateTime date) =>
-    '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+import 'ceh_date_formatters.dart';
+
+export 'ceh_date_formatters.dart';
+
+String canonicalAccountsDate(DateTime date) => canonicalCehDate(date);
 
 String displayAccountsDate(String canonical) {
-  final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(canonical);
-  if (match == null) return canonical;
-  return '${match.group(3)}-${match.group(2)}-${match.group(1)}';
+  return displayCehDate(canonical);
 }
 
 String displayAccountsTimestampDate(String timestamp) {
-  final match =
-      RegExp(r'^(\d{4}-\d{2}-\d{2})(?:[ T].*)?$').firstMatch(timestamp);
-  return displayAccountsDate(match?.group(1) ?? timestamp);
+  return displayCehDate(timestamp);
 }
 
 DateTime? parseCanonicalAccountsDate(String value) {
-  final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(value);
-  if (match == null) return null;
-  final date = DateTime(
-    int.parse(match.group(1)!),
-    int.parse(match.group(2)!),
-    int.parse(match.group(3)!),
-  );
-  return canonicalAccountsDate(date) == value ? date : null;
+  return parseCanonicalCehDate(value);
 }
 
 String formatNgn(num value) {
+  return formatCurrency(value);
+}
+
+const _currencySymbols = <String, String>{
+  'NGN': '₦',
+  'GBP': '£',
+  'USD': r'$',
+  'EUR': '€',
+  'AED': 'AED',
+};
+
+String companyCurrencySymbol({String? currencyCode}) {
+  final code = (currencyCode ?? CehRegionalFormats.current.baseCurrency)
+      .trim()
+      .toUpperCase();
+  return _currencySymbols[code] ?? code;
+}
+
+String formatCurrency(num value, {String? currencyCode}) {
+  final code = (currencyCode ?? CehRegionalFormats.current.baseCurrency)
+      .trim()
+      .toUpperCase();
   final negative = value < 0;
   final fixed = value.abs().toStringAsFixed(2);
   final parts = fixed.split('.');
@@ -37,7 +51,8 @@ String formatNgn(num value) {
     if (i > 0 && (digits.length - i) % 3 == 0) grouped.write(',');
     grouped.write(digits[i]);
   }
-  return '${negative ? '−' : ''}₦$grouped.${parts.last}';
+  final symbol = companyCurrencySymbol(currencyCode: code);
+  return '${negative ? '−' : ''}$symbol${symbol.length > 1 ? ' ' : ''}$grouped.${parts.last}';
 }
 
 /// Formats database-backed Billing tax rates for people, without changing the
