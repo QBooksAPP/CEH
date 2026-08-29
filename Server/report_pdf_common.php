@@ -90,6 +90,7 @@ function reports_pdf_filter_rows(string $title, array $filters): array {
         $rows[] = ['As at', reports_pdf_date($filters['as_of'] ?? '')];
     }
     $labels = [
+        'qa_notice' => 'Data classification',
         'source' => 'Expense source', 'status' => 'Status', 'reference' => 'CEH reference',
         'paid_to' => 'Supplier / paid to', 'custodian' => 'Custodian', 'category' => 'Category',
         'client' => 'Client', 'project' => 'Project', 'equipment' => 'Equipment',
@@ -113,6 +114,36 @@ function reports_pdf_document(string $title, array $filters, ?array $company = n
     $GLOBALS['ceh_report_currency']=(string)($company['base_currency']??'NGN');
     $GLOBALS['ceh_report_date_format']=(string)($company['date_format']??'DD-MM-YYYY');
     $pdf = new class('L', 'mm', 'A4', true, 'UTF-8', false) extends \setasign\Fpdi\Tcpdf\Fpdi {
+        private bool $cehLogoEmbedded = false;
+
+        public function disableTcpdfAttribution(): void {
+            $this->tcpdflink = false;
+        }
+
+        public function embedRequiredCehLogo(): void {
+            $configured = __DIR__.DIRECTORY_SEPARATOR.'assets'.DIRECTORY_SEPARATOR.'ceh_logo.png';
+            $path = realpath($configured);
+            if ($path === false || !is_file($path) || !is_readable($path)) {
+                throw new RuntimeException('REPORT_LOGO_UNREADABLE');
+            }
+            $info = @getimagesize($path);
+            if (!is_array($info) || ($info['mime'] ?? '') !== 'image/png' || $info[0] <= 0 || $info[1] <= 0) {
+                throw new RuntimeException('REPORT_LOGO_INVALID');
+            }
+            $before = count($this->images);
+            $this->Image($path, 12, 8, 50, 0, 'PNG');
+            if (count($this->images) <= $before) {
+                throw new RuntimeException('REPORT_LOGO_EMBED_FAILED');
+            }
+            $this->cehLogoEmbedded = true;
+        }
+
+        public function assertCehLogoEmbedded(): void {
+            if (!$this->cehLogoEmbedded) {
+                throw new RuntimeException('REPORT_LOGO_EMBED_FAILED');
+            }
+        }
+
         public function Footer(): void {
             $this->SetY(-12);
             $this->SetFont('dejavusans', '', 7);
@@ -120,17 +151,16 @@ function reports_pdf_document(string $title, array $filters, ?array $company = n
             $this->Cell(0, 5, 'Concrete Equipment Hire Limited  •  Page '.$this->getAliasNumPage().' of '.$this->getAliasNbPages(), 0, 0, 'C');
         }
     };
+    $pdf->disableTcpdfAttribution();
     $pdf->setPrintHeader(false);
     $pdf->setPrintFooter(true);
     $pdf->SetMargins(12, 12, 12);
     $pdf->SetAutoPageBreak(true, 16);
     $pdf->SetCreator('Concrete Equipment Hire Limited');
+    $pdf->SetAuthor('Concrete Equipment Hire Limited');
     $pdf->SetTitle($title);
     $pdf->AddPage();
-    $logo = @file_get_contents(__DIR__.'/assets/ceh_logo.png');
-    if ($logo !== false) {
-        $pdf->Image('@'.$logo, 12, 8, 50, 0, 'PNG');
-    }
+    $pdf->embedRequiredCehLogo();
     $pdf->SetXY(66, 8);
     $pdf->SetFont('dejavusans', 'B', 9.5);
     $pdf->SetTextColor(...REPORT_PDF_INK);
@@ -264,6 +294,7 @@ function reports_pdf_expenses(string $title, array $data, bool $withEvidence, ?c
         reports_pdf_append_missing_evidence_summary($pdf, $data['rows'], $evidenceByRow);
         reports_pdf_append_evidence($pdf, $data['rows'], $evidenceByRow);
     }
+    $pdf->assertCehLogoEmbedded();
     return $pdf->Output('report.pdf', 'S');
 }
 
@@ -376,7 +407,7 @@ function reports_pdf_append_evidence(\setasign\Fpdi\Tcpdf\Fpdi $pdf, array $rows
                 if (@getimagesizefromstring($bytes) === false) {
                     accounts_fail('EVIDENCE_IMAGE_INVALID', 409);
                 }
-                $pdf->Image('@'.$bytes, 15, 55, 180, 218, '', '', '', true, 300, 'C', false, false, 0, true, true, true);
+                $pdf->Image('@'.$bytes, 15, 55, 180, 218, '', '', '', true, 300, 'C', false, false, 0, true, false, true);
                 continue;
             }
             if ($mime !== 'application/pdf' || !str_starts_with($bytes, '%PDF-')) {
@@ -458,6 +489,7 @@ function reports_pdf_receivables(array $data, ?array $company = null): string {
     $pdf->Cell(45, 6, reports_pdf_money($data['totals']['original_amount']), 0, 1, 'R');
     $pdf->Cell(220, 6, 'Payments / credits applied', 0, 0, 'R');
     $pdf->Cell(45, 6, reports_pdf_money($data['totals']['payments_credits_applied']), 0, 1, 'R');
+    $pdf->assertCehLogoEmbedded();
     return $pdf->Output('receivables-report.pdf', 'S');
 }
 

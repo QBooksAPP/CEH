@@ -78,6 +78,11 @@ void main() {
     expect(pdf, contains('company_address'));
     expect(pdf, contains('tax_identifier'));
     expect(pdf, contains('REPORT_SETTINGS_INCOMPLETE'));
+    expect(pdf, contains('disableTcpdfAttribution'));
+    expect(pdf, contains(r'$this->tcpdflink = false;'));
+    expect(pdf, contains('embedRequiredCehLogo'));
+    expect(pdf, contains('assertCehLogoEmbedded'));
+    expect(pdf, contains('REPORT_LOGO_EMBED_FAILED'));
     expect(pdf, contains('REPORT_PDF_ALT'));
     expect(pdf, isNot(contains('Powered by TCPDF')));
     expect(pdf, isNot(contains("['Header'")));
@@ -109,11 +114,19 @@ void main() {
     expect(pdf, contains('continue;'));
     expect(pdf, contains(r"if ($firstEvidence)"));
     expect(pdf, contains("['image/jpeg', 'image/png']"));
+    expect(pdf, contains("0, true, false, true);"));
     expect(pdf, contains(r"$mime !== 'application/pdf'"));
     expect(pdf, contains(r"for ($page = 1; $page <= $pages; $page++)"));
     expect(pdf, contains('original_filename'));
     expect(pdf, contains('byte_size'));
     expect(pdf, contains('sha256'));
+    final regression = source('test/report_pdf_production_regression.php');
+    expect(regression, contains('QA SAMPLE RECEIPT'));
+    expect(regression, contains('QA SAMPLE EVIDENCE - NOT PRODUCTION DATA'));
+    expect(regression, contains(r'for ($page = 1; $page <= 2; $page++)'));
+    expect(regression, contains('qa-sample-receipt.jpg'));
+    expect(regression, contains('qa-sample-evidence-two-pages.pdf'));
+    expect(regression, contains(r"if ((int)$row['id'] === 3) return [];"));
   });
 
   test('report PDF dates use CEH presentation without changing API filters',
@@ -150,6 +163,9 @@ void main() {
     expect(CehTheme.ink, const Color(0xFF121212));
     expect(CehTheme.text, const Color(0xFF141414));
     expect(theme.colorScheme.primary, CehTheme.ink);
+    expect(theme.colorScheme.surface, Colors.white);
+    expect(theme.colorScheme.outline, CehTheme.border);
+    expect(theme.scaffoldBackgroundColor, CehTheme.background);
     expect(theme.colorScheme.error, isNot(CehTheme.ink));
     final widgets = source('lib/widgets/accounts_widgets.dart');
     expect(widgets, contains('Color(0xFFE3F4E8)'));

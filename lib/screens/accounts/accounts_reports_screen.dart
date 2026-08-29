@@ -135,6 +135,19 @@ class _AccountsReportDetailScreenState
   Map<String, dynamic>? _data;
   Object? _error;
 
+  @override
+  void dispose() {
+    _reference.dispose();
+    _paidTo.dispose();
+    _custodian.dispose();
+    _category.dispose();
+    _client.dispose();
+    _project.dispose();
+    _equipment.dispose();
+    _costCentre.dispose();
+    super.dispose();
+  }
+
   Map<String, String> get _filters {
     final result = <String, String>{};
     void add(String key, String value) {
@@ -205,149 +218,147 @@ class _AccountsReportDetailScreenState
   @override
   Widget build(BuildContext context) => Scaffold(
       appBar: AppBar(title: Text(widget.kind.title)),
-      body: ListView(padding: const EdgeInsets.all(18), children: [
-        Wrap(spacing: 12, runSpacing: 12, children: [
-          SizedBox(
-              width: 190,
-              child: _ReportDatePickerField(
-                  label: widget.kind == ReportKind.receivables
-                      ? 'Invoice date from (optional)'
-                      : 'Date from',
-                  value: _fromDate,
-                  onChanged: (value) => setState(() => _fromDate = value))),
-          SizedBox(
-              width: 190,
-              child: _ReportDatePickerField(
-                  label: widget.kind == ReportKind.receivables
-                      ? 'As of date'
-                      : 'Date to',
-                  value: _toDate,
-                  onChanged: (value) => setState(() => _toDate = value))),
-          if (widget.kind != ReportKind.receivables) ...[
-            SizedBox(
-                width: 190,
-                child: TextField(
-                    controller: _reference,
-                    decoration:
-                        const InputDecoration(labelText: 'CEH reference'))),
-            SizedBox(
-                width: 220,
-                child: TextField(
-                    controller: _paidTo,
-                    decoration: const InputDecoration(
-                        labelText: 'Supplier / Paid To'))),
-            if (widget.kind == ReportKind.pettyCash)
-              SizedBox(
-                  width: 190,
-                  child: TextField(
-                      controller: _custodian,
+      body: SafeArea(child: LayoutBuilder(builder: (context, constraints) {
+        final horizontalPadding = constraints.maxWidth < 400 ? 12.0 : 18.0;
+        final gap = constraints.maxWidth < 400 ? 8.0 : 12.0;
+        final available = constraints.maxWidth - (horizontalPadding * 2);
+        final twoColumns = available >= 330;
+        final fieldWidth = twoColumns ? (available - gap) / 2 : available;
+        Widget field(Widget child, {bool fullWidth = false}) =>
+            SizedBox(width: fullWidth ? available : fieldWidth, child: child);
+
+        return ListView(
+            key: const ValueKey('report-form-scroll'),
+            padding: EdgeInsets.fromLTRB(
+                horizontalPadding, 10, horizontalPadding, 18),
+            children: [
+              Wrap(spacing: gap, runSpacing: 8, children: [
+                if (widget.kind != ReportKind.receivables)
+                  field(_ReportDatePickerField(
+                      label: 'Date from',
+                      value: _fromDate,
+                      onChanged: (value) => setState(() => _fromDate = value))),
+                field(
+                    _ReportDatePickerField(
+                        label: widget.kind == ReportKind.receivables
+                            ? 'As of date'
+                            : 'Date to',
+                        value: _toDate,
+                        onChanged: (value) => setState(() => _toDate = value)),
+                    fullWidth: widget.kind == ReportKind.receivables),
+                if (widget.kind != ReportKind.receivables) ...[
+                  field(TextField(
+                      controller: _reference,
                       decoration:
-                          const InputDecoration(labelText: 'Custodian'))),
-            SizedBox(
-                width: 190,
-                child: TextField(
-                    controller: _category,
-                    decoration: const InputDecoration(
-                        labelText: 'Category / account'))),
-            SizedBox(
-                width: 190,
-                child: TextField(
-                    controller: _client,
-                    decoration: const InputDecoration(labelText: 'Client'))),
-            SizedBox(
-                width: 190,
-                child: TextField(
-                    controller: _project,
-                    decoration: const InputDecoration(labelText: 'Project'))),
-            SizedBox(
-                width: 170,
-                child: TextField(
-                    controller: _equipment,
-                    decoration: const InputDecoration(labelText: 'Equipment'))),
-            SizedBox(
-                width: 190,
-                child: TextField(
-                    controller: _costCentre,
-                    decoration:
-                        const InputDecoration(labelText: 'Cost Centre'))),
-            SizedBox(
-                width: 190,
-                child: DropdownButtonFormField<String>(
-                    isExpanded: true,
-                    initialValue: _status,
-                    decoration: const InputDecoration(labelText: 'Status'),
-                    items: const [
-                      ('', 'All'),
-                      ('DRAFT', 'Draft'),
-                      ('SUBMITTED', 'Submitted'),
-                      ('CORRECTION_REQUIRED', 'Needs Correction'),
-                      ('APPROVED', 'Approved'),
-                      ('VOIDED', 'Voided')
-                    ]
-                        .map((v) =>
-                            DropdownMenuItem(value: v.$1, child: Text(v.$2)))
-                        .toList(),
-                    onChanged: (v) => setState(() => _status = v ?? ''))),
-            if (widget.kind == ReportKind.expenses)
-              SizedBox(
-                  width: 180,
-                  child: DropdownButtonFormField<String>(
+                          const InputDecoration(labelText: 'CEH reference'))),
+                  field(TextField(
+                      controller: _paidTo,
+                      decoration: const InputDecoration(
+                          labelText: 'Supplier / Paid To'))),
+                  if (widget.kind == ReportKind.pettyCash)
+                    field(TextField(
+                        controller: _custodian,
+                        decoration:
+                            const InputDecoration(labelText: 'Custodian'))),
+                  field(TextField(
+                      controller: _category,
+                      decoration: const InputDecoration(
+                          labelText: 'Category / account'))),
+                  field(TextField(
+                      controller: _client,
+                      decoration: const InputDecoration(labelText: 'Client'))),
+                  field(TextField(
+                      controller: _project,
+                      decoration: const InputDecoration(labelText: 'Project'))),
+                  field(TextField(
+                      controller: _equipment,
+                      decoration:
+                          const InputDecoration(labelText: 'Equipment'))),
+                  field(TextField(
+                      controller: _costCentre,
+                      decoration:
+                          const InputDecoration(labelText: 'Cost Centre'))),
+                  field(DropdownButtonFormField<String>(
                       isExpanded: true,
-                      initialValue: _source,
-                      decoration: const InputDecoration(labelText: 'Source'),
-                      items: const ['ALL', 'BANK', 'PETTY_CASH']
-                          .map((v) => DropdownMenuItem(
-                              value: v,
-                              child: Text(v == 'ALL'
-                                  ? 'All'
-                                  : v == 'BANK'
-                                      ? 'Bank'
-                                      : 'Petty Cash')))
+                      initialValue: _status,
+                      decoration: const InputDecoration(labelText: 'Status'),
+                      items: const [
+                        ('', 'All'),
+                        ('DRAFT', 'Draft'),
+                        ('SUBMITTED', 'Submitted'),
+                        ('CORRECTION_REQUIRED', 'Needs Correction'),
+                        ('APPROVED', 'Approved'),
+                        ('VOIDED', 'Voided')
+                      ]
+                          .map((v) =>
+                              DropdownMenuItem(value: v.$1, child: Text(v.$2)))
                           .toList(),
-                      onChanged: (v) => setState(() => _source = v ?? 'ALL'))),
-            SizedBox(
-                width: 190,
-                child: DropdownButtonFormField<String>(
-                    isExpanded: true,
-                    initialValue: _evidence,
-                    decoration:
-                        const InputDecoration(labelText: 'Receipt / evidence'),
-                    items: const [
-                      ('', 'All'),
-                      ('ATTACHED', 'Attached'),
-                      ('MISSING', 'Missing')
-                    ]
-                        .map((v) =>
-                            DropdownMenuItem(value: v.$1, child: Text(v.$2)))
-                        .toList(),
-                    onChanged: (v) => setState(() => _evidence = v ?? ''))),
-          ],
-        ]),
-        const SizedBox(height: 14),
-        Wrap(spacing: 10, children: [
-          FilledButton.icon(
-              onPressed: _busy ? null : _run,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Run report')),
-          OutlinedButton.icon(
-              onPressed: _busy ? null : _sharePdf,
-              icon: const Icon(Icons.picture_as_pdf_outlined),
-              label: Text(widget.kind == ReportKind.receivables
-                  ? 'Export PDF'
-                  : 'Export audit pack')),
-        ]),
-        if (_busy) const LinearProgressIndicator(),
-        if (_error != null)
-          Padding(
-              padding: const EdgeInsets.only(top: 16),
-              child: Text('Unable to load report: $_error',
-                  style:
-                      TextStyle(color: Theme.of(context).colorScheme.error))),
-        if (_data != null) ...[
-          const SizedBox(height: 18),
-          _ReportResults(kind: widget.kind, data: _data!)
-        ],
-      ]));
+                      onChanged: (v) => setState(() => _status = v ?? ''))),
+                  if (widget.kind == ReportKind.expenses)
+                    field(DropdownButtonFormField<String>(
+                        isExpanded: true,
+                        initialValue: _source,
+                        decoration: const InputDecoration(labelText: 'Source'),
+                        items: const ['ALL', 'BANK', 'PETTY_CASH']
+                            .map((v) => DropdownMenuItem(
+                                value: v,
+                                child: Text(v == 'ALL'
+                                    ? 'All'
+                                    : v == 'BANK'
+                                        ? 'Bank'
+                                        : 'Petty Cash')))
+                            .toList(),
+                        onChanged: (v) =>
+                            setState(() => _source = v ?? 'ALL'))),
+                  field(DropdownButtonFormField<String>(
+                      isExpanded: true,
+                      initialValue: _evidence,
+                      decoration: const InputDecoration(
+                          labelText: 'Receipt / evidence'),
+                      items: const [
+                        ('', 'All'),
+                        ('ATTACHED', 'Attached'),
+                        ('MISSING', 'Missing')
+                      ]
+                          .map((v) =>
+                              DropdownMenuItem(value: v.$1, child: Text(v.$2)))
+                          .toList(),
+                      onChanged: (v) => setState(() => _evidence = v ?? ''))),
+                ],
+              ]),
+              const SizedBox(height: 18),
+              Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                SizedBox(
+                    height: 50,
+                    child: FilledButton.icon(
+                        key: const ValueKey('run-report-action'),
+                        onPressed: _busy ? null : _run,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Run Report'))),
+                const SizedBox(height: 10),
+                SizedBox(
+                    height: 50,
+                    child: OutlinedButton.icon(
+                        key: const ValueKey('export-report-action'),
+                        onPressed: _busy ? null : _sharePdf,
+                        icon: const Icon(Icons.picture_as_pdf_outlined),
+                        label: Text(widget.kind == ReportKind.receivables
+                            ? 'Export PDF'
+                            : 'Export Audit Pack'))),
+              ]),
+              if (_busy) const LinearProgressIndicator(),
+              if (_error != null)
+                Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: Text('Unable to load report: $_error',
+                        style: TextStyle(
+                            color: Theme.of(context).colorScheme.error))),
+              if (_data != null) ...[
+                const SizedBox(height: 18),
+                _ReportResults(kind: widget.kind, data: _data!)
+              ],
+            ]);
+      })));
 }
 
 class _ReportResults extends StatelessWidget {
