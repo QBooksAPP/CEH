@@ -305,7 +305,8 @@ class _StartProductionSessionScreenState
   Widget build(BuildContext context) => Scaffold(
       appBar: AppBar(
           title: const Text('Start Production Session'),
-          actions: cehHomeAction(context)),
+          actions: cehHomeAction(context,
+              canLeave: () => confirmCehDiscardChanges(context))),
       body: _busy && _clients.isEmpty
           ? const Center(child: CircularProgressIndicator())
           : Form(
@@ -482,7 +483,8 @@ class _ProductionSessionScreenState extends State<ProductionSessionScreen> {
     final r = _record;
     return Scaffold(
         appBar: AppBar(title: const Text('Production Session'), actions: [
-          ...cehHomeAction(context),
+          ...cehHomeAction(context,
+              canLeave: () => confirmCehDiscardChanges(context)),
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh))
         ]),
         floatingActionButton: r?.isOpen == true
@@ -683,7 +685,8 @@ class _ProductionSignoffScreenState extends State<ProductionSignoffScreen> {
     return Scaffold(
       appBar: AppBar(
           title: const Text('Daily Client Sign-Off'),
-          actions: cehHomeAction(context)),
+          actions: cehHomeAction(context,
+              canLeave: () => confirmCehDiscardChanges(context))),
       body: ListView(padding: const EdgeInsets.all(16), children: [
         Center(child: Image.asset('assets/images/ceh_logo.png', height: 54)),
         const SizedBox(height: 12),

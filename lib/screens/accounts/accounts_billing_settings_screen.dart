@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/accounts_formatters.dart';
 import '../../core/api_client.dart';
+import '../../core/internal_navigation.dart';
 import '../../models/session.dart';
 import '../../widgets/accounts_widgets.dart';
 
@@ -269,7 +270,10 @@ class _AccountsBillingSettingsScreenState
         .map((value) => Map<String, dynamic>.from(value as Map))
         .toList();
     return Scaffold(
-        appBar: AppBar(title: const Text('Billing Settings')),
+        appBar: AppBar(
+            title: const Text('Billing Settings'),
+            actions: cehHomeAction(context,
+                canLeave: () => confirmCehDiscardChanges(context))),
         body: _configuration == null
             ? const Center(child: CircularProgressIndicator())
             : ListView(padding: const EdgeInsets.all(18), children: [

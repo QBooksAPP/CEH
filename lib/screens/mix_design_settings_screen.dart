@@ -234,7 +234,8 @@ class _MixDesignSettingsScreenState extends State<MixDesignSettingsScreen> {
                           builder: (_) =>
                               SettingsHistoryScreen(session: widget.session))),
                   icon: const Icon(Icons.history)),
-            ...cehHomeAction(context),
+            ...cehHomeAction(context,
+                canLeave: () => confirmCehDiscardChanges(context)),
           ]),
       body: _busy && r == null
           ? const Center(child: CircularProgressIndicator())

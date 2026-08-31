@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../core/accounts_formatters.dart';
 import '../../core/api_client.dart';
+import '../../core/internal_navigation.dart';
 import '../../models/accounts.dart';
 import '../../models/client.dart';
 import '../../models/session.dart';
@@ -43,7 +44,8 @@ class _AccountsBillingScreenState extends State<AccountsBillingScreen> {
                 context,
                 MaterialPageRoute(
                     builder: (_) => AccountsBillingSettingsScreen(
-                        session: widget.session, api: widget.api))))
+                        session: widget.session, api: widget.api)))),
+        ...cehHomeAction(context),
       ]),
       floatingActionButton: FloatingActionButton.extended(
           key: const ValueKey('new-invoice'),
@@ -322,7 +324,9 @@ class _InvoiceEditorScreenState extends State<InvoiceEditorScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
       appBar: AppBar(
-          title: Text(widget.draft == null ? 'New Invoice' : 'Edit Draft')),
+          title: Text(widget.draft == null ? 'New Invoice' : 'Edit Draft'),
+          actions: cehHomeAction(context,
+              canLeave: () => confirmCehDiscardChanges(context))),
       body: ListView(padding: const EdgeInsets.all(18), children: [
         const AccountsSectionTitle(
             'Client → signed production → rate → invoice',
@@ -564,7 +568,9 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-      appBar: AppBar(title: const Text('Invoice Details')),
+      appBar: AppBar(
+          title: const Text('Invoice Details'),
+          actions: cehHomeAction(context)),
       body: FutureBuilder<BillingInvoiceDetail>(
           future: _detail,
           builder: (context, s) {
@@ -1094,7 +1100,10 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-      appBar: AppBar(title: const Text('New Client Payment')),
+      appBar: AppBar(
+          title: const Text('New Client Payment'),
+          actions: cehHomeAction(context,
+              canLeave: () => confirmCehDiscardChanges(context))),
       body: ListView(padding: const EdgeInsets.all(18), children: [
         const Text(
             'Allocate this payment to outstanding invoices. Any remainder is retained automatically as Client Credit / Advance.'),
@@ -1565,7 +1574,10 @@ class _ApplyCustomerCreditScreenState extends State<ApplyCustomerCreditScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-      appBar: AppBar(title: const Text('Apply Client Credit')),
+      appBar: AppBar(
+          title: const Text('Apply Client Credit'),
+          actions: cehHomeAction(context,
+              canLeave: () => confirmCehDiscardChanges(context))),
       body: ListView(padding: const EdgeInsets.all(18), children: [
         const Text(
             'Apply previously received Client Credit / Advance to outstanding invoices. No new cash movement is created.'),
@@ -1658,7 +1670,9 @@ class ReceivablesAgeingScreen extends StatelessWidget {
   final CehApiClient api;
   @override
   Widget build(BuildContext context) => Scaffold(
-      appBar: AppBar(title: const Text('Receivables Ageing')),
+      appBar: AppBar(
+          title: const Text('Receivables Ageing'),
+          actions: cehHomeAction(context)),
       body: FutureBuilder<Map<String, dynamic>>(
           future: api.receivablesAgeing(session),
           builder: (context, s) {
@@ -1726,7 +1740,8 @@ class ReceivablesAgeingDetailScreen extends StatelessWidget {
     final reconciledMinor = invoices.fold<int>(
         0, (sum, row) => sum + _ageingMinor(row['outstanding']));
     return Scaffold(
-        appBar: AppBar(title: Text(_ageingLabel(bucket))),
+        appBar: AppBar(
+            title: Text(_ageingLabel(bucket)), actions: cehHomeAction(context)),
         body: ListView(padding: const EdgeInsets.all(18), children: [
           _summary('Total Outstanding', totalMinor),
           if (reconciledMinor != totalMinor)

@@ -3,6 +3,7 @@ import 'package:timezone/timezone.dart' as tz;
 
 import '../core/api_client.dart';
 import '../core/ceh_date_formatters.dart';
+import '../core/internal_navigation.dart';
 import '../models/company_regional_settings.dart';
 import '../models/session.dart';
 
@@ -139,7 +140,10 @@ class _CompanyRegionalSettingsScreenState
     }
     final value = _settings;
     return Scaffold(
-      appBar: AppBar(title: const Text('Regional & Currency Settings')),
+      appBar: AppBar(
+          title: const Text('Regional & Currency Settings'),
+          actions: cehHomeAction(context,
+              canLeave: () => confirmCehDiscardChanges(context))),
       body: value == null
           ? Center(
               child: _error == null

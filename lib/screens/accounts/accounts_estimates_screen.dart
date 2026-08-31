@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../core/accounts_formatters.dart';
 import '../../core/api_client.dart';
+import '../../core/internal_navigation.dart';
 import '../../models/accounts.dart';
 import '../../models/client.dart';
 import '../../models/mixer_context.dart';
@@ -73,7 +74,9 @@ class _ClientPaymentsScreenState extends State<ClientPaymentsScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-      appBar: AppBar(title: const Text('Client Payments')),
+      appBar: AppBar(
+          title: const Text('Client Payments'),
+          actions: cehHomeAction(context)),
       floatingActionButton: FloatingActionButton.extended(
           label: const Text('New Client Payment'),
           icon: const Icon(Icons.add),
@@ -137,7 +140,9 @@ class ClientPaymentDetailsScreen extends StatelessWidget {
       ]));
   @override
   Widget build(BuildContext context) => Scaffold(
-      appBar: AppBar(title: const Text('Client Payment Details')),
+      appBar: AppBar(
+          title: const Text('Client Payment Details'),
+          actions: cehHomeAction(context)),
       body: FutureBuilder<Map<String, dynamic>>(
           future: api.clientPaymentDetails(session, payment.id),
           builder: (context, snapshot) {
@@ -227,7 +232,8 @@ class _EstimatesScreenState extends State<EstimatesScreen> {
   void reload() => future = widget.api.estimates(widget.session);
   @override
   Widget build(BuildContext context) => Scaffold(
-      appBar: AppBar(title: const Text('Estimates')),
+      appBar: AppBar(
+          title: const Text('Estimates'), actions: cehHomeAction(context)),
       floatingActionButton: FloatingActionButton.extended(
           key: const ValueKey('new-estimate'),
           icon: const Icon(Icons.add),
@@ -492,7 +498,9 @@ class _EstimateEditorScreenState extends State<EstimateEditorScreen> {
       appBar: AppBar(
           title: Text(widget.estimateId == null
               ? 'New Estimate'
-              : 'Edit Estimate Draft')),
+              : 'Edit Estimate Draft'),
+          actions: cehHomeAction(context,
+              canLeave: () => confirmCehDiscardChanges(context))),
       body: ListView(padding: const EdgeInsets.all(18), children: [
         DropdownButtonFormField<CehClient>(
             initialValue: client,
@@ -858,7 +866,9 @@ class _EstimateDetailsScreenState extends State<EstimateDetailsScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-      appBar: AppBar(title: const Text('Estimate Details')),
+      appBar: AppBar(
+          title: const Text('Estimate Details'),
+          actions: cehHomeAction(context)),
       body: FutureBuilder<Map<String, dynamic>>(
           future: future,
           builder: (context, snapshot) {

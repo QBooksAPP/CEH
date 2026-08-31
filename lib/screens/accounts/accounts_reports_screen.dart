@@ -6,8 +6,23 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../core/api_client.dart';
 import '../../core/accounts_formatters.dart';
+import '../../core/internal_navigation.dart';
 import '../../models/session.dart';
 import '../../widgets/accounts_widgets.dart';
+
+typedef ReportFileWriter = Future<String> Function(ProductionReportFile file);
+typedef ReportFileSharer = Future<void> Function(String path, String subject);
+
+Future<String> _writeReportFile(ProductionReportFile file) async {
+  final directory = await getTemporaryDirectory();
+  final path = '${directory.path}${Platform.pathSeparator}${file.filename}';
+  await File(path).writeAsBytes(file.bytes, flush: true);
+  return path;
+}
+
+Future<void> _shareReportFile(String path, String subject) =>
+    SharePlus.instance.share(ShareParams(
+        files: [XFile(path, mimeType: 'application/pdf')], subject: subject));
 
 class AccountsReportsScreen extends StatelessWidget {
   const AccountsReportsScreen(
@@ -26,7 +41,8 @@ class AccountsReportsScreen extends StatelessWidget {
       ('Billing Status', Icons.receipt_long_outlined),
     ];
     return Scaffold(
-      appBar: AppBar(title: const Text('Reports')),
+      appBar:
+          AppBar(title: const Text('Reports'), actions: cehHomeAction(context)),
       body: ListView(padding: const EdgeInsets.all(18), children: [
         const AccountsSectionTitle('Live reports',
             subtitle:
@@ -107,10 +123,14 @@ class AccountsReportDetailScreen extends StatefulWidget {
       {super.key,
       required this.session,
       required this.api,
-      required this.kind});
+      required this.kind,
+      this.writeReportFile = _writeReportFile,
+      this.shareReportFile = _shareReportFile});
   final CehSession session;
   final CehApiClient api;
   final ReportKind kind;
+  final ReportFileWriter writeReportFile;
+  final ReportFileSharer shareReportFile;
   @override
   State<AccountsReportDetailScreen> createState() =>
       _AccountsReportDetailScreenState();
@@ -194,30 +214,37 @@ class _AccountsReportDetailScreenState
 
   Future<void> _sharePdf() async {
     setState(() => _busy = true);
+    String path;
     try {
       final file = await widget.api.accountsReportPdf(widget.session,
           endpoint: widget.kind.pdfEndpoint,
           filename: '${widget.kind.title.replaceAll(' ', '-')}.pdf',
           filters: _filters);
-      final directory = await getTemporaryDirectory();
-      final path = '${directory.path}${Platform.pathSeparator}${file.filename}';
-      await File(path).writeAsBytes(file.bytes, flush: true);
-      await SharePlus.instance.share(ShareParams(
-          files: [XFile(path, mimeType: 'application/pdf')],
-          subject: widget.kind.title));
+      path = await widget.writeReportFile(file);
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Unable to export report: $error')));
       }
+      return;
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+
+    try {
+      await widget.shareReportFile(path, widget.kind.title);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Unable to open report: $error')));
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) => Scaffold(
-      appBar: AppBar(title: Text(widget.kind.title)),
+      appBar: AppBar(
+          title: Text(widget.kind.title), actions: cehHomeAction(context)),
       body: SafeArea(child: LayoutBuilder(builder: (context, constraints) {
         final horizontalPadding = constraints.maxWidth < 400 ? 12.0 : 18.0;
         final gap = constraints.maxWidth < 400 ? 8.0 : 12.0;

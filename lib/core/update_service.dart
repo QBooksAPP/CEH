@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'app_environment.dart';
+
 class CehUpdateInfo {
   const CehUpdateInfo({
     required this.buildNumber,
@@ -15,7 +17,12 @@ class CehUpdateInfo {
 }
 
 class CehUpdateService {
-  const CehUpdateService();
+  const CehUpdateService({this.environment});
+
+  final CehAppEnvironment? environment;
+
+  bool get updateChecksEnabled =>
+      (environment ?? cehEnvironment).updateChecksEnabled;
 
   static const _latestReleaseUrl =
       'https://api.github.com/repos/QBooksAPP/CEH/releases/latest';
@@ -23,6 +30,8 @@ class CehUpdateService {
   Future<CehUpdateInfo?> checkForUpdate({
     required int currentBuild,
   }) async {
+    if (!updateChecksEnabled) return null;
+
     final response = await http.get(
       Uri.parse(_latestReleaseUrl),
       headers: const {

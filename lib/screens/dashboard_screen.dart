@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../core/app_environment.dart';
 import '../core/ceh_theme.dart';
 import '../core/api_client.dart';
 import '../core/ceh_date_formatters.dart';
@@ -21,11 +22,13 @@ class DashboardScreen extends StatefulWidget {
     required this.session,
     required this.onLogout,
     this.checkForUpdates = true,
+    this.environment,
   });
 
   final CehSession session;
   final Future<void> Function() onLogout;
   final bool checkForUpdates;
+  final CehAppEnvironment? environment;
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -39,12 +42,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String? _versionText;
 
   CehSession get session => widget.session;
+  CehAppEnvironment get environment => widget.environment ?? cehEnvironment;
 
   @override
   void initState() {
     super.initState();
     _refreshRegionalSettings();
-    if (widget.checkForUpdates) _checkForUpdate(silent: true);
+    if (widget.checkForUpdates && environment.updateChecksEnabled) {
+      _checkForUpdate(silent: true);
+    }
   }
 
   Future<void> _refreshRegionalSettings() async {
@@ -176,18 +182,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
               onPressed: CehViewModeScope.of(context).enableOperatorView,
               icon: const Icon(Icons.visibility_outlined),
             ),
-          IconButton(
-            tooltip: 'Check for updates',
-            onPressed:
-                _checkingUpdate ? null : () => _checkForUpdate(silent: false),
-            icon: _checkingUpdate
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.system_update_alt),
-          ),
+          if (environment.updateChecksEnabled)
+            IconButton(
+              tooltip: 'Check for updates',
+              onPressed:
+                  _checkingUpdate ? null : () => _checkForUpdate(silent: false),
+              icon: _checkingUpdate
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.system_update_alt),
+            ),
           IconButton(
             tooltip: 'Sign out',
             onPressed: widget.onLogout,
@@ -199,17 +206,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
         padding: const EdgeInsets.all(18),
         children: [
           Container(
+            key: const ValueKey('dashboard-welcome-card'),
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [CehTheme.ink, CehTheme.secondaryText],
-              ),
+              color: environment.isStaging ? Colors.white : null,
+              gradient: environment.isStaging
+                  ? null
+                  : const LinearGradient(
+                      colors: [CehTheme.ink, CehTheme.secondaryText],
+                    ),
+              border: environment.isStaging
+                  ? Border.all(color: CehTheme.border)
+                  : null,
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
               'Welcome\n${user.fullName}\n${user.role}',
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: environment.isStaging ? CehTheme.text : Colors.white,
                 fontSize: 20,
                 fontWeight: FontWeight.w800,
               ),

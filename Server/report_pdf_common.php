@@ -189,7 +189,7 @@ function reports_pdf_document(string $title, array $filters, ?array $company = n
     $pdf->SetLineWidth(0.35);
     $pdf->Line(12, 34, 285, 34);
     $pdf->SetY(38);
-    $pdf->SetFillColor(...REPORT_PDF_PANEL);
+    $pdf->SetFillColor(255, 255, 255);
     $pdf->SetDrawColor(...REPORT_PDF_BORDER);
     $filterRows = reports_pdf_filter_rows($title, $filters);
     $height = max(10, count($filterRows) * 5 + 4);
@@ -222,17 +222,83 @@ function reports_pdf_table_header(\TCPDF $pdf, array $columns): void {
     }
 }
 
+function reports_pdf_compact_journal_reference(mixed $value): string {
+    $reference = trim((string)$value);
+    if ($reference === '') return 'Not allocated';
+    if (preg_match('/^(CEH-JRN-\d{8})(\d{6}-[A-Z0-9]+)$/i', $reference, $parts) === 1) {
+        return $parts[1]."\n".$parts[2];
+    }
+    if (strlen($reference) > 26) {
+        $middle = (int)floor(strlen($reference) / 2);
+        $before = strrpos(substr($reference, 0, $middle + 1), '-');
+        $after = strpos($reference, '-', $middle);
+        $break = $after !== false ? $after : $before;
+        if ($break !== false && $break > 7 && $break < strlen($reference) - 4) {
+            return substr($reference, 0, $break)."\n".substr($reference, $break + 1);
+        }
+    }
+    return $reference;
+}
+
+function reports_pdf_balance_final_register_page(array $pages, array $heights, float $continuationCapacity, float $finalReserve): array {
+    if (count($pages) < 2) return $pages;
+    $lastIndex = count($pages) - 1;
+    $previousIndex = $lastIndex - 1;
+    if (count($pages[$lastIndex]) !== 1 || count($pages[$previousIndex]) <= 1) return $pages;
+
+    $candidateIndex = (int)$pages[$previousIndex][count($pages[$previousIndex]) - 1];
+    $balancedFinalHeight = (float)$heights[$candidateIndex]
+        + array_sum(array_map(static fn(int $index): float => (float)$heights[$index], $pages[$lastIndex]))
+        + $finalReserve;
+    if ($balancedFinalHeight > $continuationCapacity) return $pages;
+
+    array_unshift($pages[$lastIndex], (int)array_pop($pages[$previousIndex]));
+    return $pages;
+}
+
+function reports_pdf_paginate_rows(array $heights, float $firstCapacity, float $continuationCapacity, float $finalReserve): array {
+    $pages = [];
+    $page = [];
+    $used = 0.0;
+    $capacity = $firstCapacity;
+    foreach ($heights as $index => $height) {
+        if ($page !== [] && $used + $height > $capacity) {
+            $pages[] = $page;
+            $page = [];
+            $used = 0.0;
+            $capacity = $continuationCapacity;
+        }
+        $page[] = $index;
+        $used += $height;
+    }
+    if ($page !== []) $pages[] = $page;
+    if ($pages === []) return [[]];
+
+    $lastIndex = count($pages) - 1;
+    $lastCapacity = $lastIndex === 0 ? $firstCapacity : $continuationCapacity;
+    $lastUsed = array_sum(array_map(static fn(int $index): float => (float)$heights[$index], $pages[$lastIndex]));
+    if ($lastUsed + $finalReserve > $lastCapacity) {
+        $moved = [];
+        while ($pages[$lastIndex] !== [] && (count($moved) < 2 || array_sum(array_map(static fn(int $index): float => (float)$heights[$index], $moved)) + $finalReserve > $continuationCapacity)) {
+            array_unshift($moved, (int)array_pop($pages[$lastIndex]));
+        }
+        if ($pages[$lastIndex] === []) array_pop($pages);
+        $pages[] = $moved;
+    }
+    return reports_pdf_balance_final_register_page($pages, $heights, $continuationCapacity, $finalReserve);
+}
+
 function reports_pdf_expenses(string $title, array $data, bool $withEvidence, ?callable $evidenceLoader = null, ?array $company = null): string {
     $pdf = reports_pdf_document($title, $data['filters'], $company);
     $evidenceByRow = $withEvidence ? reports_pdf_collect_evidence($data['rows'], $evidenceLoader) : [];
     $filtered = reports_pdf_line_filter_active($data['filters']);
     $columns = [
-        ['Reference', 25, 'L'], ['Date', 19, 'C'], ['Source / custodian', 30, 'L'],
-        ['Paid to / description', $filtered ? 44 : 55, 'L'],
-        ['Client / project / equipment', $filtered ? 40 : 48, 'L'],
-        ['Status / journal', $filtered ? 32 : 38, 'L'],
-        ['Evidence', $filtered ? 17 : 18, 'C'],
-        [$filtered ? 'Transaction total' : 'Transaction amount', $filtered ? 27 : 33, 'R'],
+        ['Reference', 25, 'L'], ['Date', 18, 'C'], ['Source / custodian', 27, 'L'],
+        ['Paid to / description', $filtered ? 40 : 52, 'L'],
+        ['Client / project / equipment', $filtered ? 37 : 43, 'L'],
+        ['Status / journal', $filtered ? 40 : 46, 'L'],
+        ['Evidence', $filtered ? 16 : 17, 'C'],
+        [$filtered ? 'Transaction total' : 'Transaction amount', $filtered ? 26 : 38, 'R'],
     ];
     if ($filtered) {
         $columns[] = ['Amount matching filter', 28, 'R'];
@@ -241,14 +307,16 @@ function reports_pdf_expenses(string $title, array $data, bool $withEvidence, ?c
     $pdf->SetTextColor(...REPORT_PDF_INK);
     $pdf->Cell(0, 7, 'SECTION 1 - TRANSACTION REGISTER', 0, 1, 'L');
     reports_pdf_table_header($pdf, $columns);
-    $fill = false;
+    $prepared = [];
+    $heights = [];
+    $pdf->SetFont('dejavusans', '', 6.2);
     foreach ($data['rows'] as $row) {
         $values = [
             (string)$row['reference_no'], reports_pdf_date($row['expense_date']),
             reports_pdf_text($row['source_name'] ?? $row['custodian_name'] ?? ''),
             reports_pdf_text($row['supplier_paid_to'])."\n".reports_pdf_text($row['description']),
             reports_pdf_text($row['client_name'])."\n".reports_pdf_text($row['project_name']).' • '.reports_pdf_text($row['mixer_code']),
-            reports_pdf_text($row['status'])."\n".reports_pdf_text($row['original_journal_reference']),
+            reports_pdf_text($row['status'])."\n".reports_pdf_compact_journal_reference($row['original_journal_reference']),
             $evidenceByRow[reports_pdf_evidence_key($row)] === [] ? 'Missing' : 'Attached',
             reports_pdf_money($row['amount']),
         ];
@@ -259,23 +327,23 @@ function reports_pdf_expenses(string $title, array $data, bool $withEvidence, ?c
         foreach ($values as $index => $value) {
             $height = max($height, $pdf->getStringHeight($columns[$index][1] - 2, $value) + 2);
         }
-        if ($pdf->GetY() + $height > 188) {
+        $prepared[] = $values;
+        $heights[] = $height;
+    }
+    $groups = reports_pdf_paginate_rows($heights, 188 - $pdf->GetY(), 167, 25);
+    foreach ($groups as $pageIndex => $indexes) {
+        if ($pageIndex > 0) {
             $pdf->AddPage();
             reports_pdf_table_header($pdf, $columns);
         }
-        if ($fill) {
-            $pdf->SetFillColor(...REPORT_PDF_ALT);
+        foreach ($indexes as $rowIndex) {
+            $pdf->SetDrawColor(...REPORT_PDF_BORDER);
+            $pdf->SetTextColor(...REPORT_PDF_TEXT);
+            $pdf->SetFont('dejavusans', '', 6.2);
+            foreach ($prepared[$rowIndex] as $index => $value) {
+                $pdf->MultiCell($columns[$index][1], $heights[$rowIndex], $value, 1, $columns[$index][2], false, $index === count($prepared[$rowIndex]) - 1 ? 1 : 0, '', '', true, 0, false, true, $heights[$rowIndex], 'M');
+            }
         }
-        $pdf->SetDrawColor(...REPORT_PDF_BORDER);
-        $pdf->SetTextColor(...REPORT_PDF_TEXT);
-        $pdf->SetFont('dejavusans', '', 6.2);
-        foreach ($values as $index => $value) {
-            $pdf->MultiCell($columns[$index][1], $height, $value, 1, $columns[$index][2], $fill, $index === count($values) - 1 ? 1 : 0, '', '', true, 0, false, true, $height, 'M');
-        }
-        $fill = !$fill;
-    }
-    if ($pdf->GetY() > 180) {
-        $pdf->AddPage();
     }
     $pdf->Ln(3);
     $pdf->SetDrawColor(...REPORT_PDF_INK);
@@ -339,7 +407,9 @@ function reports_pdf_append_missing_evidence_summary(\TCPDF $pdf, array $rows, a
         ['Description', 78, 'L'], ['Amount', 32, 'R'], ['Missing evidence reason', 67, 'L'],
     ];
     reports_pdf_table_header($pdf, $columns);
-    $fill = false;
+    $prepared = [];
+    $heights = [];
+    $pdf->SetFont('dejavusans', '', 6.5);
     foreach ($missing as $row) {
         $reason = trim((string)($row['no_receipt_reason'] ?? '')) ?: 'No receipt attached';
         $values = [(string)$row['reference_no'], reports_pdf_date($row['expense_date']), reports_pdf_text($row['supplier_paid_to']), reports_pdf_text($row['description']), reports_pdf_money($row['amount']), $reason];
@@ -347,18 +417,23 @@ function reports_pdf_append_missing_evidence_summary(\TCPDF $pdf, array $rows, a
         foreach ($values as $index => $cell) {
             $height = max($height, $pdf->getStringHeight($columns[$index][1] - 2, $cell) + 2);
         }
-        if ($pdf->GetY() + $height > 188) {
+        $prepared[] = $values;
+        $heights[] = $height;
+    }
+    $groups = reports_pdf_paginate_rows($heights, 188 - $pdf->GetY(), 167, 0);
+    foreach ($groups as $pageIndex => $indexes) {
+        if ($pageIndex > 0) {
             $pdf->AddPage('L');
             reports_pdf_table_header($pdf, $columns);
         }
-        if ($fill) $pdf->SetFillColor(...REPORT_PDF_ALT);
-        $pdf->SetDrawColor(...REPORT_PDF_BORDER);
-        $pdf->SetTextColor(...REPORT_PDF_TEXT);
-        $pdf->SetFont('dejavusans', '', 6.5);
-        foreach ($values as $index => $cell) {
-            $pdf->MultiCell($columns[$index][1], $height, $cell, 1, $columns[$index][2], $fill, $index === count($values) - 1 ? 1 : 0, '', '', true, 0, false, true, $height, 'M');
+        foreach ($indexes as $rowIndex) {
+            $pdf->SetDrawColor(...REPORT_PDF_BORDER);
+            $pdf->SetTextColor(...REPORT_PDF_TEXT);
+            $pdf->SetFont('dejavusans', '', 6.5);
+            foreach ($prepared[$rowIndex] as $index => $cell) {
+                $pdf->MultiCell($columns[$index][1], $heights[$rowIndex], $cell, 1, $columns[$index][2], false, $index === count($prepared[$rowIndex]) - 1 ? 1 : 0, '', '', true, 0, false, true, $heights[$rowIndex], 'M');
+            }
         }
-        $fill = !$fill;
     }
     if ($missing === []) {
         $pdf->SetFont('dejavusans', '', 9);
@@ -446,7 +521,6 @@ function reports_pdf_receivables(array $data, ?array $company = null): string {
         ['Days overdue', 20, 'R'], ['Ageing bucket', 18, 'C'],
     ];
     reports_pdf_table_header($pdf, $columns);
-    $fill = false;
     foreach ($data['invoices'] as $row) {
         $values = [
             $row['client_name_snapshot'], $row['reference'], reports_pdf_date($row['invoice_date']),
@@ -458,16 +532,12 @@ function reports_pdf_receivables(array $data, ?array $company = null): string {
             $pdf->AddPage();
             reports_pdf_table_header($pdf, $columns);
         }
-        if ($fill) {
-            $pdf->SetFillColor(...REPORT_PDF_ALT);
-        }
         $pdf->SetDrawColor(...REPORT_PDF_BORDER);
         $pdf->SetTextColor(...REPORT_PDF_TEXT);
         $pdf->SetFont('dejavusans', '', 6.3);
         foreach ($values as $index => $value) {
-            $pdf->MultiCell($columns[$index][1], 8, (string)$value, 1, $columns[$index][2], $fill, $index === count($values) - 1 ? 1 : 0, '', '', true, 0, false, true, 8, 'M');
+            $pdf->MultiCell($columns[$index][1], 8, (string)$value, 1, $columns[$index][2], false, $index === count($values) - 1 ? 1 : 0, '', '', true, 0, false, true, 8, 'M');
         }
-        $fill = !$fill;
     }
     if ($pdf->GetY() > 172) {
         $pdf->AddPage();

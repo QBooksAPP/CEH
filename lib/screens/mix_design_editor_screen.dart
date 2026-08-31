@@ -577,7 +577,8 @@ class _MixDesignEditorScreenState extends State<MixDesignEditorScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        actions: cehHomeAction(context),
+        actions: cehHomeAction(context,
+            canLeave: () => confirmCehDiscardChanges(context)),
         title: Text(
           _editing ? 'Edit Mix Design' : 'Add Mix Design',
           style: const TextStyle(fontWeight: FontWeight.w900),

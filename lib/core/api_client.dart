@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
+import 'app_environment.dart';
 import '../models/mix_design.dart';
 import '../models/accounts.dart';
 import '../models/calibration_record.dart';
@@ -50,9 +51,11 @@ class ProductionReportFile {
 }
 
 class CehApiClient {
-  const CehApiClient();
+  const CehApiClient({this.environment});
 
-  static const String baseUrl = 'https://qbook.concretehireng.com';
+  final CehAppEnvironment? environment;
+
+  String get baseUrl => (environment ?? cehEnvironment).apiBaseUrl;
 
   Future<CehSession> login({
     required String login,

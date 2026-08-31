@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../core/internal_navigation.dart';
+
 class ModulePlaceholderScreen extends StatelessWidget {
   const ModulePlaceholderScreen({
     super.key,
@@ -13,7 +15,7 @@ class ModulePlaceholderScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
+      appBar: AppBar(title: Text(title), actions: cehHomeAction(context)),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 520),
@@ -33,9 +35,10 @@ class ModulePlaceholderScreen extends StatelessWidget {
                     const SizedBox(height: 16),
                     Text(
                       title,
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                          ),
+                      style:
+                          Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 10),

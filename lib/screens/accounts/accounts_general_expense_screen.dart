@@ -285,7 +285,8 @@ class _AccountsGeneralExpenseScreenState
       appBar: AppBar(
           title: const Text('New Bank Expense',
               style: TextStyle(fontWeight: FontWeight.w900)),
-          actions: cehHomeAction(context)),
+          actions: cehHomeAction(context,
+              canLeave: () => confirmCehDiscardChanges(context))),
       body: FutureBuilder<_GeneralExpenseLookups>(
           future: _lookups,
           builder: (context, snapshot) {

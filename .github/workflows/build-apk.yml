@@ -55,6 +55,7 @@ jobs:
               text = text.replace("<application", insert + "    <application", 1)
 
           text = text.replace('android:label="ceh"', 'android:label="CEH"')
+          text = text.replace('android:label="CEH"', 'android:label="@string/app_name"')
           manifest.write_text(text)
 
           gradle = Path("android/app/build.gradle.kts")
@@ -134,10 +135,10 @@ jobs:
         run: flutter test
 
       - name: Build signed release APK
-        run: flutter build apk --release --build-number=${{ github.run_number }}
+        run: flutter build apk --release --flavor production --build-number=${{ github.run_number }}
 
       - name: Rename APK
-        run: cp build/app/outputs/flutter-apk/app-release.apk CEH.apk
+        run: cp build/app/outputs/flutter-apk/app-production-release.apk CEH.apk
 
       - name: Upload CEH APK artifact
         uses: actions/upload-artifact@v4

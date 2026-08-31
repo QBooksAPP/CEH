@@ -2,27 +2,31 @@ import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'app_environment.dart';
 import '../models/session.dart';
 
 class SessionStore {
-  SessionStore()
-      : _storage = const FlutterSecureStorage(
+  SessionStore({CehAppEnvironment? environment})
+      : environment = environment ?? cehEnvironment,
+        _storage = const FlutterSecureStorage(
           aOptions: AndroidOptions(),
         );
 
-  static const _sessionKey = 'ceh_session_v1';
+  final CehAppEnvironment environment;
 
   final FlutterSecureStorage _storage;
 
+  String get sessionKey => environment.secureStorageKey('session_v1');
+
   Future<void> save(CehSession session) async {
     await _storage.write(
-      key: _sessionKey,
+      key: sessionKey,
       value: jsonEncode(session.toJson()),
     );
   }
 
   Future<CehSession?> load() async {
-    final raw = await _storage.read(key: _sessionKey);
+    final raw = await _storage.read(key: sessionKey);
     if (raw == null || raw.isEmpty) return null;
 
     try {
@@ -43,6 +47,6 @@ class SessionStore {
   }
 
   Future<void> clear() async {
-    await _storage.delete(key: _sessionKey);
+    await _storage.delete(key: sessionKey);
   }
 }

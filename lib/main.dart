@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:timezone/data/latest.dart' as tz;
 
+import 'core/app_environment.dart';
 import 'core/ceh_theme.dart';
 import 'core/ceh_date_formatters.dart';
 import 'core/session_store.dart';
@@ -8,6 +9,7 @@ import 'core/view_mode.dart';
 import 'models/session.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/login_screen.dart';
+import 'widgets/ceh_environment_banner.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,14 +18,20 @@ Future<void> main() async {
 }
 
 class CehApp extends StatefulWidget {
-  const CehApp({super.key});
+  const CehApp({
+    super.key,
+    this.environment,
+  });
+
+  final CehAppEnvironment? environment;
 
   @override
   State<CehApp> createState() => _CehAppState();
 }
 
 class _CehAppState extends State<CehApp> {
-  final SessionStore _sessionStore = SessionStore();
+  late final CehAppEnvironment _environment;
+  late final SessionStore _sessionStore;
   final CehViewModeController _viewMode = CehViewModeController();
 
   CehSession? _session;
@@ -32,6 +40,8 @@ class _CehAppState extends State<CehApp> {
   @override
   void initState() {
     super.initState();
+    _environment = widget.environment ?? cehEnvironment;
+    _sessionStore = SessionStore(environment: _environment);
     _restoreSession();
   }
 
@@ -83,33 +93,36 @@ class _CehAppState extends State<CehApp> {
       debugShowCheckedModeBanner: false,
       title: 'CEH',
       theme: CehTheme.light(),
-      builder: (context, child) => CehViewModeScope(
-        controller: _viewMode,
-        child: AnimatedBuilder(
-          animation: _viewMode,
-          builder: (context, _) => Column(
-            children: [
-              if (_viewMode.viewAsOperator)
-                Material(
-                  color: Colors.amber.shade200,
-                  child: SafeArea(
-                    bottom: false,
-                    child: ListTile(
-                      dense: true,
-                      leading: const Icon(Icons.visibility_outlined),
-                      title: const Text(
-                        'Viewing as Operator',
-                        style: TextStyle(fontWeight: FontWeight.w900),
-                      ),
-                      trailing: TextButton(
-                        onPressed: _viewMode.returnToAdmin,
-                        child: const Text('Return to Admin'),
+      builder: (context, child) => CehEnvironmentBanner(
+        environment: _environment,
+        child: CehViewModeScope(
+          controller: _viewMode,
+          child: AnimatedBuilder(
+            animation: _viewMode,
+            builder: (context, _) => Column(
+              children: [
+                if (_viewMode.viewAsOperator)
+                  Material(
+                    color: Colors.amber.shade200,
+                    child: SafeArea(
+                      bottom: false,
+                      child: ListTile(
+                        dense: true,
+                        leading: const Icon(Icons.visibility_outlined),
+                        title: const Text(
+                          'Viewing as Operator',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        trailing: TextButton(
+                          onPressed: _viewMode.returnToAdmin,
+                          child: const Text('Return to Admin'),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              Expanded(child: child ?? const SizedBox.shrink()),
-            ],
+                Expanded(child: child ?? const SizedBox.shrink()),
+              ],
+            ),
           ),
         ),
       ),

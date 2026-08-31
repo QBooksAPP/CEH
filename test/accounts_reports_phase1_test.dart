@@ -124,9 +124,22 @@ void main() {
     expect(regression, contains('QA SAMPLE RECEIPT'));
     expect(regression, contains('QA SAMPLE EVIDENCE - NOT PRODUCTION DATA'));
     expect(regression, contains(r'for ($page = 1; $page <= 2; $page++)'));
-    expect(regression, contains('qa-sample-receipt.jpg'));
+    expect(regression, contains('qa-real-size-sample-receipt.jpg'));
     expect(regression, contains('qa-sample-evidence-two-pages.pdf'));
-    expect(regression, contains(r"if ((int)$row['id'] === 3) return [];"));
+    expect(regression, contains("regression_expenses(\$filters, 'PETTY_CASH', 'CEH-PC-', 1)"));
+    expect(regression, contains("regression_expenses(\$filters, 'PETTY_CASH', 'CEH-PC-', 11)"));
+    expect(regression, contains("regression_expenses(\$filters, 'PETTY_CASH', 'CEH-PC-', 27)"));
+    expect(regression, contains('REGRESSION_JPEG_NOT_REAL_SIZE'));
+    expect(regression, contains(r"$id % 5 !== 0"));
+  });
+
+  test('dense registers reserve totals and avoid orphan continuation pages', () {
+    final pdf = source('Server/report_pdf_common.php');
+    expect(pdf, contains('reports_pdf_compact_journal_reference'));
+    expect(pdf, contains('reports_pdf_paginate_rows'));
+    expect(pdf, contains(r"count($pages[$lastIndex]) !== 1"));
+    expect(pdf, contains(r'reports_pdf_table_header($pdf, $columns)'));
+    expect(pdf, contains("188 - \$pdf->GetY(), 167, 25"));
   });
 
   test('report PDF dates use CEH presentation without changing API filters',
@@ -171,6 +184,20 @@ void main() {
     expect(widgets, contains('Color(0xFFE3F4E8)'));
     expect(widgets, contains('Color(0xFFFFF0D7)'));
     expect(widgets, contains('Color(0xFFFFE3E3)'));
+  });
+
+  test('shared accounting PDFs retain the approved corrected-preview palette',
+      () {
+    final pdf = source('Server/report_pdf_common.php');
+    expect(pdf, contains('const REPORT_PDF_INK = [18, 18, 18];'));
+    expect(pdf, contains('const REPORT_PDF_TEXT = [20, 20, 20];'));
+    expect(pdf, contains('const REPORT_PDF_SECONDARY = [75, 75, 75];'));
+    expect(pdf, contains('const REPORT_PDF_BORDER = [190, 190, 190];'));
+    expect(pdf, contains('const REPORT_PDF_PANEL = [245, 245, 245];'));
+    expect(pdf, contains('const REPORT_PDF_ALT = [250, 250, 250];'));
+    expect(pdf, contains('SetFillColor(...REPORT_PDF_INK)'));
+    expect(pdf, contains('SetTextColor(255, 255, 255)'));
+    expect(pdf, isNot(contains('Powered by TCPDF')));
   });
 
   test('legacy petty cash and evidence types remain supported', () {

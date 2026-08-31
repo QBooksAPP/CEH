@@ -533,7 +533,8 @@ class _CalibrationFieldSheetScreenState
     final canEditSafetyFactor = isUiAdmin(context, widget.session);
     return Scaffold(
       appBar: AppBar(
-        actions: cehHomeAction(context),
+        actions: cehHomeAction(context,
+            canLeave: () => confirmCehDiscardChanges(context)),
         title: Text(
             _calibrationId == null
                 ? 'Calibration Field Sheet'
