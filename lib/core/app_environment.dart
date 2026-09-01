@@ -1,5 +1,7 @@
 enum CehEnvironmentKind { production, staging }
 
+enum CehUpdateChannel { productionGithub, stagingVps }
+
 class CehAppEnvironment {
   const CehAppEnvironment._({
     required this.kind,
@@ -8,12 +10,19 @@ class CehAppEnvironment {
     required this.appLabel,
     required this.secureStorageNamespace,
     required this.updateChecksEnabled,
+    required this.updateChannel,
+    required this.updateManifestUrl,
+    required this.updateSigningCertificateSha256,
   });
 
   static const productionApiUrl = 'https://qbook.concretehireng.com';
   static const stagingApiUrl = 'https://staging.concretehireng.com';
   static const productionApplicationId = 'com.concreteequipmenthire.ceh';
   static const stagingApplicationId = 'com.concreteequipmenthire.ceh.staging';
+  static const stagingUpdateManifestUrl =
+      'https://staging.concretehireng.com/updates/staging/manifest.json';
+  static const stagingSigningCertificateSha256 =
+      'AFAFCE4A89211E7CBE6F0F665DB977F78CD96EF9343002F0A892B42F3FCDD057';
 
   static const production = CehAppEnvironment._(
     kind: CehEnvironmentKind.production,
@@ -22,6 +31,9 @@ class CehAppEnvironment {
     appLabel: 'CEH',
     secureStorageNamespace: 'ceh',
     updateChecksEnabled: true,
+    updateChannel: CehUpdateChannel.productionGithub,
+    updateManifestUrl: null,
+    updateSigningCertificateSha256: null,
   );
 
   static const staging = CehAppEnvironment._(
@@ -30,7 +42,10 @@ class CehAppEnvironment {
     applicationId: stagingApplicationId,
     appLabel: 'CEH STAGING',
     secureStorageNamespace: 'ceh_staging',
-    updateChecksEnabled: false,
+    updateChecksEnabled: true,
+    updateChannel: CehUpdateChannel.stagingVps,
+    updateManifestUrl: stagingUpdateManifestUrl,
+    updateSigningCertificateSha256: stagingSigningCertificateSha256,
   );
 
   final CehEnvironmentKind kind;
@@ -39,6 +54,9 @@ class CehAppEnvironment {
   final String appLabel;
   final String secureStorageNamespace;
   final bool updateChecksEnabled;
+  final CehUpdateChannel updateChannel;
+  final String? updateManifestUrl;
+  final String? updateSigningCertificateSha256;
 
   bool get isProduction => kind == CehEnvironmentKind.production;
   bool get isStaging => kind == CehEnvironmentKind.staging;

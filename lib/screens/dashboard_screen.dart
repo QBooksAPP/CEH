@@ -7,6 +7,7 @@ import '../core/ceh_theme.dart';
 import '../core/api_client.dart';
 import '../core/ceh_date_formatters.dart';
 import '../core/update_service.dart';
+import '../core/staging_update_installer.dart';
 import '../core/view_mode.dart';
 import '../models/session.dart';
 import 'accounts/accounts_home_screen.dart';
@@ -23,22 +24,26 @@ class DashboardScreen extends StatefulWidget {
     required this.onLogout,
     this.checkForUpdates = true,
     this.environment,
+    this.updateService,
+    this.stagingUpdateInstaller,
   });
 
   final CehSession session;
   final Future<void> Function() onLogout;
   final bool checkForUpdates;
   final CehAppEnvironment? environment;
+  final CehUpdateService? updateService;
+  final CehStagingUpdateInstaller? stagingUpdateInstaller;
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  final _updateService = const CehUpdateService();
-
   CehUpdateInfo? _update;
   bool _checkingUpdate = false;
+  bool _downloadingUpdate = false;
+  double _downloadProgress = 0;
   String? _versionText;
 
   CehSession get session => widget.session;
@@ -73,7 +78,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final package = await PackageInfo.fromPlatform();
       final currentBuild = int.tryParse(package.buildNumber) ?? 0;
 
-      final update = await _updateService.checkForUpdate(
+      final updateService =
+          widget.updateService ?? CehUpdateService(environment: environment);
+      final update = await updateService.checkForUpdate(
         currentBuild: currentBuild,
       );
 
@@ -107,6 +114,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final update = _update;
     if (update == null) return;
 
+    if (environment.isStaging) {
+      await _downloadStagingUpdate(update);
+      return;
+    }
+
     final uri = Uri.parse(update.downloadUrl);
     final opened = await launchUrl(
       uri,
@@ -117,6 +129,76 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Could not open the CEH update.')),
       );
+    }
+  }
+
+  Future<void> _downloadStagingUpdate(CehUpdateInfo update) async {
+    if (_downloadingUpdate) return;
+    final installer =
+        widget.stagingUpdateInstaller ?? const CehStagingUpdateInstaller();
+    CehVerifiedStagingUpdate verified;
+
+    if (mounted) {
+      setState(() {
+        _downloadingUpdate = true;
+        _downloadProgress = 0;
+      });
+    }
+
+    try {
+      verified = await installer.downloadAndVerify(
+        update,
+        onProgress: (progress) {
+          if (mounted) {
+            setState(() => _downloadProgress = progress.clamp(0, 1));
+          }
+        },
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              error is CehUpdateException
+                  ? error.message
+                  : 'The CEH STAGING update could not be downloaded.',
+            ),
+          ),
+        );
+      }
+      return;
+    } finally {
+      if (mounted) {
+        setState(() => _downloadingUpdate = false);
+      }
+    }
+
+    // The external Android installer is not CEH-controlled work. Clear the
+    // modal/busy state before handing off so cancellation or an emulator that
+    // never returns from the intent cannot leave CEH disabled.
+    try {
+      final result = await installer.launchInstaller(verified);
+      if (result == CehInstallerLaunchResult.permissionRequested && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Allow CEH STAGING to install updates, then tap Download & Install again.',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              error is CehUpdateException
+                  ? error.message
+                  : 'Android could not open the staging installer.',
+            ),
+          ),
+        );
+      }
     }
   }
 
@@ -259,19 +341,44 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               ),
                               const SizedBox(height: 3),
                               Text(
-                                'Build ${_update!.buildNumber} is ready.',
+                                environment.isStaging
+                                    ? '${_update!.versionName} '
+                                        '(build ${_update!.buildNumber}) is ready.'
+                                    : 'Build ${_update!.buildNumber} is ready.',
                               ),
+                              if (environment.isStaging &&
+                                  (_update!.releaseNotes?.trim().isNotEmpty ??
+                                      false)) ...[
+                                const SizedBox(height: 6),
+                                Text(_update!.releaseNotes!.trim()),
+                              ],
                             ],
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 14),
-                    FilledButton.icon(
-                      onPressed: _downloadUpdate,
-                      icon: const Icon(Icons.download),
-                      label: const Text('Update now'),
-                    ),
+                    if (_downloadingUpdate) ...[
+                      LinearProgressIndicator(
+                        value: _downloadProgress > 0 ? _downloadProgress : null,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _downloadProgress > 0
+                            ? 'Downloading ${(_downloadProgress * 100).round()}%'
+                            : 'Preparing secure download…',
+                        textAlign: TextAlign.center,
+                      ),
+                    ] else
+                      FilledButton.icon(
+                        onPressed: _downloadUpdate,
+                        icon: const Icon(Icons.download),
+                        label: Text(
+                          environment.isStaging
+                              ? 'Download & Install'
+                              : 'Update now',
+                        ),
+                      ),
                   ],
                 ),
               ),

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:ceh/core/api_client.dart';
@@ -13,6 +14,8 @@ import 'package:ceh/widgets/ceh_environment_banner.dart';
 import 'package:ceh/widgets/mixer_context_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 void main() {
   const adminSession = CehSession(
@@ -94,8 +97,7 @@ void main() {
     );
   });
 
-  test('staging disables updates while production behavior remains enabled',
-      () {
+  test('staging and production use completely separate update channels', () {
     expect(
       const CehUpdateService(environment: CehAppEnvironment.production)
           .updateChecksEnabled,
@@ -104,7 +106,15 @@ void main() {
     expect(
       const CehUpdateService(environment: CehAppEnvironment.staging)
           .updateChecksEnabled,
-      isFalse,
+      isTrue,
+    );
+    expect(
+      CehAppEnvironment.production.updateChannel,
+      CehUpdateChannel.productionGithub,
+    );
+    expect(
+      CehAppEnvironment.staging.updateChannel,
+      CehUpdateChannel.stagingVps,
     );
     expect(
       () => CehAppEnvironment.validate(
@@ -116,13 +126,48 @@ void main() {
     );
   });
 
-  test('staging update check exits without contacting production releases',
+  test('staging update check contacts only the approved staging manifest',
       () async {
-    final result = await const CehUpdateService(
+    Uri? requestedUri;
+    final client = MockClient((request) async {
+      requestedUri = request.url;
+      return http.Response(
+        jsonEncode({
+          'schemaVersion': 1,
+          'channel': 'staging',
+          'environment': 'STAGING',
+          'applicationId': CehAppEnvironment.stagingApplicationId,
+          'versionName': '0.3.0-staging.1',
+          'versionCode': 96001,
+          'build': 96,
+          'commit': '23d8588bc1efc4aa1e59bc57cb0b04701b62298d',
+          'publishedAt': '2026-08-31T18:00:00Z',
+          'releaseNotes': 'Baseline',
+          'apk': {
+            'filename': 'CEH-STAGING-0.3.0-staging.1-96001.apk',
+            'url':
+                'https://staging.concretehireng.com/updates/staging/CEH-STAGING-0.3.0-staging.1-96001.apk',
+            'byteSize': 100,
+            'sha256': List.filled(64, 'a').join(),
+            'signingCertificateSha256':
+                CehAppEnvironment.stagingSigningCertificateSha256,
+          },
+        }),
+        200,
+        request: request,
+      );
+    });
+    final result = await CehUpdateService(
       environment: CehAppEnvironment.staging,
-    ).checkForUpdate(currentBuild: 96);
+      client: client,
+    ).checkForUpdate(currentBuild: 96001);
 
     expect(result, isNull);
+    expect(
+      requestedUri,
+      Uri.parse(CehAppEnvironment.stagingUpdateManifestUrl),
+    );
+    expect(requestedUri!.host, isNot('api.github.com'));
   });
 
   testWidgets('STAGING identification renders only for staging',
@@ -250,5 +295,10 @@ void main() {
     expect(manifest, contains('android:label="@string/app_name"'));
     expect(productionLabel, contains('>CEH</string>'));
     expect(stagingLabel, contains('>CEH STAGING</string>'));
+    expect(gradle, contains('stagingPermanent'));
+    expect(
+      CehAppEnvironment.stagingSigningCertificateSha256,
+      'AFAFCE4A89211E7CBE6F0F665DB977F78CD96EF9343002F0A892B42F3FCDD057',
+    );
   });
 }

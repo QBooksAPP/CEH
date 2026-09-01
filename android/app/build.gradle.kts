@@ -1,5 +1,19 @@
 import java.util.Base64
 
+val requestedCehTasks = gradle.startParameter.taskNames.map { it.lowercase() }
+val buildsStagingRelease = requestedCehTasks.any {
+    it.contains("staging") && it.contains("release")
+}
+val buildsProductionRelease = requestedCehTasks.any {
+    it.contains("production") && it.contains("release")
+}
+val stagingKeystorePath = System.getenv("CEH_STAGING_KEYSTORE_PATH")
+val stagingStorePassword = System.getenv("CEH_STAGING_KEYSTORE_PASSWORD")
+val stagingKeyAlias = System.getenv("CEH_STAGING_KEY_ALIAS")
+val stagingSigningAvailable = !stagingKeystorePath.isNullOrBlank() &&
+    !stagingStorePassword.isNullOrBlank() &&
+    stagingKeyAlias == "ceh-staging"
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
@@ -42,13 +56,37 @@ android {
         }
     }
 
-    buildTypes {
-        release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+    signingConfigs {
+        if (stagingSigningAvailable) {
+            create("stagingPermanent") {
+                storeFile = file(stagingKeystorePath!!)
+                storePassword = stagingStorePassword
+                keyAlias = stagingKeyAlias
+                keyPassword = stagingStorePassword
+            }
         }
     }
+
+    buildTypes {
+        release {
+            if (buildsStagingRelease) {
+                require(!buildsProductionRelease) {
+                    "Production and staging release variants must be built separately."
+                }
+                require(stagingSigningAvailable) {
+                    "The permanent CEH STAGING signing credential is required."
+                }
+                signingConfig = signingConfigs.getByName("stagingPermanent")
+            } else {
+                // Production retains its existing local/CI signing resolution.
+                signingConfig = signingConfigs.getByName("debug")
+            }
+        }
+    }
+}
+
+dependencies {
+    implementation("androidx.core:core:1.15.0")
 }
 
 gradle.taskGraph.whenReady {
