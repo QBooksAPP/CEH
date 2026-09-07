@@ -13,6 +13,7 @@ import 'accounts_phase1_screens.dart';
 import 'accounts_billing_screen.dart';
 import 'accounts_reports_screen.dart';
 import 'accounts_journal_screen.dart';
+import 'accounts_wht_certificates_screen.dart';
 
 abstract interface class AccountsFiguresPreference {
   Future<bool?> read(int userId);
@@ -150,11 +151,16 @@ class _AccountsHomeScreenState extends State<AccountsHomeScreen> {
               : ReportsPrototypeScreen(session: session)),
       _AccountsDestination(
           'Journals & Ledger',
-          'Read-only General Journal and account activity',
+          'General Journal, account activity and Trial Balance',
           Icons.menu_book_outlined,
           liveData
               ? AccountsJournalScreen(session: session, api: widget.api)
               : AccountsJournalScreen(session: session, api: widget.api)),
+      _AccountsDestination(
+          'WHT Certificates',
+          'Track pending certificates and received evidence',
+          Icons.description_outlined,
+          WhtCertificatesScreen(session: session, api: widget.api)),
     ];
 
     return Scaffold(

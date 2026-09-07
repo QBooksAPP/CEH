@@ -23,7 +23,7 @@ class AccountsJournalScreen extends StatelessWidget {
           body: Center(child: Text('Administrator access required.')));
     }
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Journals & Ledger',
@@ -31,16 +31,155 @@ class AccountsJournalScreen extends StatelessWidget {
           actions: cehHomeAction(context),
           bottom: const TabBar(tabs: [
             Tab(text: 'General Journal'),
-            Tab(text: 'Account Ledger')
+            Tab(text: 'Account Ledger'),
+            Tab(text: 'Trial Balance')
           ]),
         ),
         body: TabBarView(children: [
           GeneralJournalView(session: session, api: api),
           AccountLedgerView(session: session, api: api),
+          TrialBalanceView(session: session, api: api),
         ]),
       ),
     );
   }
+}
+
+class TrialBalanceView extends StatefulWidget {
+  const TrialBalanceView({super.key, required this.session, required this.api});
+  final CehSession session;
+  final CehApiClient api;
+  @override
+  State<TrialBalanceView> createState() => _TrialBalanceViewState();
+}
+
+class _TrialBalanceViewState extends State<TrialBalanceView> {
+  String _from = '', _to = '', _search = '';
+  late Future<TrialBalanceReport> _future;
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  void _load() => _future = widget.api.trialBalance(widget.session,
+      filters: {'date_from': _from, 'date_to': _to, 'search': _search});
+  void _reload() => setState(_load);
+  Future<void> _filters() async {
+    final from = TextEditingController(text: _from),
+        to = TextEditingController(text: _to),
+        search = TextEditingController(text: _search);
+    final result = await showDialog<Map<String, String>>(
+        context: context,
+        builder: (_) => AlertDialog(
+                title: const Text('Trial Balance filters'),
+                content: SizedBox(
+                    width: 420,
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      TextField(
+                          controller: from,
+                          decoration: const InputDecoration(
+                              labelText: 'From date (YYYY-MM-DD)')),
+                      TextField(
+                          controller: to,
+                          decoration: const InputDecoration(
+                              labelText: 'As-of date (YYYY-MM-DD)')),
+                      TextField(
+                          controller: search,
+                          decoration: const InputDecoration(
+                              labelText: 'Account code or name'))
+                    ])),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancel')),
+                  FilledButton(
+                      onPressed: () => Navigator.pop(context, {
+                            'date_from': from.text.trim(),
+                            'date_to': to.text.trim(),
+                            'search': search.text.trim()
+                          }),
+                      child: const Text('Apply'))
+                ]));
+    if (result != null) {
+      _from = result['date_from']!;
+      _to = result['date_to']!;
+      _search = result['search']!;
+      _reload();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<TrialBalanceReport>(
+      future: _future,
+      builder: (context, s) {
+        if (s.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (s.hasError) {
+          return _ErrorState(
+              message: 'Trial Balance unavailable: ${s.error}', retry: _reload);
+        }
+        final report = s.data!;
+        return Column(children: [
+          Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(children: [
+                Expanded(
+                    child: Text(
+                        _to.isEmpty
+                            ? 'All posted journal activity'
+                            : 'As at ${displayAccountsDate(_to)}',
+                        style: Theme.of(context).textTheme.titleMedium)),
+                OutlinedButton.icon(
+                    key: const ValueKey('trial-balance-filter'),
+                    onPressed: _filters,
+                    icon: const Icon(Icons.filter_list),
+                    label: const Text('Filters'))
+              ])),
+          Expanded(
+              child: report.accounts.isEmpty
+                  ? const Center(
+                      child: Text('No account balances match these filters.'))
+                  : ListView.separated(
+                      itemCount: report.accounts.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, i) {
+                        final a = report.accounts[i];
+                        return ListTile(
+                            key: ValueKey('trial-balance-${a.accountId}'),
+                            title: Text('${a.code} — ${a.name}',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w800)),
+                            subtitle: Text('Debit ${formatNgn(a.debit)}'),
+                            trailing: Text('Credit ${formatNgn(a.credit)}'));
+                      })),
+          Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                  border: Border(
+                      top: BorderSide(color: Theme.of(context).dividerColor))),
+              child: Column(children: [
+                Row(children: [
+                  Expanded(
+                      child: Text(
+                          'Total Debit\n${formatNgn(report.totalDebit)}',
+                          style: const TextStyle(fontWeight: FontWeight.w900))),
+                  Expanded(
+                      child: Text(
+                          'Total Credit\n${formatNgn(report.totalCredit)}',
+                          textAlign: TextAlign.end,
+                          style: const TextStyle(fontWeight: FontWeight.w900)))
+                ]),
+                const SizedBox(height: 6),
+                Text(
+                    report.balanced
+                        ? 'Total debits equal total credits'
+                        : 'Trial Balance is out of balance',
+                    style: const TextStyle(fontWeight: FontWeight.w800))
+              ]))
+        ]);
+      });
 }
 
 class GeneralJournalView extends StatefulWidget {

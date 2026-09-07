@@ -202,6 +202,104 @@ class AccountLedgerPage {
   bool get hasNext => page < totalPages;
 }
 
+class TrialBalanceAccount {
+  const TrialBalanceAccount(
+      {required this.accountId,
+      required this.code,
+      required this.name,
+      required this.debit,
+      required this.credit});
+  final int accountId;
+  final String code;
+  final String name;
+  final double debit;
+  final double credit;
+  factory TrialBalanceAccount.fromJson(Map<String, dynamic> json) =>
+      TrialBalanceAccount(
+          accountId: _int(json['account_id']),
+          code: '${json['account_code'] ?? ''}',
+          name: '${json['account_name'] ?? ''}',
+          debit: _double(json['debit_balance']),
+          credit: _double(json['credit_balance']));
+}
+
+class TrialBalanceReport {
+  const TrialBalanceReport(
+      {required this.accounts,
+      required this.totalDebit,
+      required this.totalCredit,
+      required this.balanced,
+      this.dateFrom,
+      this.dateTo});
+  final List<TrialBalanceAccount> accounts;
+  final double totalDebit;
+  final double totalCredit;
+  final bool balanced;
+  final String? dateFrom;
+  final String? dateTo;
+  factory TrialBalanceReport.fromJson(Map<String, dynamic> json) {
+    final basis = Map<String, dynamic>.from(json['basis'] as Map? ?? const {});
+    return TrialBalanceReport(
+        accounts: (json['accounts'] as List? ?? const [])
+            .map((x) => TrialBalanceAccount.fromJson(
+                Map<String, dynamic>.from(x as Map)))
+            .toList(),
+        totalDebit: _double(json['total_debit']),
+        totalCredit: _double(json['total_credit']),
+        balanced: _bool(json['balanced']),
+        dateFrom: basis['date_from']?.toString(),
+        dateTo: basis['date_to']?.toString());
+  }
+}
+
+class WhtCertificateRecord {
+  const WhtCertificateRecord(
+      {required this.recordType,
+      required this.recordId,
+      required this.receiptId,
+      required this.clientId,
+      required this.client,
+      required this.receiptReference,
+      required this.paymentDate,
+      required this.amount,
+      required this.status,
+      required this.createdAt,
+      this.allocationWhtId,
+      this.invoiceId,
+      this.invoiceReference,
+      this.evidenceId,
+      this.receivedAt});
+  final String recordType;
+  final int recordId, receiptId, clientId;
+  final int? allocationWhtId, invoiceId, evidenceId;
+  final String client, receiptReference, paymentDate, status, createdAt;
+  final String? invoiceReference, receivedAt;
+  final double amount;
+  bool get isPending => status == 'CERTIFICATE_PENDING';
+  factory WhtCertificateRecord.fromJson(Map<String, dynamic> json) =>
+      WhtCertificateRecord(
+          recordType: '${json['record_type'] ?? ''}',
+          recordId: _int(json['record_id']),
+          receiptId: _int(json['receipt_id']),
+          clientId: _int(json['client_id']),
+          client: '${json['client_name_snapshot'] ?? ''}',
+          receiptReference: '${json['receipt_reference'] ?? ''}',
+          paymentDate: '${json['receipt_date'] ?? ''}',
+          amount: _double(json['accepted_amount']),
+          status: '${json['certificate_status'] ?? ''}',
+          createdAt: '${json['created_at'] ?? ''}',
+          allocationWhtId: json['record_type'] == 'ALLOCATION'
+              ? _int(json['record_id'])
+              : null,
+          invoiceId:
+              json['invoice_id'] == null ? null : _int(json['invoice_id']),
+          invoiceReference: json['invoice_reference']?.toString(),
+          evidenceId: json['certificate_evidence_id'] == null
+              ? null
+              : _int(json['certificate_evidence_id']),
+          receivedAt: json['certificate_received_at']?.toString());
+}
+
 class CehBankAccount {
   const CehBankAccount({
     required this.id,

@@ -1176,6 +1176,74 @@ class CehApiClient {
     return data;
   }
 
+  Future<TrialBalanceReport> trialBalance(CehSession session,
+      {Map<String, String> filters = const {}}) async {
+    final uri = Uri.parse('$baseUrl/trial_balance.php').replace(
+        queryParameters: {...filters}..removeWhere((_, v) => v.isEmpty));
+    final response = await http
+        .get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'TRIAL_BALANCE_FAILED');
+    return TrialBalanceReport.fromJson(data);
+  }
+
+  Future<List<WhtCertificateRecord>> whtCertificates(CehSession session,
+      {Map<String, String> filters = const {}}) async {
+    final uri = Uri.parse('$baseUrl/wht_certificates.php').replace(
+        queryParameters: {...filters}..removeWhere((_, v) => v.isEmpty));
+    final response = await http
+        .get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'WHT_CERTIFICATES_FAILED');
+    return (data['certificates'] as List? ?? const [])
+        .map((x) =>
+            WhtCertificateRecord.fromJson(Map<String, dynamic>.from(x as Map)))
+        .toList();
+  }
+
+  Future<void> markWhtCertificateReceived(
+      CehSession session, WhtCertificateRecord record, int evidenceId) async {
+    await _postJson(
+        session,
+        'wht_certificate_update.php',
+        {
+          'receipt_id': record.receiptId,
+          'evidence_id': evidenceId,
+          if (record.allocationWhtId != null)
+            'allocation_wht_id': record.allocationWhtId,
+        },
+        'WHT_CERTIFICATE_UPDATE_FAILED');
+  }
+
+  Future<ProductionReportFile> financialEvidence(
+      CehSession session, int evidenceId) async {
+    final uri = Uri.parse('$baseUrl/financial_evidence_get.php')
+        .replace(queryParameters: {'evidence_id': '$evidenceId'});
+    final response = await http
+        .get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 40));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException('EVIDENCE_DOWNLOAD_FAILED',
+          statusCode: response.statusCode);
+    }
+    final disposition = response.headers['content-disposition'] ?? '';
+    final match = RegExp(r'filename="?([^";]+)"?', caseSensitive: false)
+        .firstMatch(disposition);
+    var filename = match?.group(1) ?? 'CEH-WHT-Certificate';
+    if (!filename.contains('.')) {
+      final contentType =
+          (response.headers['content-type'] ?? '').toLowerCase();
+      filename += contentType.startsWith('application/pdf')
+          ? '.pdf'
+          : contentType.startsWith('image/png')
+              ? '.png'
+              : '.jpg';
+    }
+    return ProductionReportFile(bytes: response.bodyBytes, filename: filename);
+  }
+
   Future<Map<String, dynamic>> accountsReport(CehSession session,
       {required String endpoint,
       Map<String, String> filters = const {}}) async {
