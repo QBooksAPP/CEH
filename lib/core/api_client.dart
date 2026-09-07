@@ -1095,6 +1095,87 @@ class CehApiClient {
     return Map<String, dynamic>.from(data['overview'] as Map);
   }
 
+  Future<AccountsPage<FinancialJournalSummary>> financialJournals(
+      CehSession session,
+      {int page = 1,
+      int pageSize = 25,
+      Map<String, String> filters = const {}}) async {
+    final uri = Uri.parse('$baseUrl/financial_journals.php').replace(
+        queryParameters: {'page': '$page', 'page_size': '$pageSize', ...filters}
+          ..removeWhere((_, v) => v.isEmpty));
+    final response = await http
+        .get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'FINANCIAL_JOURNALS_FAILED');
+    final p = Map<String, dynamic>.from(data['pagination'] as Map? ?? const {});
+    return AccountsPage(
+        items: (data['journals'] as List? ?? const [])
+            .map((x) => FinancialJournalSummary.fromJson(
+                Map<String, dynamic>.from(x as Map)))
+            .toList(),
+        page: (p['page'] as num?)?.toInt() ?? page,
+        pageSize: (p['page_size'] as num?)?.toInt() ?? pageSize,
+        total: (p['total'] as num?)?.toInt() ?? 0,
+        totalPages: (p['total_pages'] as num?)?.toInt() ?? 0);
+  }
+
+  Future<FinancialJournalDetail> financialJournal(
+      CehSession session, int journalId) async {
+    final uri = Uri.parse('$baseUrl/financial_journals.php')
+        .replace(queryParameters: {'journal_id': '$journalId'});
+    final response = await http
+        .get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'FINANCIAL_JOURNAL_FAILED');
+    return FinancialJournalDetail.fromJson(
+        Map<String, dynamic>.from(data['journal'] as Map));
+  }
+
+  Future<AccountLedgerPage> accountLedger(CehSession session,
+      {required int accountId,
+      int page = 1,
+      int pageSize = 50,
+      Map<String, String> filters = const {}}) async {
+    final uri = Uri.parse('$baseUrl/account_ledger.php').replace(
+        queryParameters: {
+      'account_id': '$accountId',
+      'page': '$page',
+      'page_size': '$pageSize',
+      ...filters
+    }..removeWhere((_, v) => v.isEmpty));
+    final response = await http
+        .get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'ACCOUNT_LEDGER_FAILED');
+    final p = Map<String, dynamic>.from(data['pagination'] as Map? ?? const {});
+    return AccountLedgerPage(
+        account: FinancialAccount.fromJson(
+            Map<String, dynamic>.from(data['account'] as Map)),
+        openingBalance: double.tryParse('${data['opening_balance'] ?? 0}') ?? 0,
+        entries: (data['entries'] as List? ?? const [])
+            .map((x) => AccountLedgerEntry.fromJson(
+                Map<String, dynamic>.from(x as Map)))
+            .toList(),
+        page: (p['page'] as num?)?.toInt() ?? page,
+        pageSize: (p['page_size'] as num?)?.toInt() ?? pageSize,
+        total: (p['total'] as num?)?.toInt() ?? 0,
+        totalPages: (p['total_pages'] as num?)?.toInt() ?? 0);
+  }
+
+  Future<Map<String, dynamic>> financialJournalFilters(
+      CehSession session) async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/financial_journal_filters.php'),
+            headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'FINANCIAL_JOURNAL_FILTERS_FAILED');
+    return data;
+  }
+
   Future<Map<String, dynamic>> accountsReport(CehSession session,
       {required String endpoint,
       Map<String, String> filters = const {}}) async {

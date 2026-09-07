@@ -25,6 +25,183 @@ class FinancialAccount {
       );
 }
 
+class FinancialJournalSummary {
+  const FinancialJournalSummary(
+      {required this.id,
+      required this.reference,
+      required this.date,
+      required this.description,
+      required this.sourceType,
+      required this.sourceRecordId,
+      this.sourceReference,
+      required this.entryKind,
+      required this.status,
+      required this.createdBy,
+      required this.postedBy,
+      required this.totalDebit,
+      required this.totalCredit,
+      this.reversalOfId});
+  final int id, sourceRecordId;
+  final String? sourceReference;
+  final int? reversalOfId;
+  final String reference,
+      date,
+      description,
+      sourceType,
+      entryKind,
+      status,
+      createdBy,
+      postedBy;
+  final double totalDebit, totalCredit;
+  bool get balances => (totalDebit - totalCredit).abs() < 0.005;
+  factory FinancialJournalSummary.fromJson(Map<String, dynamic> j) =>
+      FinancialJournalSummary(
+          id: _int(j['id']),
+          reference: '${j['reference_no'] ?? ''}',
+          date: '${j['transaction_date'] ?? ''}',
+          description: '${j['description'] ?? ''}',
+          sourceType: '${j['source_module'] ?? ''}',
+          sourceRecordId: _int(j['source_record_id']),
+          sourceReference: j['source_reference']?.toString(),
+          entryKind: '${j['entry_kind'] ?? ''}',
+          status: '${j['status'] ?? ''}',
+          createdBy: '${j['created_by_name'] ?? ''}',
+          postedBy: '${j['approved_by_name'] ?? j['created_by_name'] ?? ''}',
+          totalDebit: _double(j['total_debit']),
+          totalCredit: _double(j['total_credit']),
+          reversalOfId:
+              j['reversal_of_id'] == null ? null : _int(j['reversal_of_id']));
+}
+
+class FinancialJournalLine {
+  const FinancialJournalLine(
+      {required this.lineNo,
+      required this.accountCode,
+      required this.accountName,
+      required this.description,
+      required this.debit,
+      required this.credit,
+      this.costCentre,
+      this.client,
+      this.project,
+      this.equipment,
+      this.custodian});
+  final int lineNo;
+  final String accountCode, accountName, description;
+  final double debit, credit;
+  final String? costCentre, client, project, equipment, custodian;
+  factory FinancialJournalLine.fromJson(Map<String, dynamic> j) =>
+      FinancialJournalLine(
+          lineNo: _int(j['line_no']),
+          accountCode: '${j['account_code'] ?? ''}',
+          accountName: '${j['account_name'] ?? ''}',
+          description: '${j['description'] ?? ''}',
+          debit: _double(j['debit']),
+          credit: _double(j['credit']),
+          costCentre: j['cost_centre_name']?.toString(),
+          client: j['client_name']?.toString(),
+          project: j['project_name']?.toString(),
+          equipment: j['mixer_code']?.toString(),
+          custodian: j['custodian_name']?.toString());
+}
+
+class FinancialJournalDetail {
+  const FinancialJournalDetail(
+      {required this.summary,
+      required this.lines,
+      this.originalJournalId,
+      this.originalReference,
+      this.reversalJournalId,
+      this.reversalReference});
+  final FinancialJournalSummary summary;
+  final List<FinancialJournalLine> lines;
+  final int? originalJournalId, reversalJournalId;
+  final String? originalReference, reversalReference;
+  factory FinancialJournalDetail.fromJson(Map<String, dynamic> j) =>
+      FinancialJournalDetail(
+          summary: FinancialJournalSummary.fromJson({
+            ...j,
+            'total_debit': (j['lines'] as List? ?? const [])
+                .fold<double>(0, (s, x) => s + _double((x as Map)['debit'])),
+            'total_credit': (j['lines'] as List? ?? const [])
+                .fold<double>(0, (s, x) => s + _double((x as Map)['credit']))
+          }),
+          lines: (j['lines'] as List? ?? const [])
+              .map((x) => FinancialJournalLine.fromJson(
+                  Map<String, dynamic>.from(x as Map)))
+              .toList(),
+          originalJournalId:
+              j['reversal_of_id'] == null ? null : _int(j['reversal_of_id']),
+          originalReference: j['original_reference']?.toString(),
+          reversalJournalId:
+              j['reversal_id'] == null ? null : _int(j['reversal_id']),
+          reversalReference: j['reversal_reference']?.toString());
+}
+
+class AccountsPage<T> {
+  const AccountsPage(
+      {required this.items,
+      required this.page,
+      required this.pageSize,
+      required this.total,
+      required this.totalPages});
+  final List<T> items;
+  final int page, pageSize, total, totalPages;
+  bool get hasNext => page < totalPages;
+}
+
+class AccountLedgerEntry {
+  const AccountLedgerEntry(
+      {required this.id,
+      required this.journalId,
+      required this.date,
+      required this.journalReference,
+      required this.description,
+      required this.sourceType,
+      required this.debit,
+      required this.credit,
+      required this.runningBalance,
+      this.client,
+      this.project,
+      this.equipment,
+      this.costCentre});
+  final int id, journalId;
+  final String date, journalReference, description, sourceType;
+  final double debit, credit, runningBalance;
+  final String? client, project, equipment, costCentre;
+  factory AccountLedgerEntry.fromJson(Map<String, dynamic> j) =>
+      AccountLedgerEntry(
+          id: _int(j['id']),
+          journalId: _int(j['journal_id']),
+          date: '${j['transaction_date'] ?? ''}',
+          journalReference: '${j['journal_reference'] ?? ''}',
+          description: '${j['description'] ?? j['journal_description'] ?? ''}',
+          sourceType: '${j['source_module'] ?? ''}',
+          debit: _double(j['debit']),
+          credit: _double(j['credit']),
+          runningBalance: _double(j['running_balance']),
+          client: j['client_name']?.toString(),
+          project: j['project_name']?.toString(),
+          equipment: j['mixer_code']?.toString(),
+          costCentre: j['cost_centre_name']?.toString());
+}
+
+class AccountLedgerPage {
+  const AccountLedgerPage(
+      {required this.account,
+      required this.openingBalance,
+      required this.entries,
+      required this.page,
+      required this.pageSize,
+      required this.total,
+      required this.totalPages});
+  final FinancialAccount account;
+  final double openingBalance;
+  final List<AccountLedgerEntry> entries;
+  final int page, pageSize, total, totalPages;
+  bool get hasNext => page < totalPages;
+}
+
 class CehBankAccount {
   const CehBankAccount({
     required this.id,
