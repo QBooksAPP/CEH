@@ -12,6 +12,7 @@ import '../../models/project.dart';
 import '../../models/session.dart';
 import '../../widgets/accounts_widgets.dart';
 import 'accounts_general_expense_screen.dart';
+import 'accounts_expense_refunds_screen.dart';
 
 String accountsExpenseFilterLabel(String value) => switch (value) {
       'PETTY_CASH' => 'Petty Cash',
@@ -816,6 +817,21 @@ class _AccountsExpensesScreenState extends State<AccountsExpensesScreen> {
                                   child: const Text('Cancel / Not Spent'),
                                 ),
                               ],
+                            ),
+                          if (expense.sourceType == 'BANK' &&
+                              expense.lifecycleStatus == 'APPROVED' &&
+                              isUiAdmin(context, widget.session))
+                            OutlinedButton.icon(
+                              onPressed: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) =>
+                                          AccountsExpenseRefundsScreen(
+                                              session: widget.session,
+                                              expenseId:
+                                                  expense.sourceRecordId))),
+                              icon: const Icon(Icons.account_balance_outlined),
+                              label: const Text('Refunds / Link Refund'),
                             ),
                           if (expense.lifecycleStatus == 'APPROVED')
                             Align(

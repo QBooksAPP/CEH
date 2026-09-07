@@ -1426,6 +1426,40 @@ class CehApiClient {
               'GENERAL_EXPENSE_REVIEW_FAILED')
           .then((_) {});
 
+  Future<Map<String, dynamic>> generalExpenseRefunds(CehSession session,
+      {required int expenseId,
+      String view = 'history',
+      int page = 1,
+      String search = '',
+      String dateFrom = '',
+      String dateTo = ''}) async {
+    final uri = Uri.parse('$baseUrl/general_expense_refunds.php')
+        .replace(queryParameters: {
+      'expense_id': '$expenseId',
+      'view': view,
+      'page': '$page',
+      'page_size': '25',
+      'search': search,
+      'date_from': dateFrom,
+      'date_to': dateTo,
+    });
+    final response = await http
+        .get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'GENERAL_EXPENSE_REFUNDS_FAILED');
+    return data;
+  }
+
+  Future<void> linkGeneralExpenseRefund(CehSession session,
+          {required int expenseId, required int statementRowId}) =>
+      _postJson(
+              session,
+              'general_expense_refund_link.php',
+              {'expense_id': expenseId, 'statement_row_id': statementRowId},
+              'GENERAL_EXPENSE_REFUND_LINK_FAILED')
+          .then((_) {});
+
   Future<List<Map<String, dynamic>>> generalExpenses(CehSession session) async {
     final response = await http
         .get(Uri.parse('$baseUrl/general_expenses.php'),
