@@ -598,7 +598,23 @@ class BillingInvoiceDetail {
       this.journalId,
       this.postingStatus,
       this.originEstimateId,
-      this.originEstimateReference});
+      this.originEstimateReference,
+      this.rawStatus = '',
+      this.canVoid = false,
+      this.voidBlockingReasons = const [],
+      this.voidReason,
+      this.voidedByName,
+      this.voidedAt,
+      this.effectiveVoidDate,
+      this.originalJournalReference,
+      this.reversalJournalId,
+      this.reversalJournalReference});
+  final String rawStatus;
+  final bool canVoid;
+  final List<String> voidBlockingReasons;
+  final String? voidReason, voidedByName, voidedAt, effectiveVoidDate;
+  final String? originalJournalReference, reversalJournalReference;
+  final int? reversalJournalId;
   final int id;
   final String reference;
   final int clientId;
@@ -667,7 +683,24 @@ class BillingInvoiceDetail {
         originEstimateId: json['origin_estimate_id'] == null
             ? null
             : _int(json['origin_estimate_id']),
-        originEstimateReference: json['origin_estimate_reference']?.toString());
+        originEstimateReference: json['origin_estimate_reference']?.toString(),
+        rawStatus: '${json['raw_status'] ?? json['status'] ?? ''}',
+        canVoid: json['can_void'] == true,
+        voidBlockingReasons:
+            (json['void_blocking_reasons'] as List? ?? const [])
+                .map((e) => '$e')
+                .toList(),
+        voidReason: json['void_reason']?.toString(),
+        voidedByName: json['voided_by_name']?.toString(),
+        voidedAt: json['voided_at']?.toString(),
+        effectiveVoidDate: json['effective_void_date']?.toString(),
+        originalJournalReference:
+            json['original_journal_reference']?.toString(),
+        reversalJournalId: json['reversal_journal_id'] == null
+            ? null
+            : _int(json['reversal_journal_id']),
+        reversalJournalReference:
+            json['reversal_journal_reference']?.toString());
   }
 }
 

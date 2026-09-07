@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-require_once __DIR__.'/billing_common.php';
+require_once __DIR__.'/invoice_void_common.php';
 $user=billing_require_admin();
 production_require_method('GET');
 
@@ -62,6 +62,7 @@ accounts_endpoint(function():array{
             $date=strcmp((string)$a['event_date'],(string)$b['event_date']);
             return $date!==0?$date:strcmp((string)$a['event_timestamp'],(string)$b['event_timestamp']);
         });
+        $invoice=array_merge($invoice,invoice_void_contract($db,$invoice));
         return['invoice'=>$invoice,'lines'=>$lines,'credit_notes'=>$credits,'settlement_history'=>$events];
     }
     $where=[];$args=[];if(($client=(int)($_GET['client_id']??0))>0){$where[]='i.client_id=?';$args[]=$client;}

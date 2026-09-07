@@ -841,6 +841,19 @@ class CehApiClient {
     return BillingInvoiceDetail.fromJson(data);
   }
 
+  Future<void> voidInvoice(CehSession session, int invoiceId,
+          {required String reason, required String voidDate}) =>
+      _postJson(
+              session,
+              'invoice_void.php',
+              {
+                'invoice_id': invoiceId,
+                'reason': reason,
+                'void_date': voidDate
+              },
+              'INVOICE_VOID_FAILED')
+          .then((_) {});
+
   Future<ProductionReportFile> invoicePdf(
       CehSession session, int invoiceId) async {
     final uri = Uri.parse('$baseUrl/invoice_pdf.php')

@@ -8,12 +8,15 @@ import 'package:share_plus/share_plus.dart';
 import '../../core/accounts_formatters.dart';
 import '../../core/api_client.dart';
 import '../../core/internal_navigation.dart';
+import '../../core/view_mode.dart';
 import '../../models/accounts.dart';
 import '../../models/client.dart';
 import '../../models/session.dart';
 import '../../widgets/accounts_widgets.dart';
 import 'accounts_billing_settings_screen.dart';
 import 'accounts_estimates_screen.dart';
+import 'accounts_journal_screen.dart';
+import 'invoice_void_dialog.dart';
 
 class AccountsBillingScreen extends StatefulWidget {
   const AccountsBillingScreen(
@@ -435,14 +438,73 @@ class InvoiceDetailsScreen extends StatefulWidget {
 class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
   late Future<BillingInvoiceDetail> _detail;
   bool _busy = false;
+  bool _confirmingVoid = false;
+
+  Future<void> _voidInvoice(BillingInvoiceDetail invoice) async {
+    if (_busy ||
+        _confirmingVoid ||
+        !invoice.canVoid ||
+        !isUiAdmin(context, widget.session)) {
+      return;
+    }
+    setState(() => _confirmingVoid = true);
+    try {
+      final request = await showDialog<InvoiceVoidRequest>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => InvoiceVoidDialog(invoice: invoice));
+      if (!mounted || request == null || !isUiAdmin(context, widget.session)) {
+        return;
+      }
+      setState(() => _busy = true);
+      String? failure;
+      try {
+        await widget.api.voidInvoice(widget.session, invoice.id,
+            reason: request.reason, voidDate: request.date);
+      } on ApiException catch (e) {
+        failure = 'Void request: ${e.code}. Checking current invoice state.';
+      } catch (_) {
+        failure =
+            'The result could not be confirmed. Checking current invoice state before another action.';
+      }
+      if (!mounted) return;
+      // Replace the old eligibility immediately. Failed refresh shows only retry,
+      // never the stale invoice/action after a timeout or uncertain response.
+      setState(_reload);
+      try {
+        await _detail;
+      } catch (_) {/* FutureBuilder displays refresh failure. */}
+      if (mounted && failure != null) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(failure)));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _confirmingVoid = false;
+        });
+      }
+    }
+  }
+
+  Widget _journalLink(int id, String label) => TextButton(
+      onPressed: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (_) => JournalDetailScreen(
+                  session: widget.session, api: widget.api, journalId: id))),
+      child: Text(label));
   @override
   void initState() {
     super.initState();
     _reload();
   }
 
-  void _reload() =>
-      _detail = widget.api.invoiceDetails(widget.session, widget.invoiceId);
+  void _reload() {
+    _detail = widget.api.invoiceDetails(widget.session, widget.invoiceId);
+  }
+
   String _vatMode(String value) => switch (value) {
         'VAT_EXCLUSIVE' => 'VAT Exclusive',
         'VAT_INCLUSIVE' => 'VAT Inclusive',
@@ -578,11 +640,35 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
               return const Center(child: CircularProgressIndicator());
             }
             if (s.hasError) {
-              return Center(child: Text('Unable to load invoice: ${s.error}'));
+              return Center(
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                const Text(
+                    'Unable to refresh invoice. Verify its current state before another action.'),
+                TextButton(
+                    onPressed: _busy ? null : () => setState(_reload),
+                    child: const Text('Retry')),
+              ]));
             }
             final i = s.data!;
             final draft = i.status == 'DRAFT';
             return ListView(padding: const EdgeInsets.all(18), children: [
+              if (i.canVoid && isUiAdmin(context, widget.session))
+                OutlinedButton.icon(
+                    key: const ValueKey('void-invoice'),
+                    onPressed:
+                        _busy || _confirmingVoid ? null : () => _voidInvoice(i),
+                    icon: const Icon(Icons.block_outlined),
+                    label: const Text('Void Invoice')),
+              if (i.rawStatus == 'ISSUED' &&
+                  !i.canVoid &&
+                  i.voidBlockingReasons.isNotEmpty)
+                Text(
+                    'Void unavailable: ${i.voidBlockingReasons.map(formatAccountsStatus).join(', ')}'),
+              if (i.rawStatus != 'VOID' &&
+                  i.journalId != null &&
+                  isUiAdmin(context, widget.session))
+                _journalLink(i.journalId!,
+                    'Original journal: ${i.originalJournalReference ?? 'View journal'}'),
               Text(i.reference,
                   key: const ValueKey('invoice-detail-reference'),
                   style: Theme.of(context)
@@ -637,7 +723,7 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
                                 Text('Equipment: ${line.equipment}'),
                               for (final p in line.productionAllocations)
                                 Text(
-                                    'Production Report: ${p['report_reference_snapshot']} • ${p['billed_m3']} m³')
+                                    'Production Report: ${p['report_reference_snapshot']} • ${p['billed_m3']} m³ • ${formatAccountsStatus('${p['status'] ?? ''}')}')
                             ]))),
               if (!draft) ...[
                 const AccountsSectionTitle('Settlement summary'),
@@ -658,11 +744,12 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
                           _metric(
                               'Credit Notes', formatNaira(i.creditNotesTotal)),
                           _metric('Outstanding', formatNaira(i.outstanding)),
-                          _metric(
-                              'Journal / posting',
-                              i.journalId == null
-                                  ? 'Not posted'
-                                  : 'Journal #${i.journalId} • ${formatAccountsStatus(i.postingStatus ?? 'POSTED')}')
+                          if (i.rawStatus != 'VOID')
+                            _metric(
+                                'Journal / posting',
+                                i.journalId == null
+                                    ? 'Not posted'
+                                    : 'Journal #${i.journalId} • ${formatAccountsStatus(i.postingStatus ?? 'POSTED')}')
                         ]))),
                 const AccountsSectionTitle('Payment / Allocation History'),
                 if (i.settlementHistory.isEmpty)
@@ -695,6 +782,52 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
                                         widget.session,
                                         event.receiptId!,
                                         event.reference ?? 'Client Payment'))))
+              ],
+              if (i.rawStatus == 'VOID') ...[
+                const AccountsSectionTitle('Void Details'),
+                Card(
+                    child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Status: VOID'),
+                        Text(
+                            'Void date: ${i.effectiveVoidDate == null ? '—' : displayAccountsDate(i.effectiveVoidDate!)}'),
+                        Text('Voided by: ${i.voidedByName ?? '—'}'),
+                        Text('Reason: ${i.voidReason ?? '—'}'),
+                        Text(
+                            'Recorded: ${i.voidedAt == null ? '—' : displayCehDateTime('${i.voidedAt!.replaceFirst(' ', 'T')}Z')}'),
+                      ]),
+                )),
+                const AccountsSectionTitle('Accounting Reversal'),
+                const Text(
+                    'The original journal entries are retained. A separate reversal journal records the accounting reversal.'),
+                Card(
+                    child: Column(children: [
+                  ListTile(
+                    title: const Text('Original Journal'),
+                    subtitle: Text(
+                        i.originalJournalReference ?? 'Reference unavailable'),
+                    trailing: i.journalId != null &&
+                            isUiAdmin(context, widget.session)
+                        ? KeyedSubtree(
+                            key: const ValueKey('view-original-journal'),
+                            child: _journalLink(i.journalId!, 'View'))
+                        : null,
+                  ),
+                  ListTile(
+                    title: const Text('Reversal Journal'),
+                    subtitle: Text(
+                        i.reversalJournalReference ?? 'Reference unavailable'),
+                    trailing: i.reversalJournalId != null &&
+                            isUiAdmin(context, widget.session)
+                        ? KeyedSubtree(
+                            key: const ValueKey('view-reversal-journal'),
+                            child: _journalLink(i.reversalJournalId!, 'View'))
+                        : null,
+                  ),
+                ])),
               ],
               if (draft)
                 Row(children: [
