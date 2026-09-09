@@ -77,6 +77,18 @@ function billing_invoice_lines(PDO $db,array $input,int $clientId,string $vatMod
 }
 function billing_totals(array $lines): array { $n=$v=$g=0;foreach($lines as$l){$n+=$l['net_minor'];$v+=$l['vat_minor'];$g+=$l['gross_minor'];}return['net'=>$n,'vat'=>$v,'gross'=>$g]; }
 function billing_invoice_outstanding(PDO $db,int $invoiceId,bool $lock=false): array {
+    if($lock){
+        // Current reads after acquiring the invoice lock, including transactions
+        // that established a repeatable-read snapshot before waiting for it.
+        $s=$db->prepare('SELECT * FROM qbook_invoices WHERE id=? FOR UPDATE');$s->execute([$invoiceId]);$r=$s->fetch();if(!$r)accounts_fail('INVOICE_NOT_FOUND',404);
+        $settled=0;
+        foreach([
+            "SELECT a.cash_amount+a.wht_amount amount FROM qbook_customer_receipt_allocations a JOIN qbook_customer_receipts c ON c.id=a.receipt_id WHERE a.invoice_id=? AND c.status='POSTED' ORDER BY a.id FOR UPDATE",
+            'SELECT amount FROM qbook_advance_applications WHERE invoice_id=? ORDER BY id FOR UPDATE',
+            "SELECT a.amount FROM qbook_credit_note_allocations a JOIN qbook_credit_notes c ON c.id=a.credit_note_id WHERE a.invoice_id=? AND c.status='ISSUED' ORDER BY a.id FOR UPDATE"
+        ] as $sql){$s=$db->prepare($sql);$s->execute([$invoiceId]);foreach($s->fetchAll() as $a)$settled+=accounts_money_minor($a['amount'],false);}
+        $r['settled']=accounts_minor_decimal($settled);$r['outstanding_minor']=accounts_money_minor($r['total_amount']??'0',false)-$settled;return $r;
+    }
     $s=$db->prepare("SELECT i.*, COALESCE((SELECT SUM(a.cash_amount+a.wht_amount) FROM qbook_customer_receipt_allocations a JOIN qbook_customer_receipts r ON r.id=a.receipt_id AND r.status='POSTED' WHERE a.invoice_id=i.id),0)+COALESCE((SELECT SUM(a.amount) FROM qbook_advance_applications a WHERE a.invoice_id=i.id),0)+COALESCE((SELECT SUM(ca.amount) FROM qbook_credit_note_allocations ca JOIN qbook_credit_notes c ON c.id=ca.credit_note_id AND c.status='ISSUED' WHERE ca.invoice_id=i.id),0) AS settled FROM qbook_invoices i WHERE i.id=?".($lock?' FOR UPDATE':''));
     $s->execute([$invoiceId]);$r=$s->fetch();if(!$r)accounts_fail('INVOICE_NOT_FOUND',404);$total=$r['total_amount']===null?0:accounts_money_minor($r['total_amount'],false);$settled=accounts_money_minor((string)$r['settled'],false);$r['outstanding_minor']=$total-$settled;return$r;
 }

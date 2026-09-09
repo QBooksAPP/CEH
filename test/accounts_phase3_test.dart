@@ -186,7 +186,7 @@ void main() {
     });
 
     test('issued correction uses credit note and invoice void is narrow', () {
-      expect(server('credit_note_issue.php'),
+      expect(server('credit_note_common.php'),
           contains("'source_module'=>'CREDIT_NOTE'"));
       expect(server('invoice_void_common.php'),
           contains('ONLY_UNPAID_INVOICE_CAN_BE_VOIDED'));
@@ -194,7 +194,7 @@ void main() {
     });
 
     test('credit-note production quantity release is explicit and bounded', () {
-      final credit = server('credit_note_issue.php');
+      final credit = server('credit_note_common.php');
       expect(credit, contains("'production_releases'"));
       expect(credit, contains("'invoice_production_allocation_id'"));
       expect(credit, contains('ALLOCATION_SPECIFIC_RELEASE_REQUIRED'));

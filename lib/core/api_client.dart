@@ -964,6 +964,9 @@ class CehApiClient {
   Future<ProductionReportFile> estimatePdf(CehSession session, int id) async =>
       _billingPdf(session, 'estimate_pdf.php', {'estimate_id': '$id'},
           'ESTIMATE_PDF_FAILED', 'CEH-Estimate.pdf');
+  Future<ProductionReportFile> creditNotePdf(CehSession session, int id) =>
+      _billingPdf(session, 'credit_note_pdf.php', {'id': '$id'},
+          'CREDIT_NOTE_PDF_FAILED', 'CEH-Credit-Note.pdf');
   Future<ProductionReportFile> _billingPdf(CehSession session, String endpoint,
       Map<String, String> query, String fallback, String filename) async {
     final uri = Uri.parse('$baseUrl/$endpoint').replace(queryParameters: query);
@@ -1700,6 +1703,30 @@ class CehApiClient {
     return CompanyRegionalSettings.fromJson(
         Map<String, dynamic>.from(data['regional_settings'] as Map));
   }
+
+  Future<Map<String, dynamic>> creditNotes(
+      CehSession session, Map<String, String> query) async {
+    final response = await http
+        .get(
+          Uri.parse('$baseUrl/credit_notes.php')
+              .replace(queryParameters: query),
+          headers: authHeaders(session),
+        )
+        .timeout(const Duration(seconds: 20));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'CREDIT_NOTES_UNAVAILABLE');
+    return data;
+  }
+
+  Future<Map<String, dynamic>> quoteCreditNote(
+          CehSession session, Map<String, dynamic> request) =>
+      _postJson(session, 'credit_note_quote.php', request,
+          'CREDIT_NOTE_QUOTE_FAILED');
+
+  Future<Map<String, dynamic>> issueCreditNote(
+          CehSession session, Map<String, dynamic> request) =>
+      _postJson(session, 'credit_note_issue.php', request,
+          'CREDIT_NOTE_ISSUE_FAILED');
 
   Future<Map<String, dynamic>> _postJson(
     CehSession session,

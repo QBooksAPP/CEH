@@ -70,7 +70,12 @@ BillingInvoiceDetail _detail(String vatMode, {String status = 'DRAFT'}) =>
         creditNotes: status == 'DRAFT'
             ? const []
             : const [
-                {'reference': 'CEH-CN-000001'}
+                {
+                  'id': 1,
+                  'reference': 'CEH-CN-000001',
+                  'credit_date': '2026-08-27',
+                  'reason': 'Approved adjustment'
+                }
               ],
         settlementHistory: status == 'DRAFT'
             ? const []
@@ -244,7 +249,15 @@ void main() {
     expect(find.text('24-08-2026'), findsOneWidget);
     expect(find.text('Concrete batched'), findsOneWidget);
     expect(find.text('30.00 m³ × ₦15,000.00 = ₦450,000.00'), findsOneWidget);
-    expect(find.text('CEH-CN-000001'), findsOneWidget);
+    // The reference appears in settlement history and the new direct detail link.
+    expect(find.text('CEH-CN-000001'), findsNWidgets(2));
+    expect(find.text('Credit Note history'), findsOneWidget);
+    final creditLink = find.ancestor(
+        of: find.text('CEH-CN-000001'),
+        matching: find.byWidgetPredicate(
+            (widget) => widget is ListTile && widget.onTap != null));
+    expect(creditLink, findsOneWidget);
+    expect(tester.widget<ListTile>(creditLink).onTap, isNotNull);
     expect(api.issueCalls, 0);
   });
 

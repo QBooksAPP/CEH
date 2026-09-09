@@ -17,6 +17,7 @@ import 'accounts_billing_settings_screen.dart';
 import 'accounts_estimates_screen.dart';
 import 'accounts_journal_screen.dart';
 import 'invoice_void_dialog.dart';
+import 'accounts_credit_notes_screen.dart';
 
 class AccountsBillingScreen extends StatefulWidget {
   const AccountsBillingScreen(
@@ -652,6 +653,23 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
             final i = s.data!;
             final draft = i.status == 'DRAFT';
             return ListView(padding: const EdgeInsets.all(18), children: [
+              if (!draft && isUiAdmin(context, widget.session))
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.receipt_long_outlined),
+                  label: const Text('Credit Notes'),
+                  onPressed: _busy
+                      ? null
+                      : () async {
+                          await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => CreditNotesScreen(
+                                      session: widget.session,
+                                      invoiceId: widget.invoiceId,
+                                      api: widget.api)));
+                          if (mounted) setState(_reload);
+                        },
+                ),
               if (i.canVoid && isUiAdmin(context, widget.session))
                 OutlinedButton.icon(
                     key: const ValueKey('void-invoice'),
@@ -726,6 +744,24 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
                                     'Production Report: ${p['report_reference_snapshot']} • ${p['billed_m3']} m³ • ${formatAccountsStatus('${p['status'] ?? ''}')}')
                             ]))),
               if (!draft) ...[
+                if (i.creditNotes.isNotEmpty &&
+                    isUiAdmin(context, widget.session)) ...[
+                  const AccountsSectionTitle('Credit Note history'),
+                  for (final credit in i.creditNotes)
+                    ListTile(
+                      title: Text('${credit['reference']}'),
+                      subtitle: Text(
+                          '${displayAccountsDate('${credit['credit_date']}')} • ${credit['reason']}'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => CreditNoteDetailsScreen(
+                                  session: widget.session,
+                                  api: widget.api,
+                                  noteId: int.parse('${credit['id']}')))),
+                    ),
+                ],
                 const AccountsSectionTitle('Settlement summary'),
                 Card(
                     child: Padding(
