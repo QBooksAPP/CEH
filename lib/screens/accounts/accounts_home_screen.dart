@@ -9,6 +9,7 @@ import '../../models/session.dart';
 import '../../widgets/accounts_widgets.dart';
 import 'accounts_detail_screens.dart';
 import 'accounts_live_screens.dart';
+import 'accounts_banking_workspace.dart';
 import 'accounts_phase1_screens.dart';
 import 'accounts_billing_screen.dart';
 import 'accounts_reports_screen.dart';
@@ -102,7 +103,7 @@ class _AccountsHomeScreenState extends State<AccountsHomeScreen> {
           'Balances, statements and reconciliation',
           Icons.account_balance_outlined,
           liveData
-              ? AccountsBankingScreen(session: session)
+              ? AccountsBankingWorkspace(session: session)
               : BankingPrototypeScreen(session: session)),
       _AccountsDestination(
           'Billing & Receivables',

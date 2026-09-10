@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'bank_statement_upload.dart';
 
 import 'package:http/http.dart' as http;
 
 import 'app_environment.dart';
 import '../models/mix_design.dart';
 import '../models/accounts.dart';
+import '../models/banking_workspace.dart';
 import '../models/calibration_record.dart';
 import '../models/calibration_source.dart';
 import '../models/client.dart';
@@ -1311,6 +1313,86 @@ class CehApiClient {
         .map((item) =>
             CehBankAccount.fromJson(Map<String, dynamic>.from(item as Map)))
         .toList();
+  }
+
+  Future<List<Map<String, dynamic>>> bankingAccounts(CehSession session) async {
+    final data = await bankingRead(session, 'bank_accounts.php', const {});
+    return (data['bank_accounts'] as List).map(bankMap).toList();
+  }
+
+  Future<Map<String, dynamic>> uploadBankStatement(
+      CehSession session,
+      int bankId,
+      BankStatementFile file,
+      void Function(double) progress) async {
+    file.validate();
+    final client = http.Client();
+    try {
+      final request = BankUploadRequest(
+          Uri.parse('$baseUrl/bank_statement_upload.php'), progress)
+        ..headers.addAll(authHeaders(session))
+        ..fields.addAll(
+            {'bank_account_id': '$bankId', 'adapter': 'ZENITH_ACTIVITY_V1'})
+        ..files.add(http.MultipartFile.fromBytes('statement', file.bytes,
+            filename: file.name));
+      final response = await (() async =>
+              http.Response.fromStream(await client.send(request)))()
+          .timeout(const Duration(minutes: 3));
+      final data = _decodeObject(response);
+      _requireOk(response, data, 'STATEMENT_UPLOAD_FAILED');
+      return data;
+    } finally {
+      client.close();
+    }
+  }
+
+  Future<Map<String, dynamic>> confirmBankStatement(
+          CehSession session, int documentId, String confirmation) =>
+      _postJson(
+          session,
+          'bank_statement_import.php',
+          {'document_id': documentId, 'confirmation_sha256': confirmation},
+          'STATEMENT_IMPORT_FAILED');
+
+  Future<Map<String, dynamic>> bankingRead(
+      CehSession session, String endpoint, Map<String, String> query) async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/$endpoint').replace(queryParameters: query),
+            headers: authHeaders(session))
+        .timeout(const Duration(seconds: 30));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'BANKING_READ_FAILED');
+    return data;
+  }
+
+  Future<BankingPage> bankingPage(CehSession session, int bankId,
+          {int page = 1,
+          bool imports = false,
+          Map<String, String> filters = const {}}) async =>
+      BankingPage.fromJson(
+          await bankingRead(
+              session,
+              imports ? 'bank_statement_imports.php' : 'bank_transactions.php',
+              {
+                ...filters,
+                'bank_account_id': '$bankId',
+                'page': '$page',
+                'page_size': '50'
+              }),
+          imports: imports);
+
+  Future<Uint8List> bankOriginal(CehSession session, int documentId) async {
+    final response = await http
+        .get(
+            Uri.parse('$baseUrl/bank_statement_document.php')
+                .replace(queryParameters: {'document_id': '$documentId'}),
+            headers: authHeaders(session))
+        .timeout(const Duration(seconds: 60));
+    if (response.statusCode != 200) {
+      throw ApiException('STATEMENT_DOWNLOAD_FAILED',
+          statusCode: response.statusCode);
+    }
+    return response.bodyBytes;
   }
 
   Future<List<CehBankTransaction>> bankTransactions(

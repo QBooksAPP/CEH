@@ -14,6 +14,7 @@ import java.io.File
 import java.security.MessageDigest
 
 class MainActivity : FlutterActivity() {
+    private var bankPicker: BankStatementPicker? = null
     companion object {
         private const val CHANNEL = "com.concreteequipmenthire.ceh/staging_update"
         private const val STAGING_PACKAGE = "com.concreteequipmenthire.ceh.staging"
@@ -25,6 +26,31 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        bankPicker = BankStatementPicker(this)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.concreteequipmenthire.ceh/bank_picker")
+            .setMethodCallHandler { call, result ->
+                if (call.method != "pick") result.notImplemented()
+                else if (packageName != STAGING_PACKAGE) result.error("UNAVAILABLE", "Unavailable", null)
+                else bankPicker!!.pick(result)
+            }
+        // Read-only document viewing. Never use ACTION_SEND or grant write access.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.concreteequipmenthire.ceh/bank_document")
+            .setMethodCallHandler { call, result ->
+                try {
+                    requireStagingRuntime()
+                    if (call.method != "viewOriginal") { result.notImplemented(); return@setMethodCallHandler }
+                    val root = File(cacheDir, "bank-originals").canonicalFile
+                    val file = File(call.argument<String>("path") ?: error("Missing file")).canonicalFile
+                    check(file.isFile && file.parentFile == root && file.extension in listOf("xlsx", "csv"))
+                    val uri = FileProvider.getUriForFile(this, "$packageName.bank_documents", file)
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(uri, if (file.extension == "xlsx") "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" else "text/csv")
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    startActivity(intent)
+                    result.success(null)
+                } catch (error: Throwable) { result.error("DOCUMENT_VIEW_FAILED", "No compatible viewer or document unavailable.", null) }
+            }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
                 try {
@@ -50,6 +76,11 @@ class MainActivity : FlutterActivity() {
         check(applicationContext.packageName == STAGING_PACKAGE) {
             "The staging update bridge is unavailable in production."
         }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (bankPicker?.complete(requestCode, resultCode, data) == true) return
+        super.onActivityResult(requestCode, resultCode, data)
     }
 
     private fun approvedApkFile(path: String): File {

@@ -37,7 +37,7 @@ function bank_import_plan(PDO $db,int $id,bool $lock=false):array {
  $q=$db->prepare('SELECT id,bank_account_id,original_filename,file_type,byte_size,sha256,adapter,preview_json,uploaded_by,uploaded_at FROM qbook_bank_statement_documents WHERE id=?'.$suffix);$q->execute([$id]);$doc=$q->fetch();if(!$doc)accounts_fail('STATEMENT_NOT_FOUND',404);
  $p=json_decode($doc['preview_json'],true,512,JSON_THROW_ON_ERROR);unset($doc['preview_json']);
  $bankInfo=$db->prepare('SELECT id,name,bank_name,currency FROM qbook_bank_accounts WHERE id=?');$bankInfo->execute([$doc['bank_account_id']]);$p['bank']=$bankInfo->fetch();
- $b=$db->prepare('SELECT id,document_id FROM qbook_bank_import_batches WHERE bank_account_id=? AND file_sha256=?'.$suffix);$b->execute([$doc['bank_account_id'],$doc['sha256']]);$batch=$b->fetch();
+ $b=$db->prepare('SELECT id,document_id,imported_at FROM qbook_bank_import_batches WHERE bank_account_id=? AND file_sha256=?'.$suffix);$b->execute([$doc['bank_account_id'],$doc['sha256']]);$batch=$b->fetch();
  $check=$db->prepare('SELECT id FROM qbook_bank_statement_rows WHERE bank_account_id=? AND row_fingerprint=? LIMIT 1'.$suffix);$already=0;
  foreach($p['rows'] as &$row){
   if($row['outcome']==='INVALID')continue;
@@ -47,6 +47,13 @@ function bank_import_plan(PDO $db,int $id,bool $lock=false):array {
  }unset($row);
  $p['summary']['invalid_rows']=count(array_filter($p['rows'],fn($r)=>$r['outcome']==='INVALID'));
  $p['summary']['already_imported_source_rows']=$already;
+ $p['summary']['ambiguous_overlap_rows']=count(array_filter($p['rows'],fn($r)=>($r['reason']??'')==='AMBIGUOUS_OVERLAPPING_STATEMENT'));
+ $s=$p['summary'];
+ $p['summary']['balance_reconciles']=$s['opening_balance']!==null&&$s['closing_balance']!==null
+   &&bank_amount($s['opening_balance'])+bank_amount($s['credits_value'])-bank_amount($s['debits_value'])===bank_amount($s['closing_balance']);
+ foreach($p['rows'] as $row)if($row['outcome']==='INVALID')$p['summary']['errors'][]=$row['reason']??'INVALID_SOURCE_ROW';
+ $p['summary']['errors']=array_values(array_unique($p['summary']['errors']));
+ $p['imported_at']=$batch['imported_at']??null;
  if($batch&&(int)$batch['document_id']!==$id){$p['summary']['can_import']=false;$p['summary']['errors'][]='LEGACY_BATCH_REQUIRES_REVIEW';}
  $p['document']=$doc;$p['batch_id']=$batch?(int)$batch['id']:null;
  $p['confirmation_sha256']=hash('sha256',json_encode($p,JSON_THROW_ON_ERROR));return $p;
