@@ -144,9 +144,10 @@ void main() {
   });
 
   test('statement matching suggests general expense without posting', () {
-    expect(bankImport, contains("\$sourceType='GENERAL_EXPENSE'"));
+    final foundation = source('Server/bank_import_common.php');
+    expect(foundation, contains("'GENERAL_EXPENSE'"));
     expect(
-        bankImport, contains("status='APPROVED' AND journal_id IS NOT NULL"));
+        foundation, contains("status='APPROVED' AND journal_id IS NOT NULL"));
     expect(bankReconcile, contains("'GENERAL_EXPENSE'"));
     expect(bankReconcile, isNot(contains('accounts_post_journal')));
   });

@@ -131,16 +131,18 @@ void main() {
     expect(review, contains("qbook_require_role(\$user,['ADMIN'])"));
   });
 
-  test('bank imports prevent duplicates and suggest ±3 day funding matches',
+  test('bank imports preserve occurrences and suggest ±3 day funding matches',
       () {
     expect(migration, contains('uq_bank_import_file'));
     expect(migration, contains('uq_bank_statement_fingerprint'));
-    expect(bankImport,
-        contains("accounts_fail('STATEMENT_ALREADY_IMPORTED',409)"));
-    expect(bankImport, contains("modify('-3 days')"));
-    expect(bankImport, contains("modify('+3 days')"));
-    expect(bankImport, contains("'POTENTIAL_MATCH'"));
-    expect(bankImport, contains("'POSSIBLE_DUPLICATE'"));
+    final foundation = source('Server/bank_import_common.php');
+    expect(bankImport, contains('bank_import_commit'));
+    expect(foundation, contains("modify('-3 days')"));
+    expect(foundation, contains("modify('+3 days')"));
+    expect(foundation, contains("'POTENTIAL_MATCH'"));
+    expect(foundation, contains('occurrence_number'));
+    expect(foundation, contains("'replayed'=>true"));
+    expect(foundation, isNot(contains('duplicates_skipped')));
   });
 
   test('statement import UI stays disabled pending real Zenith mapping', () {

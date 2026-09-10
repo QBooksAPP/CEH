@@ -4,7 +4,9 @@ declare(strict_types=1);
 require_once __DIR__.'/../Server/general_expense_refunds_common.php';
 restore_exception_handler();
 function connection(): PDO {
-    return new PDO('mysql:host=127.0.0.1;port=33317;dbname=ceh_refund_test;charset=utf8mb4', 'root', '',
+    $port=(int)(getenv('CEH_LOCAL_TEST_PORT')?:33317);
+    if(!in_array($port,[33317,33318],true))throw new RuntimeException('Local test port required');
+    return new PDO('mysql:host=127.0.0.1;port='.$port.';dbname=ceh_refund_test;charset=utf8mb4', 'root', '',
         [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC, PDO::ATTR_EMULATE_PREPARES=>false]);
 }
 if (($argv[1] ?? '') === 'worker') {
@@ -40,7 +42,7 @@ function simultaneous(PDO $db, array $attempts): array {
         $results[] = trim(stream_get_contents($pipes[1]));
         $error = stream_get_contents($pipes[2]);
         fclose($pipes[1]); fclose($pipes[2]);
-        check(proc_close($process) === 0 && $error === '', 'worker completed');
+        check(proc_close($process) === 0 && $error === '', 'worker completed: '.$error);
     }
     sort($results); return $results;
 }
@@ -61,6 +63,9 @@ try {
     foreach ($schema as $sql) $db->exec($sql);
     $db->exec("INSERT INTO qbook_users VALUES(1,'Test Admin'); INSERT INTO qbook_bank_accounts VALUES(1,'Test Bank'),(2,'Other Bank')");
     $db->exec("INSERT INTO qbook_general_expenses VALUES(1,100000,1,'APPROVED',1),(2,1000,1,'APPROVED',2),(3,1000,1,'APPROVED',3),(4,1000,1,'APPROVED',4),(5,1000,1,'DRAFT',NULL)");
+    $db->exec('ALTER TABLE qbook_general_expenses ADD created_from_statement_row_id BIGINT NULL UNIQUE');
+    $db->exec('CREATE TABLE qbook_bank_matches(statement_row_id BIGINT PRIMARY KEY,source_type VARCHAR(60),source_record_id BIGINT) ENGINE=InnoDB');
+    $db->exec('CREATE TABLE qbook_customer_receipts(id BIGINT PRIMARY KEY,statement_row_id BIGINT UNIQUE,status VARCHAR(30)) ENGINE=InnoDB');
     $db->exec('INSERT INTO qbook_general_expense_references VALUES(1,1)');
     $db->exec("INSERT INTO qbook_financial_journals VALUES(1,'Original immutable journal'); INSERT INTO qbook_financial_journal_lines VALUES(1,100000,0),(2,0,100000)");
     $insert = $db->prepare("INSERT INTO qbook_bank_statement_rows VALUES(?,?,?,'2026-09-01',?,?,'UNMATCHED')");

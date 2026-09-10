@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-require_once __DIR__ . '/accounts_common.php';
+require_once __DIR__ . '/bank_row_usage.php';
 
 // Bank evidence linkage only: no journal posting, reversal or statement updates.
 function general_expense_link_refund(PDO $db, array $user, int $expenseId, int $rowId): array {
@@ -21,6 +21,7 @@ function general_expense_link_refund(PDO $db, array $user, int $expenseId, int $
         $duplicate = $db->prepare('SELECT id FROM qbook_general_expense_refunds WHERE statement_row_id=? FOR UPDATE');
         $duplicate->execute([$rowId]);
         if ($duplicate->fetchColumn()) accounts_fail('REFUND_ALREADY_LINKED', 409);
+        bank_row_available($db,$rowId);
         $already = $db->prepare('SELECT COALESCE(SUM(amount),0) FROM qbook_general_expense_refunds WHERE expense_id=?');
         $already->execute([$expenseId]);
         $existing = accounts_money_minor((string)$already->fetchColumn(), false);
@@ -61,7 +62,7 @@ function general_expense_refunds_read(PDO $db, int $expenseId, array $input): ar
         unset($expense['journal_id']);
         if ($view === 'eligible') {
             $from = 'FROM qbook_bank_statement_rows s LEFT JOIN qbook_general_expense_refunds f ON f.statement_row_id=s.id';
-            $where = ['s.bank_account_id=?', 's.amount>0', 's.amount<=?', 'f.id IS NULL'];
+            $where = ['s.bank_account_id=?', 's.amount>0', 's.amount<=?', 'f.id IS NULL', "s.status NOT IN ('MATCHED','RECONCILED')", 'NOT EXISTS(SELECT 1 FROM qbook_bank_matches bm WHERE bm.statement_row_id=s.id)', "NOT EXISTS(SELECT 1 FROM qbook_customer_receipts cr WHERE cr.statement_row_id=s.id AND cr.status='POSTED')"];
             $params = [(int)$expense['bank_account_id'], accounts_minor_decimal($remaining)];
             if (!$canLink) $where[] = '1=0';
             $columns = 's.id statement_row_id,s.transaction_date,s.amount,s.bank_reference,s.narration,s.status statement_status,NULL linked_at,NULL linked_by_name';
