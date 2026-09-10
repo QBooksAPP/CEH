@@ -5,17 +5,17 @@ require_once __DIR__ . '/bank_row_usage.php';
 // Bank evidence linkage only: no journal posting, reversal or statement updates.
 function general_expense_link_refund(PDO $db, array $user, int $expenseId, int $rowId): array {
     if ($expenseId <= 0 || $rowId <= 0) accounts_fail('REFUND_LINK_REQUIRED');
-    return accounts_transaction($db, function() use ($db, $user, $expenseId, $rowId): array {
+    return bank_ownership_transaction($db, function() use ($db, $user, $expenseId, $rowId): array {
+        // Consistent ordering: statement row first, then source expense.
+        $s = $db->prepare('SELECT * FROM qbook_bank_statement_rows WHERE id=? FOR UPDATE');
+        $s->execute([$rowId]);
+        $row = $s->fetch();
+        if (!$row) accounts_fail('BANK_ROW_NOT_FOUND', 404);
         // Serialize partial refunds against the expense before reading its total.
         $e = $db->prepare("SELECT * FROM qbook_general_expenses WHERE id=? AND status='APPROVED' AND journal_id IS NOT NULL FOR UPDATE");
         $e->execute([$expenseId]);
         $expense = $e->fetch();
         if (!$expense) accounts_fail('EXPENSE_NOT_REFUNDABLE', 409);
-        // Also serialize reuse of a bank credit across different expenses.
-        $s = $db->prepare('SELECT * FROM qbook_bank_statement_rows WHERE id=? FOR UPDATE');
-        $s->execute([$rowId]);
-        $row = $s->fetch();
-        if (!$row) accounts_fail('BANK_ROW_NOT_FOUND', 404);
         $minor = accounts_money_minor($row['amount'], false);
         if ($minor <= 0 || (int)$row['bank_account_id'] !== (int)$expense['bank_account_id']) accounts_fail('ACTUAL_BANK_CREDIT_REQUIRED', 409);
         $duplicate = $db->prepare('SELECT id FROM qbook_general_expense_refunds WHERE statement_row_id=? FOR UPDATE');

@@ -327,8 +327,10 @@ class _AccountsBankingScreenState extends State<AccountsBankingScreen> {
 }
 
 class AccountsExpensesScreen extends StatefulWidget {
-  const AccountsExpensesScreen({super.key, required this.session});
+  const AccountsExpensesScreen(
+      {super.key, required this.session, this.focusExpenseId});
   final CehSession session;
+  final int? focusExpenseId;
 
   @override
   State<AccountsExpensesScreen> createState() => _AccountsExpensesScreenState();
@@ -349,6 +351,13 @@ class _AccountsExpensesScreenState extends State<AccountsExpensesScreen> {
   void _retry() => setState(_load);
 
   List<ConsolidatedExpense> _filtered(List<ConsolidatedExpense> expenses) {
+    if (widget.focusExpenseId != null) {
+      return expenses
+          .where((e) =>
+              e.sourceType == 'BANK' &&
+              e.sourceRecordId == widget.focusExpenseId)
+          .toList();
+    }
     switch (_filter) {
       case 'PETTY_CASH':
         return expenses

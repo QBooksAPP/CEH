@@ -1531,6 +1531,42 @@ class CehApiClient {
       String search = '',
       String dateFrom = '',
       String dateTo = ''}) async {
+    return _generalExpenseRefunds(session,
+        expenseId: expenseId,
+        view: view,
+        page: page,
+        search: search,
+        dateFrom: dateFrom,
+        dateTo: dateTo);
+  }
+
+  Future<Map<String, dynamic>> bankingDetail(
+      CehSession session, int bankId, int rowId,
+      {bool candidates = false, int page = 1, String search = ''}) async {
+    final uri = Uri.parse(
+            '$baseUrl/${candidates ? 'bank_match_candidates.php' : 'bank_transaction_detail.php'}')
+        .replace(queryParameters: {
+      'bank_account_id': '$bankId',
+      'statement_row_id': '$rowId',
+      'page': '$page',
+      'page_size': '25',
+      'search': search
+    });
+    final response = await http
+        .get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'BANK_DETAIL_FAILED');
+    return data;
+  }
+
+  Future<Map<String, dynamic>> _generalExpenseRefunds(CehSession session,
+      {required int expenseId,
+      String view = 'history',
+      int page = 1,
+      String search = '',
+      String dateFrom = '',
+      String dateTo = ''}) async {
     final uri = Uri.parse('$baseUrl/general_expense_refunds.php')
         .replace(queryParameters: {
       'expense_id': '$expenseId',

@@ -7,6 +7,7 @@ import '../../core/view_mode.dart';
 import '../../models/banking_workspace.dart';
 import '../../models/session.dart';
 import 'bank_statement_import_screen.dart';
+import 'bank_transaction_actions.dart';
 
 class AccountsBankingWorkspace extends StatefulWidget {
   const AccountsBankingWorkspace(
@@ -261,11 +262,17 @@ class _BankingState extends State<AccountsBankingWorkspace> {
                 '${displayAccountsDate(bankText(r['transaction_date']))} • ${bankUsageLabels[r['usage_state']] ?? 'Unavailable'}\n${bankText(r['bank_reference'])}'),
             trailing: Text('${a < 0 ? 'Debit' : 'Credit'}\n${_money(a.abs())}',
                 textAlign: TextAlign.right),
-            onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => BankTransactionDetail(
-                        session: widget.session, row: r, money: _money)))));
+            onTap: () async {
+              await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => BankTransactionActions(
+                          session: widget.session,
+                          bankId: bankInt(r['bank_account_id']),
+                          rowId: bankInt(r['id']),
+                          api: widget.api)));
+              if (mounted) await _load();
+            }));
   }
 
   Widget _importCard(Map<String, dynamic> r) => Card(

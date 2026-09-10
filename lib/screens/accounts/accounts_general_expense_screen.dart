@@ -12,10 +12,15 @@ import '../../widgets/accounts_widgets.dart';
 
 class AccountsGeneralExpenseScreen extends StatefulWidget {
   const AccountsGeneralExpenseScreen(
-      {super.key, required this.session, this.statement, this.expense});
+      {super.key,
+      required this.session,
+      this.statement,
+      this.expense,
+      this.api = const CehApiClient()});
   final CehSession session;
   final CehBankTransaction? statement;
   final Map<String, dynamic>? expense;
+  final CehApiClient api;
   @override
   State<AccountsGeneralExpenseScreen> createState() =>
       _AccountsGeneralExpenseScreenState();
@@ -23,7 +28,7 @@ class AccountsGeneralExpenseScreen extends StatefulWidget {
 
 class _AccountsGeneralExpenseScreenState
     extends State<AccountsGeneralExpenseScreen> {
-  final _api = const CehApiClient();
+  CehApiClient get _api => widget.api;
   final _picker = ImagePicker();
   final _bankReference = TextEditingController();
   final _oneOffPayee = TextEditingController();
@@ -35,6 +40,9 @@ class _AccountsGeneralExpenseScreenState
   bool _oneOff = false, _bankCharge = false, _noReceipt = false;
   bool _saving = false;
   XFile? _receipt;
+  bool get _statementControlled =>
+      widget.statement != null ||
+      widget.expense?['created_from_statement_row_id'] != null;
 
   double get _headerTotal =>
       _lines.fold(0, (sum, line) => sum + (line.total ?? 0));
@@ -44,6 +52,7 @@ class _AccountsGeneralExpenseScreenState
     super.initState();
     final statement = widget.statement;
     if (statement != null) {
+      _bank = statement.bankAccountId;
       _date = statement.date;
       _bankReference.text = statement.reference;
       _lines.add(_ExpenseLineDraft(
@@ -234,6 +243,13 @@ class _AccountsGeneralExpenseScreenState
           .toList();
       final total = lines.fold<double>(
           0, (sum, line) => sum + (line['amount'] as num).toDouble());
+      final statementTotal = widget.statement?.amount.abs() ??
+          num.tryParse('${widget.expense?['amount']}');
+      if (_statementControlled &&
+          (statementTotal == null ||
+              (total * 100).round() != (statementTotal * 100).round())) {
+        throw const ApiException('STATEMENT_FIELDS_LOCKED');
+      }
       final payload = <String, dynamic>{
         'bank_account_id': _bank,
         'expense_date': _date,
@@ -308,18 +324,24 @@ class _AccountsGeneralExpenseScreenState
             return ListView(padding: const EdgeInsets.all(18), children: [
               DropdownButtonFormField<int>(
                   initialValue: _bank,
+                  isExpanded: true,
                   decoration: const InputDecoration(labelText: 'Paid From'),
                   items: data.banks
                       .map((bank) => DropdownMenuItem(
-                          value: bank.id, child: Text(bank.name)))
+                          value: bank.id, child: _expenseOption(bank.name)))
                       .toList(),
-                  onChanged: widget.statement == null
-                      ? (value) => _bank = value
-                      : null),
-              const SizedBox(height: 12),
-              AccountsDatePickerField(
-                  initialCanonicalDate: _date,
-                  onChanged: (value) => _date = value),
+                  onChanged:
+                      !_statementControlled ? (value) => _bank = value : null),
+              const SizedBox(height: 16),
+              if (_statementControlled)
+                ListTile(
+                    title: const Text('Statement date (read-only)'),
+                    subtitle: Text(displayAccountsDate(_date)))
+              else
+                AccountsDatePickerField(
+                    initialCanonicalDate: _date,
+                    onChanged: (value) => _date = value),
+              const SizedBox(height: 16),
               SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   value: _bankCharge,
@@ -338,9 +360,12 @@ class _AccountsGeneralExpenseScreenState
                         }
                       })),
               if (!_bankCharge) ...[
-                Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                  Expanded(
-                      child: DropdownButtonFormField<int?>(
+                const SizedBox(height: 16),
+                Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      DropdownButtonFormField<int?>(
+                          isExpanded: true,
                           initialValue: _supplier,
                           decoration:
                               const InputDecoration(labelText: 'Paid To'),
@@ -348,15 +373,17 @@ class _AccountsGeneralExpenseScreenState
                               .where((supplier) => supplier.isActive)
                               .map((supplier) => DropdownMenuItem<int?>(
                                   value: supplier.id,
-                                  child: Text(supplier.name)))
+                                  child: _expenseOption(supplier.name)))
                               .toList(),
                           onChanged:
-                              _oneOff ? null : (value) => _supplier = value)),
-                  TextButton.icon(
-                      onPressed: _newSupplier,
-                      icon: const Icon(Icons.add),
-                      label: const Text('New Supplier'))
-                ]),
+                              _oneOff ? null : (value) => _supplier = value),
+                      Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton.icon(
+                              onPressed: _newSupplier,
+                              icon: const Icon(Icons.add),
+                              label: const Text('New Supplier')))
+                    ]),
                 CheckboxListTile(
                     contentPadding: EdgeInsets.zero,
                     value: _oneOff,
@@ -365,15 +392,18 @@ class _AccountsGeneralExpenseScreenState
                           _oneOff = value ?? false;
                           if (_oneOff) _supplier = null;
                         })),
-                if (_oneOff)
+                if (_oneOff) ...[
+                  const SizedBox(height: 16),
                   TextField(
                       controller: _oneOffPayee,
                       decoration:
                           const InputDecoration(labelText: 'Payee name')),
+                ],
               ],
+              const SizedBox(height: 16),
               TextField(
                   controller: _bankReference,
-                  enabled: widget.statement == null,
+                  enabled: !_statementControlled,
                   decoration: const InputDecoration(
                       labelText: 'Bank Reference (optional)')),
               const SizedBox(height: 20),
@@ -405,7 +435,7 @@ class _AccountsGeneralExpenseScreenState
               if (!_bankCharge) ...[
                 const SizedBox(height: 20),
                 const AccountsSectionTitle('Receipt / Evidence'),
-                Wrap(spacing: 8, children: [
+                Wrap(spacing: 8, runSpacing: 12, children: [
                   OutlinedButton.icon(
                       onPressed: _noReceipt
                           ? null
@@ -427,14 +457,18 @@ class _AccountsGeneralExpenseScreenState
                           _noReceipt = value ?? false;
                           if (_noReceipt) _receipt = null;
                         })),
-                if (_noReceipt)
+                if (_noReceipt) ...[
+                  const SizedBox(height: 16),
                   TextField(
+                      minLines: 2,
+                      maxLines: 4,
                       controller: _noReceiptReason,
                       decoration: const InputDecoration(
                           labelText: 'No receipt reason')),
+                ],
               ],
               const SizedBox(height: 20),
-              Wrap(spacing: 10, children: [
+              Wrap(spacing: 10, runSpacing: 12, children: [
                 OutlinedButton.icon(
                     onPressed: _saving ? null : () => _save(false),
                     icon: const Icon(Icons.save_outlined),
@@ -514,8 +548,9 @@ class _CompactExpenseLineState extends State<_CompactExpenseLine> {
   Widget build(BuildContext context) {
     final calculated = widget.line.usesQuantityPrice;
     return Card(
+        margin: const EdgeInsets.only(bottom: 16),
         child: Padding(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(16),
             child: Column(children: [
               Row(children: [
                 Expanded(
@@ -526,38 +561,47 @@ class _CompactExpenseLineState extends State<_CompactExpenseLine> {
                       onPressed: widget.onRemove,
                       icon: const Icon(Icons.delete_outline))
               ]),
+              const SizedBox(height: 16),
               DropdownButtonFormField<int>(
                   initialValue: widget.line.costCentreId,
+                  isExpanded: true,
                   decoration: const InputDecoration(labelText: 'Cost Centre'),
                   hint: const Text('Select Cost Centre'),
                   items: widget.costCentres
                       .where((centre) => centre.isActive)
                       .map((centre) => DropdownMenuItem(
-                          value: centre.id, child: Text(centre.name)))
+                          value: centre.id, child: _expenseOption(centre.name)))
                       .toList(),
                   onChanged: (value) {
                     widget.line.costCentreId = value;
                     widget.onChanged();
                   }),
+              const SizedBox(height: 16),
               DropdownButtonFormField<int>(
                   initialValue: widget.line.accountId,
+                  isExpanded: true,
                   decoration:
                       const InputDecoration(labelText: 'Account / Category'),
                   hint: const Text('Select Category'),
                   items: widget.accounts
                       .map((account) => DropdownMenuItem(
                           value: account.id,
-                          child: Text('${account.code} • ${account.name}')))
+                          child: _expenseOption(
+                              '${account.code} • ${account.name}')))
                       .toList(),
                   onChanged: (value) {
                     widget.line.accountId = value;
                     widget.onChanged();
                   }),
+              const SizedBox(height: 16),
               TextField(
+                  minLines: 2,
+                  maxLines: 4,
                   controller: _description,
                   onChanged: (_) => _changed(),
                   decoration: const InputDecoration(labelText: 'Description')),
-              if (!widget.bankCharge)
+              const SizedBox(height: 16),
+              if (!widget.bankCharge) ...[
                 Row(children: [
                   Expanded(
                       child: TextField(
@@ -574,6 +618,8 @@ class _CompactExpenseLineState extends State<_CompactExpenseLine> {
                           decoration: const InputDecoration(
                               labelText: 'Price (optional)')))
                 ]),
+                const SizedBox(height: 16),
+              ],
               TextField(
                   controller: _total,
                   enabled: !calculated,
@@ -582,23 +628,27 @@ class _CompactExpenseLineState extends State<_CompactExpenseLine> {
                   decoration: InputDecoration(
                       labelText: calculated ? 'Total (calculated)' : 'Total')),
               if (!widget.bankCharge) ...[
+                const SizedBox(height: 16),
                 DropdownButtonFormField<int?>(
                     initialValue: widget.line.clientId,
+                    isExpanded: true,
                     decoration: const InputDecoration(
                         labelText: 'Client / Project (optional)'),
                     items: [
                       const DropdownMenuItem<int?>(
                           value: null, child: Text('Not allocated')),
                       ...widget.clients.map((client) => DropdownMenuItem<int?>(
-                          value: client.id, child: Text(client.name)))
+                          value: client.id, child: _expenseOption(client.name)))
                     ],
                     onChanged: (value) => setState(() {
                           widget.line.clientId = value;
                           widget.line.projectId = null;
                           widget.onChanged();
                         })),
+                const SizedBox(height: 16),
                 DropdownButtonFormField<int?>(
                     key: ValueKey('line-project-${widget.line.clientId}'),
+                    isExpanded: true,
                     initialValue: widget.line.projectId,
                     decoration:
                         const InputDecoration(labelText: 'Project (optional)'),
@@ -609,7 +659,8 @@ class _CompactExpenseLineState extends State<_CompactExpenseLine> {
                           .where((project) =>
                               project.clientId == widget.line.clientId)
                           .map((project) => DropdownMenuItem<int?>(
-                              value: project.id, child: Text(project.name)))
+                              value: project.id,
+                              child: _expenseOption(project.name)))
                     ],
                     onChanged: widget.line.clientId == null
                         ? null
@@ -617,8 +668,10 @@ class _CompactExpenseLineState extends State<_CompactExpenseLine> {
                             widget.line.projectId = value;
                             widget.onChanged();
                           }),
+                const SizedBox(height: 16),
                 DropdownButtonFormField<int?>(
                     initialValue: widget.line.mixerId,
+                    isExpanded: true,
                     decoration: const InputDecoration(
                         labelText: 'Equipment (optional)'),
                     items: [
@@ -626,7 +679,7 @@ class _CompactExpenseLineState extends State<_CompactExpenseLine> {
                           value: null, child: Text('Not allocated')),
                       ...widget.mixers.map((mixer) => DropdownMenuItem<int?>(
                           value: (mixer['id'] as num).toInt(),
-                          child: Text(
+                          child: _expenseOption(
                               '${mixer['code'] ?? mixer['name'] ?? mixer['id']}')))
                     ],
                     onChanged: (value) {
@@ -637,6 +690,11 @@ class _CompactExpenseLineState extends State<_CompactExpenseLine> {
             ])));
   }
 }
+
+// Keep selected values within phone-width fields; long-press reveals the full name.
+Widget _expenseOption(String value) => Tooltip(
+    message: value,
+    child: Text(value, maxLines: 1, overflow: TextOverflow.ellipsis));
 
 List<FinancialAccount> bankChargeExpenseAccounts(
     List<FinancialAccount> accounts) {

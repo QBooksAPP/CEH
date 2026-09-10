@@ -2,7 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/bank_row_usage.php';
 $user=qbook_require_user();qbook_require_role($user,['ADMIN']);production_require_method('POST');$input=production_input();
-accounts_endpoint(function() use($user,$input): array {$db=production_db();return accounts_transaction($db,function() use($db,$user,$input): array {
+accounts_endpoint(function() use($user,$input): array {$db=production_db();return bank_ownership_transaction($db,function() use($db,$user,$input): array {
   $bank=accounts_nullable_id($input['bank_account_id']??null);$statement=accounts_nullable_id($input['statement_row_id']??null);$dateRaw=trim((string)($input['expense_date']??''));$date=$dateRaw===''?null:accounts_date($dateRaw);$amountRaw=trim((string)($input['amount']??''));$minor=$amountRaw===''?null:accounts_money_minor($amountRaw);
   if($statement!==null){$s=$db->prepare("SELECT * FROM qbook_bank_statement_rows WHERE id=? FOR UPDATE");$s->execute([$statement]);$row=$s->fetch();bank_row_available($db,$statement);if(!$row)accounts_fail('BANK_ROW_NOT_FOUND',404);if(in_array($row['status'],['MATCHED','RECONCILED'],true))accounts_fail('BANK_ROW_ALREADY_MATCHED',409);$rowMinor=accounts_money_minor($row['amount'],false);if($rowMinor>=0)accounts_fail('EXPENSE_REQUIRES_BANK_DEBIT');$bank=(int)$row['bank_account_id'];$date=$row['transaction_date'];$minor=abs($rowMinor);$input['bank_reference']=$row['bank_reference'];if(trim((string)($input['description']??''))==='')$input['description']=$row['narration'];}
   if($bank!==null){$b=$db->prepare("SELECT id FROM qbook_bank_accounts WHERE id=? AND is_active=1");$b->execute([$bank]);if(!$b->fetch())accounts_fail('ACTIVE_BANK_ACCOUNT_REQUIRED');}

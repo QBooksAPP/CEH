@@ -13,7 +13,8 @@ void main() {
   final review = source('Server/petty_cash_expense_review.php');
   final expenses = source('Server/petty_cash_expenses.php');
   final bankImport = source('Server/bank_statement_import.php');
-  final bankMatch = source('Server/bank_reconcile.php');
+  final bankMatch = source('Server/bank_reconcile.php') +
+      source('Server/bank_reconcile_common.php');
   final evidenceUpload = source('Server/financial_evidence_upload.php');
   final evidenceGet = source('Server/financial_evidence_get.php');
   final liveUi = source('lib/screens/accounts/accounts_live_screens.dart');

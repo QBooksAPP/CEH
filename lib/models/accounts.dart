@@ -338,6 +338,7 @@ class CehBankTransaction {
     required this.status,
     this.potentialSourceType,
     this.potentialSourceId,
+    this.bankAccountId,
   });
   final int id;
   final String date;
@@ -347,10 +348,14 @@ class CehBankTransaction {
   final String status;
   final String? potentialSourceType;
   final int? potentialSourceId;
+  final int? bankAccountId;
 
   factory CehBankTransaction.fromJson(Map<String, dynamic> json) =>
       CehBankTransaction(
         id: _int(json['id']),
+        bankAccountId: json['bank_account_id'] == null
+            ? null
+            : _int(json['bank_account_id']),
         date: '${json['transaction_date'] ?? ''}',
         amount: _double(json['amount']),
         reference: '${json['bank_reference'] ?? ''}',

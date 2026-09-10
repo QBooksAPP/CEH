@@ -2,7 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__.'/accounts_common.php';
 function bank_workspace_bank(PDO $db,int $id):array {
- $q=$db->prepare('SELECT id,name,bank_name,currency FROM qbook_bank_accounts WHERE id=?');$q->execute([$id]);$b=$q->fetch();if(!$b)accounts_fail('BANK_ACCOUNT_NOT_FOUND',404);return $b;
+ $q=$db->prepare('SELECT id,name,bank_name,currency,account_reference FROM qbook_bank_accounts WHERE id=?');$q->execute([$id]);$b=$q->fetch();if(!$b)accounts_fail('BANK_ACCOUNT_NOT_FOUND',404);$ref=trim((string)$b['account_reference']);$b['masked_account_reference']=$ref===''?null:'•••• '.substr($ref,-4);unset($b['account_reference']);return $b;
 }
 function bank_workspace_page(array $in):array {
  $p=filter_var($in['page']??1,FILTER_VALIDATE_INT);$s=filter_var($in['page_size']??50,FILTER_VALIDATE_INT);
@@ -13,14 +13,14 @@ function bank_workspace_usage_sql():string {
  WHEN EXISTS(SELECT 1 FROM qbook_bank_matches m WHERE m.statement_row_id=r.id) OR r.status IN('MATCHED','RECONCILED') THEN 'RECONCILED'
  WHEN EXISTS(SELECT 1 FROM qbook_customer_receipts c WHERE c.statement_row_id=r.id AND c.status='POSTED') THEN 'PAYMENT'
  WHEN EXISTS(SELECT 1 FROM qbook_general_expenses e WHERE e.created_from_statement_row_id=r.id AND e.status='APPROVED') THEN 'EXPENSE'
- WHEN EXISTS(SELECT 1 FROM qbook_general_expenses e WHERE e.created_from_statement_row_id=r.id AND e.status NOT IN('CANCELLED_NOT_SPENT','VOIDED','APPROVED')) THEN 'RESERVED_EXPENSE'
+ WHEN EXISTS(SELECT 1 FROM qbook_general_expenses e WHERE e.created_from_statement_row_id=r.id AND e.status<>'APPROVED' AND NOT(e.status='CANCELLED_NOT_SPENT' AND e.journal_id IS NULL)) THEN 'RESERVED_EXPENSE'
  ELSE 'AVAILABLE' END";
 }
 function bank_workspace_owner(PDO $db,int $row):?array {
  $q=$db->prepare('SELECT expense_id id FROM qbook_general_expense_refunds WHERE statement_row_id=?');$q->execute([$row]);if($v=$q->fetch())return ['type'=>'GENERAL_EXPENSE','id'=>(int)$v['id'],'relationship'=>'Refund'];
  $q=$db->prepare('SELECT source_type type,source_record_id id FROM qbook_bank_matches WHERE statement_row_id=?');$q->execute([$row]);if($v=$q->fetch())return ['type'=>$v['type'],'id'=>(int)$v['id'],'relationship'=>'Reconciled'];
  $q=$db->prepare("SELECT id FROM qbook_customer_receipts WHERE statement_row_id=? AND status='POSTED'");$q->execute([$row]);if($v=$q->fetch())return ['type'=>'CUSTOMER_RECEIPT','id'=>(int)$v['id'],'relationship'=>'Client Payment'];
- $q=$db->prepare("SELECT id,status FROM qbook_general_expenses WHERE created_from_statement_row_id=? AND status NOT IN('CANCELLED_NOT_SPENT','VOIDED') ORDER BY id LIMIT 1");$q->execute([$row]);if($v=$q->fetch())return ['type'=>'GENERAL_EXPENSE','id'=>(int)$v['id'],'relationship'=>$v['status']==='APPROVED'?'Expense':'Reserved for Expense'];return null;
+ $q=$db->prepare("SELECT id,status FROM qbook_general_expenses WHERE created_from_statement_row_id=? AND NOT(status='CANCELLED_NOT_SPENT' AND journal_id IS NULL) ORDER BY id LIMIT 1");$q->execute([$row]);if($v=$q->fetch())return ['type'=>'GENERAL_EXPENSE','id'=>(int)$v['id'],'relationship'=>$v['status']==='APPROVED'?'Expense':'Reserved for Expense'];return null;
 }
 function bank_workspace_register(PDO $db,array $in):array {
  $bank=bank_workspace_bank($db,(int)($in['bank_account_id']??0));[$page,$size,$offset]=bank_workspace_page($in);

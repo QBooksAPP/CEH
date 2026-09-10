@@ -16,7 +16,8 @@ void main() {
   final lineReclassify = source('Server/expense_line_reclassify.php');
   final voidExpense = source('Server/expense_void.php');
   final bankImport = source('Server/bank_statement_import.php');
-  final bankReconcile = source('Server/bank_reconcile.php');
+  final bankReconcile = source('Server/bank_reconcile.php') +
+      source('Server/bank_reconcile_common.php');
   final evidenceUpload = source('Server/financial_evidence_upload.php');
   final suppliers = source('Server/supplier_create.php');
   final register = source('Server/expenses.php');
@@ -95,7 +96,8 @@ void main() {
   });
 
   test('optional bank reference and one-off payee rules are explicit', () {
-    final reconcile = source('Server/bank_reconcile.php');
+    final reconcile = source('Server/bank_reconcile.php') +
+        source('Server/bank_reconcile_common.php');
     final submit = source('Server/general_expense_submit.php');
     expect(generalCreate, contains("one_off_payee"));
     expect(generalCreate, contains("supplier_name_snapshot"));

@@ -190,7 +190,8 @@ void main() {
           contains("'source_module'=>'CREDIT_NOTE'"));
       expect(server('invoice_void_common.php'),
           contains('ONLY_UNPAID_INVOICE_CAN_BE_VOIDED'));
-      expect(server('invoice_void_common.php'), contains('accounts_reverse_journal'));
+      expect(server('invoice_void_common.php'),
+          contains('accounts_reverse_journal'));
     });
 
     test('credit-note production quantity release is explicit and bounded', () {
@@ -228,7 +229,8 @@ void main() {
     });
 
     test('bank matching supports receipts without duplicate posting', () {
-      final reconcile = server('bank_reconcile.php');
+      final reconcile =
+          server('bank_reconcile.php') + server('bank_reconcile_common.php');
       expect(reconcile, contains("'CUSTOMER_RECEIPT'"));
       expect(reconcile, isNot(contains("'source_module'=>'CUSTOMER_RECEIPT'")));
       expect(server('customer_receipt_from_statement.php'),
