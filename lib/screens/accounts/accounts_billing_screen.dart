@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -905,9 +906,10 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
 
 class CustomerPaymentScreen extends StatefulWidget {
   const CustomerPaymentScreen(
-      {super.key, required this.session, required this.api});
+      {super.key, required this.session, required this.api, this.statementRowId});
   final CehSession session;
   final CehApiClient api;
+  final int? statementRowId;
   @override
   State<CustomerPaymentScreen> createState() => _CustomerPaymentScreenState();
 }
@@ -930,10 +932,36 @@ class _PaymentWhtDraft {
 }
 
 class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
+  Map<String, dynamic>? statement, paymentDraft;
+  String? statementError;
+  bool uncertainPayment = false;
+  double? existingCredit;
+  final List<Map<String, dynamic>> staleAllocations = [];
+  bool allocationReviewRequired = false;
+  bool draftIntentLoaded = false;
+  final String creationRequest = List.generate(32, (_) => Random.secure().nextInt(256))
+      .map((v) => v.toRadixString(16).padLeft(2, '0')).join();
+  bool get statementBacked => widget.statementRowId != null;
   List<CehClient> clients = const [];
   List<CehBankAccount> banks = const [];
   List<BillingInvoice> invoices = const [];
-  List<Map<String, dynamic>> whtCodes = const [];
+  List<Map<String, dynamic>> allWhtCodes = const [];
+  bool whtConfigurationLoaded = false;
+  String? get paymentEffectiveDate => statementBacked
+      ? (statement == null ? null : statement!['transaction_date']?.toString())
+      : DateTime.now().toIso8601String().substring(0, 10);
+  List<Map<String, dynamic>> get whtCodes {
+    final date = paymentEffectiveDate;
+    if (date == null || !whtConfigurationLoaded) return const [];
+    return allWhtCodes.where((code) {
+      final active = code['is_active'] == true || '${code['is_active']}' == '1';
+      final from = '${code['effective_from'] ?? ''}';
+      final to = code['effective_to']?.toString();
+      return active && code['tax_type'] == 'WHT' &&
+          from.compareTo(date) <= 0 &&
+          (to == null || to.isEmpty || to.compareTo(date) >= 0);
+    }).toList();
+  }
   CehClient? client;
   CehBankAccount? bank;
   final amount = TextEditingController();
@@ -950,31 +978,24 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
     Future.wait([
       widget.api.clients(widget.session),
       widget.api.bankAccounts(widget.session),
-    ]).then((v) {
+    ]).then((v) async {
       if (mounted) {
         setState(() {
           clients = v[0] as List<CehClient>;
           banks = v[1] as List<CehBankAccount>;
         });
+        if (statementBacked) await _refreshStatement();
       }
+    }).onError((_, __) {
+      if (mounted) setState(() => statementError = 'Could not load payment details. Return and retry.');
     });
     widget.api.taxConfiguration(widget.session).then((tax) {
       if (!mounted) return;
-      final today = DateTime.now().toIso8601String().substring(0, 10);
       setState(() {
-        whtCodes = (tax['tax_codes'] as List? ?? const [])
+        allWhtCodes = (tax['tax_codes'] as List? ?? const [])
             .map((item) => Map<String, dynamic>.from(item as Map))
-            .where((code) {
-          final active = code['is_active'] == true ||
-              code['is_active'] == 1 ||
-              '${code['is_active']}' == '1';
-          final from = '${code['effective_from'] ?? ''}';
-          final to = code['effective_to']?.toString();
-          return active &&
-              code['tax_type'] == 'WHT' &&
-              from.compareTo(today) <= 0 &&
-              (to == null || to.isEmpty || to.compareTo(today) >= 0);
-        }).toList();
+            .toList();
+        whtConfigurationLoaded = true;
       });
     }).onError((_, __) {
       // Tax lookup failure must not block an ordinary cash-only payment.
@@ -997,7 +1018,8 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
   int _minor(String value) => parseNgnMinorUnits(value) ?? 0;
   int get receivedMinor => _minor(amount.text);
   int get allocatedMinor => allocations.values
-      .fold(0, (total, controller) => total + _minor(controller.text));
+      .fold(0, (total, controller) => total + _minor(controller.text)) +
+      staleAllocations.fold(0, (total, a) => total + _minor('${a['cash_amount'] ?? '0'}'));
   int _outstandingMinor(BillingInvoice invoice) =>
       (invoice.outstanding * 100).round();
   int _cashCapacityMinor(BillingInvoice invoice) =>
@@ -1114,9 +1136,142 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
   }
 
   int get whtAllocatedMinor =>
-      invoices.fold(0, (total, invoice) => total + _whtMinor(invoice.id));
+      invoices.fold(0, (total, invoice) => total + _whtMinor(invoice.id)) +
+      staleAllocations.fold(0, (total, a) => total + _minor('${a['wht_amount'] ?? '0'}'));
   int get unallocatedMinor =>
       receivedMinor > allocatedMinor ? receivedMinor - allocatedMinor : 0;
+
+  Future<void> _refreshStatement({List<Map<String, dynamic>>? preservedIntent,
+      bool forceReview = false}) async {
+    final intent = preservedIntent ?? (draftIntentLoaded ? _draftAllocations() : null);
+    setState(() { posting = true; statementError = null; });
+    try {
+      final data = await widget.api.bankClientPayment(widget.session,
+          statementRowId: widget.statementRowId!);
+      if (!mounted) return;
+      statement = Map<String, dynamic>.from(data['statement'] as Map);
+      paymentDraft = data['receipt'] == null ? null
+          : Map<String, dynamic>.from(data['receipt'] as Map);
+      bank = banks.where((b) => b.id == int.parse('${statement!['bank_account_id']}')).firstOrNull;
+      amount.text = completeNgnInput('${statement!['amount']}');
+      reference.text = '${statement!['bank_reference'] ?? ''}';
+      if (paymentDraft?['status'] == 'POSTED') {
+        _message('Client Payment ${paymentDraft!['reference']} is posted.');
+        Navigator.pop(context, true);
+        return;
+      }
+      if (paymentDraft != null) {
+        final selected = clients.where((c) => c.id == int.parse('${paymentDraft!['client_id']}')).firstOrNull;
+        if (selected == null) throw const ApiException('PAYMENT_CLIENT_UNAVAILABLE');
+        await _selectClient(selected);
+        if (!mounted) return;
+        staleAllocations.clear();
+        for (final entry in intent ?? paymentDraft!['draft_payload'] as List? ?? []) {
+          final a = Map<String, dynamic>.from(entry as Map);
+          final id = int.tryParse('${a['invoice_id']}');
+          final current = invoices.where((i) => i.id == id).firstOrNull;
+          final intended = _minor('${a['cash_amount'] ?? '0'}') + _minor('${a['wht_amount'] ?? '0'}');
+          final priorBalance = int.tryParse('${a['outstanding_minor_snapshot']}');
+          if (forceReview || current == null || intended > _outstandingMinor(current) ||
+              (priorBalance != null && priorBalance != _outstandingMinor(current))) {
+            staleAllocations.add({...a,
+              'invoice_reference': a['invoice_reference'] ?? current?.reference ?? 'Previously allocated invoice',
+            });
+            continue;
+          }
+          if (id == null) throw const ApiException('INVALID_SAVED_ALLOCATION');
+          selectedInvoiceIds.add(id);
+          allocations[id]!.text = completeNgnInput('${a['cash_amount'] ?? '0'}');
+          if ((num.tryParse('${a['wht_amount']}') ?? 0) > 0) {
+            final d = wht[id]!;
+            d.enabled = true;
+            d.taxCodeId = int.tryParse('${a['wht_tax_code_id']}');
+            d.base.text = completeNgnInput('${a['wht_calculation_base_amount'] ?? '0'}');
+            d.accepted.text = completeNgnInput('${a['wht_amount']}');
+            d.acceptedEdited = true;
+            d.overrideReason.text = '${a['wht_override_reason'] ?? ''}';
+            d.certificateStatus = '${a['certificate_status'] ?? 'CERTIFICATE_PENDING'}';
+          }
+        }
+      }
+      uncertainPayment = false;
+      draftIntentLoaded = true;
+    } catch (_) {
+      if (mounted) setState(() => statementError = 'Could not verify payment state. Refresh before continuing.');
+    } finally { if (mounted) setState(() => posting = false); }
+  }
+
+  Future<void> _ensureStatementDraft() async {
+    if (paymentDraft != null) return;
+    final result = await widget.api.bankClientPayment(widget.session,
+        statementRowId: widget.statementRowId!, action: {
+          'action': 'CREATE', 'request_key': creationRequest, 'client_id': client!.id
+        });
+    paymentDraft = Map<String, dynamic>.from(result['receipt'] as Map);
+  }
+
+  List<Map<String, dynamic>> _draftAllocations() => [
+    ...staleAllocations,
+    for (final invoice in invoices)
+      if (_minor(allocations[invoice.id]?.text ?? '') > 0 || _whtMinor(invoice.id) > 0)
+        {
+          'invoice_id': invoice.id,
+          'invoice_reference': invoice.reference,
+          'outstanding_minor_snapshot': _outstandingMinor(invoice),
+          'cash_amount': ngnMinorUnitsForApi(_minor(allocations[invoice.id]?.text ?? '')),
+          if (_whtMinor(invoice.id) > 0) ...{
+            'wht_amount': ngnMinorUnitsForApi(_whtMinor(invoice.id)),
+            'wht_tax_code_id': wht[invoice.id]!.taxCodeId,
+            'wht_calculation_base_amount': ngnMinorUnitsForApi(_minor(wht[invoice.id]!.base.text)),
+            'wht_suggested_amount': ngnMinorUnitsForApi(_suggestedWhtMinor(invoice.id)),
+            if (_whtMinor(invoice.id) != _suggestedWhtMinor(invoice.id))
+              'wht_override_reason': wht[invoice.id]!.overrideReason.text.trim(),
+            'certificate_status': wht[invoice.id]!.certificateStatus,
+          }
+        }
+  ];
+
+  Future<void> _saveStatementDraft() async {
+    if (client == null || uncertainPayment || statementError != null ||
+        staleAllocations.isNotEmpty || allocationReviewRequired) {
+      return;
+    }
+    setState(() => posting = true);
+    try {
+      await _ensureStatementDraft();
+      final result = await widget.api.bankClientPayment(widget.session,
+          statementRowId: widget.statementRowId!, action: {
+            'action': 'SAVE', 'receipt_id': paymentDraft!['id'],
+            'draft_revision': paymentDraft!['draft_revision'],
+            'allocations': _draftAllocations(),
+          });
+      paymentDraft = Map<String, dynamic>.from(result['receipt'] as Map);
+      if (mounted) _message('Draft saved. Bank transaction remains reserved. No journal posted.');
+    } catch (_) {
+      uncertainPayment = true;
+      if (mounted) _message('Save outcome uncertain. Refresh authoritative payment state before retrying.');
+    } finally { if (mounted) setState(() => posting = false); }
+  }
+
+  Future<void> _cancelStatementDraft() async {
+    final confirmed = await showDialog<bool>(context: context, builder: (c) => AlertDialog(
+      title: const Text('Cancel payment draft?'),
+      content: const Text('Release this bank transaction for reuse. No journal has been posted. Draft history is retained.'),
+      actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Back')),
+        FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Cancel draft'))]));
+    if (confirmed != true || !mounted) return;
+    setState(() => posting = true);
+    try {
+      await widget.api.bankClientPayment(widget.session, statementRowId: widget.statementRowId!, action: {
+        'action': 'CANCEL', 'receipt_id': paymentDraft!['id'], 'draft_revision': paymentDraft!['draft_revision'],
+        'reason': 'Admin cancelled unposted statement-backed Client Payment draft',
+      });
+      if (mounted) Navigator.pop(context, true);
+    } catch (_) {
+      uncertainPayment = true;
+      if (mounted) _message('Cancellation outcome uncertain. Refresh authoritative payment state.');
+    } finally { if (mounted) setState(() => posting = false); }
+  }
 
   Future<void> _selectClient(CehClient? value) async {
     for (final controller in allocations.values) {
@@ -1137,6 +1292,7 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
     try {
       final rows =
           await widget.api.outstandingInvoices(widget.session, value.id);
+      if (statementBacked) existingCredit = await widget.api.availableCustomerCredit(widget.session, value.id);
       if (!mounted || client?.id != value.id) return;
       setState(() {
         invoices = rows;
@@ -1150,6 +1306,7 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
       if (!mounted) return;
       setState(() => loadingInvoices = false);
       _message(e.code);
+      if (statementBacked) rethrow;
     }
   }
 
@@ -1157,6 +1314,11 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
       .showSnackBar(SnackBar(content: Text(value)));
 
   Future<void> saveAndPost() async {
+    if (staleAllocations.isNotEmpty || allocationReviewRequired) {
+      _message('Payment allocation requires review');
+      return;
+    }
+    if (statementBacked && (uncertainPayment || statementError != null || statement == null)) return;
     if (client == null || bank == null || receivedMinor <= 0) {
       _message('Select a Client, Received Into account and Amount Received.');
       return;
@@ -1203,9 +1365,18 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
         return;
       }
     }
+    if (statementBacked) {
+      final confirmed = await showDialog<bool>(context: context, builder: (c) => AlertDialog(
+        title: const Text('Review Client Payment'),
+        content: Text('Cash received into bank: ${formatNaira(receivedMinor / 100)}\nWHT settlement: ${formatNaira(whtAllocatedMinor / 100)}\nApplied to invoices: ${formatNaira((allocatedMinor + whtAllocatedMinor) / 100)}\nRemaining as Client Credit: ${formatNaira(unallocatedMinor / 100)}\n\nOne payment journal will be posted. Reconciliation creates no additional journal. Existing Client Credit is not consumed.'),
+        actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Back')),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Post Client Payment'))]));
+      if (confirmed != true || !mounted) return;
+    }
     setState(() => posting = true);
     try {
-      final draft = await widget.api.saveCustomerReceipt(widget.session, {
+      if (statementBacked) await _ensureStatementDraft();
+      final draft = statementBacked ? paymentDraft! : await widget.api.saveCustomerReceipt(widget.session, {
         'client_id': client!.id,
         'bank_account_id': bank!.id,
         'receipt_date': DateTime.now().toIso8601String().substring(0, 10),
@@ -1229,6 +1400,7 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
       }
       await widget.api.postCustomerPayment(widget.session, {
         'receipt_id': draft['id'],
+        if (statementBacked) 'draft_revision': draft['draft_revision'],
         'allocations': [
           for (final invoice in invoices)
             if (_minor(allocations[invoice.id]?.text ?? '') > 0 ||
@@ -1258,10 +1430,19 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
         Navigator.pop(context);
       }
     } on ApiException catch (e) {
+      if (statementBacked) uncertainPayment = true;
+      if (statementBacked && mounted) {
+        final intent = _draftAllocations();
+        await _refreshStatement(preservedIntent: intent, forceReview: true);
+        if (mounted) setState(() => allocationReviewRequired = true);
+      }
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(e.code)));
       }
+    } catch (_) {
+      if (statementBacked) uncertainPayment = true;
+      if (mounted) _message('Payment outcome uncertain. Refresh before retrying.');
     } finally {
       if (mounted) setState(() => posting = false);
     }
@@ -1276,6 +1457,34 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
       body: ListView(padding: const EdgeInsets.all(18), children: [
         const Text(
             'Allocate this payment to outstanding invoices. Any remainder is retained automatically as Client Credit / Advance.'),
+        if (statementBacked) ...[
+          if (statement != null) Text('Statement date: ${displayAccountsDate('${statement!['transaction_date']}')}\nBank reference: ${statement!['bank_reference'] ?? ''}\n${statement!['narration'] ?? ''}'),
+          if (statementError != null) Text(statementError!),
+          if (uncertainPayment) const Text('Refresh payment state before retrying. Do not create another payment.'),
+          TextButton(onPressed: posting ? null : _refreshStatement, child: const Text('Refresh payment state')),
+          if (paymentDraft != null) Text('Draft ${paymentDraft!['reference']} — statement reserved. Cancel the draft to release it.'),
+          if (existingCredit != null) Text('Existing Client Credit: ${formatNaira(existingCredit!)} — not automatically applied.'),
+          if (staleAllocations.isNotEmpty) ...[
+            const Text('Payment allocation requires review'),
+            for (final allocation in staleAllocations)
+              Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Invoice ${allocation['invoice_reference'] ?? 'previously selected'} has changed since this payment draft was saved. Review the allocation before posting.'),
+                  Text('Intended cash: ${formatNaira(_minor('${allocation['cash_amount'] ?? '0'}') / 100)}'),
+                  Text('Intended WHT: ${formatNaira(_minor('${allocation['wht_amount'] ?? '0'}') / 100)}'),
+                  TextButton(onPressed: posting ? null : () => setState(() {
+                    staleAllocations.remove(allocation);
+                    allocationReviewRequired = true;
+                  }), child: const Text('Remove stale allocation and review')),
+                ]))),
+          ],
+          if (allocationReviewRequired) ...[
+            const Text('Reallocate the released cash below, or explicitly confirm that the remainder should become Client Credit. Nothing has been posted.'),
+            CheckboxListTile(value: false,
+              onChanged: posting || staleAllocations.isNotEmpty ? null : (_) => setState(() => allocationReviewRequired = false),
+              title: Text('I have reviewed the current allocations and intend ${formatNaira(unallocatedMinor / 100)} as Client Credit')),
+          ],
+        ],
         const SizedBox(height: 12),
         DropdownButtonFormField<CehClient>(
             initialValue: client,
@@ -1283,7 +1492,7 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
             items: clients
                 .map((x) => DropdownMenuItem(value: x, child: Text(x.name)))
                 .toList(),
-            onChanged: posting ? null : _selectClient),
+            onChanged: posting || (statementBacked && paymentDraft != null) ? null : _selectClient),
         const SizedBox(height: 12),
         const Text('Outstanding Invoice(s)',
             style: TextStyle(fontWeight: FontWeight.w800)),
@@ -1386,11 +1595,12 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
                             if (wht[invoice.id]?.enabled ?? false) ...[
                               if (whtCodes.isEmpty)
                                 const Text(
-                                    'No active WHT codes are effective for today.'),
+                                    'WHT choices require loaded configuration and a code effective on the payment date.'),
                               DropdownButtonFormField<int>(
                                   key: ValueKey(
                                       'payment-wht-code-${invoice.id}'),
-                                  initialValue: wht[invoice.id]!.taxCodeId,
+                                  initialValue: _whtCode(wht[invoice.id]!.taxCodeId) == null
+                                      ? null : wht[invoice.id]!.taxCodeId,
                                   isExpanded: true,
                                   decoration: const InputDecoration(
                                       labelText: 'WHT Code / Type'),
@@ -1405,7 +1615,7 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
                                       : (value) => setState(() =>
                                           _selectWhtCode(invoice, value))),
                               const SizedBox(height: 10),
-                              if (wht[invoice.id]!.taxCodeId != null)
+                              if (_whtCode(wht[invoice.id]!.taxCodeId) != null)
                                 Builder(builder: (context) {
                                   final code = whtCodes.firstWhere((item) =>
                                       (item['id'] as num).toInt() ==
@@ -1573,12 +1783,12 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
             items: banks
                 .map((x) => DropdownMenuItem(value: x, child: Text(x.name)))
                 .toList(),
-            onChanged: posting ? null : (v) => setState(() => bank = v)),
+            onChanged: posting || statementBacked ? null : (v) => setState(() => bank = v)),
         const SizedBox(height: 12),
         TextField(
             key: const ValueKey('payment-amount-received'),
             controller: amount,
-            enabled: !posting,
+            enabled: !posting && !statementBacked,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             inputFormatters: const [NgnAmountInputFormatter()],
             onChanged: (_) => setState(_rebalanceSingleInvoice),
@@ -1601,13 +1811,19 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
         const SizedBox(height: 12),
         TextField(
             controller: reference,
-            enabled: !posting,
+            enabled: !posting && !statementBacked,
             decoration: const InputDecoration(
                 labelText: 'Zenith Reference — optional')),
         const SizedBox(height: 20),
+        if (statementBacked) ...[
+          OutlinedButton(onPressed: posting || uncertainPayment || statementError != null || client == null ? null : _saveStatementDraft,
+              child: const Text('Save payment draft')),
+          if (paymentDraft != null) TextButton(onPressed: posting || uncertainPayment || statementError != null ? null : _cancelStatementDraft,
+              child: const Text('Cancel payment draft')),
+        ],
         FilledButton(
             key: const ValueKey('save-post-customer-payment'),
-            onPressed: posting ? null : saveAndPost,
+            onPressed: posting || staleAllocations.isNotEmpty || allocationReviewRequired || (statementBacked && (uncertainPayment || statementError != null || statement == null)) ? null : saveAndPost,
             child: Text(posting ? 'Posting…' : 'Save / Post Payment'))
       ]));
 

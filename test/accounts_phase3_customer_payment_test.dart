@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:ceh/core/api_client.dart';
@@ -193,9 +194,163 @@ class _PaymentApi extends CehApiClient {
   }
 }
 
+class _StalePaymentApi extends _PaymentApi {
+  _StalePaymentApi(this.balance);
+  double? balance;
+  bool rejectChangedInvoice = false;
+  int reads = 0;
+  @override
+  Future<Map<String, dynamic>> postCustomerPayment(CehSession session,
+      Map<String, dynamic> payload) async {
+    if (rejectChangedInvoice) {
+      balance = null;
+      throw const ApiException('INVOICE_OVERALLOCATION');
+    }
+    return super.postCustomerPayment(session, payload);
+  }
+  @override
+  Future<List<BillingInvoice>> outstandingInvoices(CehSession session, int clientId) async =>
+      balance == null ? [] : [BillingInvoice(id: 4, reference: 'CEH-INV-000004',
+        client: 'ABC Construction', status: 'ISSUED', total: 100000, outstanding: balance!)];
+  @override
+  Future<Map<String, dynamic>> bankClientPayment(CehSession session,
+      {required int statementRowId, Map<String, dynamic>? action}) async {
+    reads++;
+    return {
+    'statement': {'id': 10, 'bank_account_id': 2, 'transaction_date': '2026-06-01',
+      'amount': '80000.00', 'bank_reference': 'QA', 'narration': 'QA'},
+    'receipt': {'id': 11, 'client_id': 7, 'reference': 'CEH-RCP-000011',
+      'status': 'DRAFT', 'draft_revision': 1, 'draft_payload': [
+        {'invoice_id': 4, 'invoice_reference': 'CEH-INV-000004',
+          'outstanding_minor_snapshot': 10000000, 'cash_amount': '80000.00',
+          'wht_amount': '2000.00', 'wht_tax_code_id': 21,
+          'wht_calculation_base_amount': '100000.00',
+          'certificate_status': 'CERTIFICATE_PENDING'}
+      ]}
+    };
+  }
+}
+
+class _DatedStatementPaymentApi extends _PaymentApi {
+  final statementReady = Completer<Map<String, dynamic>>();
+  final taxReady = Completer<Map<String, dynamic>>();
+  @override
+  Future<Map<String, dynamic>> bankClientPayment(CehSession session,
+      {required int statementRowId, Map<String, dynamic>? action}) => statementReady.future;
+  @override
+  Future<Map<String, dynamic>> taxConfiguration(CehSession session) => taxReady.future;
+  Future<void> completeTax() async => taxReady.complete(await super.taxConfiguration(_admin));
+  void completeStatement(String date) => statementReady.complete({
+    'statement': {'id': 10, 'bank_account_id': 2, 'transaction_date': date,
+      'amount': '100000.00', 'bank_reference': 'QA', 'narration': 'QA'},
+    'receipt': null,
+  });
+}
+
 void main() {
+  testWidgets('valid saved intent survives reload and posting rejection requires review', (tester) async {
+    tester.view.physicalSize = const Size(900, 3000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final api = _StalePaymentApi(100000)..rejectChangedInvoice = true;
+    await tester.pumpWidget(MaterialApp(home: CustomerPaymentScreen(
+        session: _admin, api: api, statementRowId: 10)));
+    await tester.pumpAndSettle();
+    expect(find.text('Payment allocation requires review'), findsNothing);
+    final post = find.byKey(const ValueKey('save-post-customer-payment'));
+    await tester.ensureVisible(post);
+    await tester.tap(post);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Post Client Payment'));
+    await tester.pumpAndSettle();
+    expect(api.reads, 2);
+    await tester.ensureVisible(find.text('Payment allocation requires review'));
+    expect(find.text('Intended cash: ₦80,000.00'), findsOneWidget);
+    expect(find.text('Intended WHT: ₦2,000.00'), findsOneWidget);
+    expect(tester.widget<FilledButton>(post).onPressed, isNull);
+    await tester.tap(find.text('Refresh payment state'));
+    await tester.pumpAndSettle();
+    expect(find.text('Intended cash: ₦80,000.00'), findsOneWidget);
+    expect(api.posted, isNull);
+    expect(tester.takeException(), isNull);
+  });
+  for (final scenario in {'fully paid': null, 'voided': null, 'disappeared': null,
+    'partial payment': 90000.0, 'credit note': 75000.0, 'WHT settlement': 98000.0}.entries) {
+    testWidgets('saved allocation requires explicit review after ${scenario.key}', (tester) async {
+      tester.view.physicalSize = const Size(900, 2600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final api = _StalePaymentApi(scenario.value);
+      await tester.pumpWidget(MaterialApp(home: CustomerPaymentScreen(
+          session: _admin, api: api, statementRowId: 10)));
+      await tester.pumpAndSettle();
+      expect(find.text('Payment allocation requires review'), findsOneWidget);
+      expect(find.textContaining('Invoice CEH-INV-000004 has changed'), findsOneWidget);
+      expect(find.text('Intended cash: ₦80,000.00'), findsOneWidget);
+      expect(find.text('Intended WHT: ₦2,000.00'), findsOneWidget);
+      expect(tester.widget<FilledButton>(find.byKey(const ValueKey('save-post-customer-payment'))).onPressed, isNull);
+      expect(api.posted, isNull);
+      await tester.tap(find.text('Remove stale allocation and review'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<FilledButton>(find.byKey(const ValueKey('save-post-customer-payment'))).onPressed, isNull);
+      await tester.tap(find.textContaining('I have reviewed the current allocations'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<FilledButton>(find.byKey(const ValueKey('save-post-customer-payment'))).onPressed, isNotNull);
+      expect(api.posted, isNull);
+      expect(tester.takeException(), isNull);
+    });
+  }
+  for (final date in ['2024-06-01', '2026-06-01']) {
+    for (final taxFirst in [true, false]) {
+      testWidgets('statement WHT date $date taxFirst=$taxFirst', (tester) async {
+        tester.view.physicalSize = const Size(900, 2600);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        final api = _DatedStatementPaymentApi();
+        await tester.pumpWidget(MaterialApp(home: CustomerPaymentScreen(
+            session: _admin, api: api, statementRowId: 10)));
+        await tester.pump();
+        if (taxFirst) {
+          await api.completeTax();
+        } else {
+          api.completeStatement(date);
+        }
+        await tester.pump();
+        expect(find.textContaining('General Services'), findsNothing);
+        expect(find.textContaining('Expired'), findsNothing);
+        if (taxFirst) {
+          api.completeStatement(date);
+        } else {
+          await api.completeTax();
+        }
+        await tester.pumpAndSettle();
+        await tester.tap(find.byType(DropdownButtonFormField<CehClient>));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('ABC Construction').last);
+        await tester.pumpAndSettle();
+        await _selectPaymentInvoice(tester, 4);
+        await tester.tap(find.byKey(const ValueKey('payment-wht-4')));
+        await tester.pumpAndSettle();
+        final field = tester.widget<DropdownButtonFormField<int>>(
+            find.byKey(const ValueKey('payment-wht-code-4')));
+        // Inspect the actual selectable options, not just the collapsed label.
+        await tester.tap(find.byKey(const ValueKey('payment-wht-code-4')));
+        await tester.pumpAndSettle();
+        expect(field.enabled, isTrue);
+        expect(find.textContaining('Expired'), date.startsWith('2024') ? findsOneWidget : findsNothing);
+        expect(find.textContaining('General Services'), date.startsWith('2024') ? findsNothing : findsOneWidget);
+        await tester.tap(find.textContaining(date.startsWith('2024') ? 'Expired' : 'General Services').last);
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byKey(const ValueKey('payment-wht-base-4')), '20000');
+        await tester.pumpAndSettle();
+        expect(find.textContaining(date.startsWith('2024') ? 'Expired' : 'General Services'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
   group('customer payment accounting', () {
-    final post = File('Server/customer_receipt_post.php').readAsStringSync();
+    final post = File('Server/customer_receipt_post.php').readAsStringSync() +
+        File('Server/customer_payment_post_common.php').readAsStringSync();
     final apply = File('Server/customer_advance_apply.php').readAsStringSync();
     final invoices = File('Server/invoices.php').readAsStringSync();
     final statement = File('Server/client_statement.php').readAsStringSync();

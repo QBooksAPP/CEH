@@ -41,7 +41,8 @@ void main() {
     });
 
     test('posting snapshots company and Received Into atomically', () {
-      final post = server('customer_receipt_post.php');
+      final post = server('customer_receipt_post.php') +
+          server('customer_payment_post_common.php');
       expect(
           post,
           contains(

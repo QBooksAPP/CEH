@@ -24,7 +24,7 @@ void main() {
       () {
     expect(source('invoice_issue.php'), contains('currency_code_snapshot=?'));
     expect(source('estimate_send.php'), contains('currency_code_snapshot=?'));
-    expect(source('customer_receipt_post.php'),
+    expect(source('customer_receipt_post.php') + source('customer_payment_post_common.php'),
         contains('currency_code_snapshot=?'));
   });
 

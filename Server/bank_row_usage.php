@@ -1,6 +1,14 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__.'/accounts_common.php';
+/** Read eligibility and locked write checks share the cancellation exception.
+ * A cancelled record with a journal remains an owner (fail closed).
+ */
+function bank_payment_active_owner_sql(string $alias=''):string {
+ if($alias!==''&&!preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/D',$alias))throw new InvalidArgumentException('Invalid SQL alias');
+ $prefix=$alias===''?'':$alias.'.';
+ return "NOT({$prefix}status='CANCELLED' AND {$prefix}journal_id IS NULL)";
+}
 /** Explicit row locks are the ownership authority. READ COMMITTED avoids
  * unrelated missing-owner next-key locks; retry only rolled-back DB work.
  * Callbacks must contain database work only, never uploads or external effects.
@@ -26,7 +34,7 @@ function bank_row_available(PDO $db,int $id,string $ownType='',int $ownId=0):arr
  if(in_array($r['status'],['MATCHED','RECONCILED'],true))accounts_fail('BANK_ROW_ALREADY_MATCHED',409);
  $s=$db->prepare("SELECT id FROM qbook_general_expenses WHERE created_from_statement_row_id=? AND NOT(status='CANCELLED_NOT_SPENT' AND journal_id IS NULL) FOR UPDATE");$s->execute([$id]);
  foreach($s->fetchAll() as $e)if($ownType!=='GENERAL_EXPENSE'||(int)$e['id']!==$ownId)accounts_fail('BANK_ROW_RESERVED_BY_EXPENSE',409);
- $s=$db->prepare("SELECT id FROM qbook_customer_receipts WHERE statement_row_id=? AND status='POSTED' FOR UPDATE");$s->execute([$id]);
+ $s=$db->prepare('SELECT id FROM qbook_customer_receipts WHERE statement_row_id=? AND '.bank_payment_active_owner_sql().' FOR UPDATE');$s->execute([$id]);
  foreach($s->fetchAll() as $e)if($ownType!=='CUSTOMER_RECEIPT'||(int)$e['id']!==$ownId)accounts_fail('BANK_ROW_USED_AS_RECEIPT',409);
  return $r;
 }

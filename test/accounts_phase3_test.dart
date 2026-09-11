@@ -162,8 +162,17 @@ void main() {
     });
 
     test('receipt posts cash and explicit WHT without revenue', () {
-      final receipt = server('customer_receipt_post.php');
+      final endpoint = server('customer_receipt_post.php');
+      expect(endpoint, contains("require_once __DIR__.'/customer_payment_post_common.php'"));
+      expect(endpoint, contains('customer_payment_post(production_db(),\$user,\$input)'));
+      expect(endpoint, isNot(contains('accounts_post_journal(')));
+      final receipt = server('customer_payment_post_common.php');
       expect(receipt, contains("billing_account_role(\$db,'WHT_RECEIVABLE')"));
+      expect(receipt, contains("'debit_minor' => \$wht, 'credit_minor' => 0"));
+      expect(receipt, contains("'debit_minor' => \$cash, 'credit_minor' => 0"));
+      expect(receipt, contains('\$arCredit = \$cashAllocated + \$whtAllocated'));
+      expect(receipt, contains("billing_account_role(\$db,'TRADE_RECEIVABLES')"));
+      expect(receipt, contains("'debit_minor' => 0, 'credit_minor' => \$arCredit"));
       expect(receipt, contains('WHT_MUST_BE_FULLY_ALLOCATED'));
       expect(receipt, isNot(contains("account_type='INCOME'")));
       expect(receipt, contains('CERTIFICATE_PENDING'));
@@ -171,7 +180,7 @@ void main() {
 
     test('advance receipt and later application use liability then AR', () {
       expect(
-          server('customer_receipt_post.php'), contains("'CUSTOMER_ADVANCES'"));
+          server('customer_payment_post_common.php'), contains("'CUSTOMER_ADVANCES'"));
       final apply = server('customer_advance_apply.php');
       expect(apply, contains("billing_account_role(\$db,'CUSTOMER_ADVANCES')"));
       expect(apply, contains("billing_account_role(\$db,'TRADE_RECEIVABLES')"));
@@ -233,8 +242,18 @@ void main() {
           server('bank_reconcile.php') + server('bank_reconcile_common.php');
       expect(reconcile, contains("'CUSTOMER_RECEIPT'"));
       expect(reconcile, isNot(contains("'source_module'=>'CUSTOMER_RECEIPT'")));
-      expect(server('customer_receipt_from_statement.php'),
-          contains("'source_module'=>'CUSTOMER_RECEIPT'"));
+      final retired = server('customer_receipt_from_statement.php');
+      expect(retired, contains("accounts_fail('USE_STATEMENT_CLIENT_PAYMENT_WORKFLOW',409)"));
+      for (final mutation in ['accounts_post_journal(', 'bank_row_available(',
+        'bank_payment_draft(', 'production_db(', '->prepare(', '->exec(']) {
+        expect(retired, isNot(contains(mutation)));
+      }
+      expect(server('customer_receipt_post.php'),
+          contains('customer_payment_post(production_db(),\$user,\$input)'));
+      final posting = server('customer_payment_post_common.php');
+      expect(posting, contains("'source_module' => 'CUSTOMER_RECEIPT'"));
+      expect(RegExp(r'accounts_post_journal\(').allMatches(posting).length, 1);
+      expect(reconcile, isNot(contains('accounts_post_journal(')));
     });
 
     test('migration is incremental and contains no financial data', () {

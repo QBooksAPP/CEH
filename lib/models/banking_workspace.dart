@@ -13,6 +13,7 @@ const bankUsageLabels = <String, String>{
   'ALL': 'All usage',
   'AVAILABLE': 'Available',
   'RESERVED_EXPENSE': 'Reserved for Expense',
+  'RESERVED_PAYMENT': 'Reserved for Client Payment',
   'EXPENSE': 'Linked to Expense',
   'REFUND': 'Linked as Refund',
   'PAYMENT': 'Linked to Client Payment',

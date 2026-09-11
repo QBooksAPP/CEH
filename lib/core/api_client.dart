@@ -1033,6 +1033,21 @@ class CehApiClient {
     return Map<String, dynamic>.from(data['receipt'] as Map);
   }
 
+  Future<Map<String, dynamic>> bankClientPayment(CehSession session,
+      {required int statementRowId, Map<String, dynamic>? action}) async {
+    if (action != null) {
+      return _postJson(session, 'bank_client_payment.php',
+          {'statement_row_id': statementRowId, ...action}, 'BANK_PAYMENT_FAILED');
+    }
+    final uri = Uri.parse('$baseUrl/bank_client_payment.php').replace(
+        queryParameters: {'statement_row_id': '$statementRowId'});
+    final response = await http.get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'BANK_PAYMENT_FAILED');
+    return data;
+  }
+
   Future<Map<String, dynamic>> postCustomerPayment(
       CehSession session, Map<String, dynamic> payload) async {
     final data = await _postJson(session, 'customer_receipt_post.php', payload,

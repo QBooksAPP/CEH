@@ -42,7 +42,7 @@ void main() {
       'general_expense_update.php',
       'general_expense_review.php',
       'general_expense_refunds_common.php',
-      'customer_receipt_from_statement.php',
+      'bank_payment_common.php',
     ]) {
       expect(source(name), contains('bank_row_available('));
       final dependencies = source(name) +
@@ -53,5 +53,60 @@ void main() {
     }
     expect(source('bank_row_usage.php'), contains('FOR UPDATE'));
     expect(source('bank_row_usage.php'), contains('inTransaction()'));
+  });
+  test('retired statement receipt endpoint rejects without consuming a row', () {
+    final legacy = source('customer_receipt_from_statement.php');
+    expect(legacy, contains('billing_require_admin()'));
+    expect(legacy, contains("production_require_method('POST')"));
+    expect(legacy, contains(
+        "accounts_fail('USE_STATEMENT_CLIENT_PAYMENT_WORKFLOW',409)"));
+    for (final forbidden in [
+      'production_db(',
+      'bank_row_available(',
+      'bank_payment_draft(',
+      'customer_payment_post(',
+      'accounts_post_journal(',
+      '->prepare(',
+      '->exec(',
+    ]) {
+      expect(legacy, isNot(contains(forbidden)), reason: forbidden);
+    }
+    expect(RegExp(r'\b(INSERT|UPDATE|DELETE|REPLACE)\s', caseSensitive: false)
+        .hasMatch(legacy), isFalse);
+  });
+  test('payment and refund reservations use the same exclusive ownership guard',
+      () {
+    final payment = source('bank_payment_common.php');
+    final refund = source('general_expense_refunds_common.php');
+    final guard = source('bank_row_usage.php');
+    expect(source('bank_client_payment.php'), contains('billing_require_admin()'));
+    expect(payment, contains('bank_ownership_transaction('));
+    expect(payment, contains('FOR UPDATE'));
+    expect(payment, contains('bank_row_available(\$db,\$rowId)'));
+    expect(payment, contains("'CUSTOMER_RECEIPT',(int)\$receipt['id']"));
+    expect(refund, contains('bank_ownership_transaction('));
+    expect(refund, contains('bank_row_available(\$db,\$rowId)'));
+    expect(guard, contains('BANK_ROW_USED_AS_REFUND'));
+    expect(guard, contains('BANK_ROW_USED_AS_RECEIPT'));
+    expect(guard, contains('function bank_payment_active_owner_sql('));
+    expect(guard, contains('bank_payment_active_owner_sql()'));
+    expect(refund, contains("bank_payment_active_owner_sql('cr')"));
+    final migration = source('migration_v1_25_bank_payment_reservation.sql');
+    expect(migration, contains('active_statement_row_id'));
+    expect(migration, contains('UNIQUE'));
+  });
+  test('ordinary payment entry remains separate from statement draft creation',
+      () {
+    final save = source('customer_receipt_save.php');
+    final endpoint = source('customer_receipt_post.php');
+    final posting = source('customer_payment_post_common.php');
+    expect(save, contains('INSERT INTO qbook_customer_receipts'));
+    expect(save, isNot(contains('USE_STATEMENT_CLIENT_PAYMENT_WORKFLOW')));
+    expect(save, isNot(contains('bank_payment_draft(')));
+    expect(endpoint, contains('customer_payment_post(production_db(),\$user,\$input)'));
+    expect(posting, contains("\$backed = \$receipt['statement_row_id'] !== null"));
+    expect(posting, contains('if (\$backed)'));
+    expect(posting, contains('\$cashAllocated += \$cashAmount'));
+    expect(posting, contains('\$unallocatedCash = \$cash - \$cashAllocated'));
   });
 }

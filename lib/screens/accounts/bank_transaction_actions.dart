@@ -8,6 +8,7 @@ import '../../models/accounts.dart';
 import '../../models/banking_workspace.dart';
 import '../../models/session.dart';
 import 'accounts_general_expense_screen.dart';
+import 'accounts_billing_screen.dart';
 import 'accounts_live_screens.dart';
 import 'accounts_expense_refunds_screen.dart';
 import 'accounts_banking_workspace.dart' show BankSourceDetail;
@@ -24,6 +25,10 @@ String bankingHistoryLabel(String code) =>
       'BANK_ROW_RECONCILED': 'Bank transaction reconciled',
       'ADMIN_CONFIRMED': 'Confirmed by administrator',
       'EXPENSE_APPROVAL': 'Reconciled on Expense approval',
+      'CUSTOMER_RECEIPT_DRAFT_SAVED': 'Client Payment drafted',
+      'CUSTOMER_RECEIPT_DRAFT_UPDATED': 'Client Payment draft updated',
+      'CUSTOMER_RECEIPT_DRAFT_CANCELLED': 'Client Payment draft cancelled',
+      'CUSTOMER_RECEIPT_POSTED': 'Client Payment posted',
     }[code] ??
     code;
 
@@ -132,6 +137,12 @@ class _ActionsState extends State<BankTransactionActions> {
                 'Import ${row['import_batch_id']} • ${row['source_sheet'] ?? 'Legacy'} • row ${row['source_row'] ?? 'not recorded'}'),
             _pair('Ownership',
                 bankUsageLabels[row['usage_state']] ?? 'Unavailable'),
+            if (_error == null && (_data!['can_record_payment'] == true || row['usage_state'] == 'RESERVED_PAYMENT'))
+              FilledButton(onPressed: _busy ? null : () async {
+                await Navigator.push(context, MaterialPageRoute(builder: (_) => CustomerPaymentScreen(
+                    session: widget.session, api: widget.api, statementRowId: widget.rowId)));
+                if (mounted) await _load();
+              }, child: Text(row['usage_state'] == 'RESERVED_PAYMENT' ? 'Open payment draft' : 'Record Client Payment')),
             if (_error == null && _data!['can_create_expense'] == true)
               FilledButton(
                   onPressed: _busy ? null : _create,
@@ -161,6 +172,7 @@ class _ActionsState extends State<BankTransactionActions> {
                   child: const Text('Open Expense')),
             const Divider(),
             if (row['owner'] != null &&
+                row['usage_state'] != 'RESERVED_PAYMENT' &&
                 bankMap(row['owner'])['type'] != 'GENERAL_EXPENSE')
               OutlinedButton(
                   onPressed: _busy
