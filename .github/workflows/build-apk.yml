@@ -1,16 +1,23 @@
 name: Build CEH APK
 
 on:
-  push:
-    branches:
-      - main
+  # Production publication must never be an incidental consequence of a Web
+  # or shared-API commit. Explicit dispatch + protected environment only.
   workflow_dispatch:
+    inputs:
+      confirm_production_release:
+        description: 'Explicitly authorize a production Android release'
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
 jobs:
   build:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirm_production_release == true
+    environment: production-android
     runs-on: ubuntu-latest
 
     steps:
