@@ -3,7 +3,41 @@ import 'dart:io';
 import 'package:ceh/core/billing_math.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+// Git checkouts may use LF or CRLF; preserve every non-newline source token.
+String _normalizeSource(String source) =>
+    source.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+
+String _readSource(String path) =>
+    _normalizeSource(File(path).readAsStringSync());
+
 void main() {
+  group('source-text newline portability', () {
+    const expected =
+        'qbook_credit_notes (\n  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT';
+    for (final ending in ['\n', '\r\n', '\r']) {
+      test('preserves SQL with ${ending.codeUnits} newlines', () {
+        final source = File('Server/migration_v1_15_billing_receivables.sql')
+            .readAsStringSync();
+        final lf = _normalizeSource(source);
+        final variant = lf.replaceAll('\n', ending);
+        expect(_normalizeSource(variant), lf);
+        expect(_normalizeSource(variant), contains(expected));
+      });
+    }
+    test('normalization does not hide substantive SQL changes', () {
+      for (final ending in ['\n', '\r\n', '\r']) {
+        for (final changed in [
+          expected.replaceFirst('BIGINT', 'INT'),
+          expected.replaceFirst('NOT NULL', 'NULL'),
+          expected.replaceFirst('AUTO_INCREMENT', 'DEFAULT 1'),
+        ]) {
+          expect(_normalizeSource(changed.replaceAll('\n', ending)),
+              isNot(contains(expected)));
+        }
+      }
+    });
+  });
+
   group('Phase 3 tax arithmetic', () {
     test('VAT exclusive snapshots net, VAT and gross', () {
       final value = calculateInvoiceTax(
@@ -76,9 +110,9 @@ void main() {
   });
 
   group('Phase 3 server and migration contracts', () {
-    final migration = File('Server/migration_v1_15_billing_receivables.sql')
-        .readAsStringSync();
-    String server(String name) => File('Server/$name').readAsStringSync();
+    final migration =
+        _readSource('Server/migration_v1_15_billing_receivables.sql');
+    String server(String name) => _readSource('Server/$name');
 
     test('permanent CEH reference tombstone tables exist', () {
       expect(migration, contains('qbook_invoice_references'));
@@ -108,8 +142,7 @@ void main() {
           isNot(contains(
               "('1150','WHT Receivable','ASSET',(SELECT id FROM qbook_accounts_chart")));
 
-      final resume = File('Server/migration_v1_15_resume_after_1093.sql')
-          .readAsStringSync();
+      final resume = _readSource('Server/migration_v1_15_resume_after_1093.sql');
       expect(resume, contains('@ceh_v115_selected_schema := DATABASE()'));
       expect(resume, contains('table_schema=@ceh_v115_selected_schema'));
       expect(resume, contains("table_name='qbook_accounts_chart'"));
