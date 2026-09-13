@@ -1,6 +1,6 @@
 enum CehEnvironmentKind { production, staging }
 
-enum CehUpdateChannel { productionGithub, stagingVps }
+enum CehUpdateChannel { productionVps, stagingVps }
 
 class CehAppEnvironment {
   const CehAppEnvironment._({
@@ -21,6 +21,10 @@ class CehAppEnvironment {
   static const stagingApplicationId = 'com.concreteequipmenthire.ceh.staging';
   static const stagingUpdateManifestUrl =
       'https://staging.concretehireng.com/updates/staging/manifest.json';
+  static const productionUpdateManifestUrl =
+      'https://qbook.concretehireng.com/updates/production/manifest.json';
+  static const productionSigningCertificateSha256 =
+      'F859045ABA784241FD33F6DF182A484D716012350AC9DE64C88C9799CB79A30E';
   static const stagingSigningCertificateSha256 =
       'AFAFCE4A89211E7CBE6F0F665DB977F78CD96EF9343002F0A892B42F3FCDD057';
 
@@ -31,9 +35,9 @@ class CehAppEnvironment {
     appLabel: 'CEH',
     secureStorageNamespace: 'ceh',
     updateChecksEnabled: true,
-    updateChannel: CehUpdateChannel.productionGithub,
-    updateManifestUrl: null,
-    updateSigningCertificateSha256: null,
+    updateChannel: CehUpdateChannel.productionVps,
+    updateManifestUrl: productionUpdateManifestUrl,
+    updateSigningCertificateSha256: productionSigningCertificateSha256,
   );
 
   static const staging = CehAppEnvironment._(
@@ -57,6 +61,25 @@ class CehAppEnvironment {
   final CehUpdateChannel updateChannel;
   final String? updateManifestUrl;
   final String? updateSigningCertificateSha256;
+
+  // Constant selection is resolved before AOT tree shaking. Runtime validation
+  // below must not reference the other flavour's trust configuration.
+  static const compiledKind =
+      String.fromEnvironment('CEH_ENVIRONMENT', defaultValue: 'production');
+  static const current = compiledKind == 'staging' ? staging : production;
+  static const compiledApiUrl =
+      compiledKind == 'staging' ? stagingApiUrl : productionApiUrl;
+  static const compiledApplicationId = compiledKind == 'staging'
+      ? stagingApplicationId
+      : productionApplicationId;
+  static const compiledEnvironmentName =
+      compiledKind == 'staging' ? 'STAGING' : 'PRODUCTION';
+  String get updateEnvironment => kind.name.toUpperCase();
+  String get updateBridgeChannel =>
+      'com.concreteequipmenthire.ceh/${kind.name}_update';
+  String get updateCache => 'ceh-${kind.name}-updates';
+  RegExp get updateFilenamePattern =>
+      RegExp('^CEH-$updateEnvironment-[0-9A-Za-z._-]+\\.apk\$');
 
   bool get isProduction => kind == CehEnvironmentKind.production;
   bool get isStaging => kind == CehEnvironmentKind.staging;
@@ -97,18 +120,19 @@ class CehAppEnvironment {
     );
     const apiBaseUrl = String.fromEnvironment(
       'CEH_API_BASE_URL',
-      defaultValue: productionApiUrl,
+      defaultValue: compiledApiUrl,
     );
     const updateChecksEnabled = bool.fromEnvironment(
       'CEH_UPDATE_CHECKS',
       defaultValue: true,
     );
 
-    return validate(
-      environment: environment,
-      apiBaseUrl: apiBaseUrl,
-      updateChecksEnabled: updateChecksEnabled,
-    );
+    if ((environment != 'production' && environment != 'staging') ||
+        apiBaseUrl != current.apiBaseUrl ||
+        updateChecksEnabled != current.isProduction) {
+      throw StateError('Invalid compiled CEH environment configuration.');
+    }
+    return current;
   }
 }
 

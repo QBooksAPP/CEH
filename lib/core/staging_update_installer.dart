@@ -34,11 +34,11 @@ abstract interface class CehApkPlatformBridge {
 enum CehInstallerLaunchResult { launched, permissionRequested }
 
 class CehAndroidApkPlatformBridge implements CehApkPlatformBridge {
-  const CehAndroidApkPlatformBridge();
+  const CehAndroidApkPlatformBridge(
+      {this.environment = CehAppEnvironment.current});
+  final CehAppEnvironment environment;
 
-  static const _channel = MethodChannel(
-    'com.concreteequipmenthire.ceh/staging_update',
-  );
+  MethodChannel get _channel => MethodChannel(environment.updateBridgeChannel);
 
   @override
   Future<CehApkMetadata> inspectApk(String path) async {
@@ -53,7 +53,7 @@ class CehAndroidApkPlatformBridge implements CehApkPlatformBridge {
         value['environment'] is! String ||
         value['signingCertificateSha256'] is! String) {
       throw const CehUpdateException(
-        'Android could not validate the downloaded staging package.',
+        'Android could not validate the downloaded package.',
       );
     }
     return CehApkMetadata(
@@ -75,7 +75,7 @@ class CehAndroidApkPlatformBridge implements CehApkPlatformBridge {
       'launched' => CehInstallerLaunchResult.launched,
       'permissionRequested' => CehInstallerLaunchResult.permissionRequested,
       _ => throw const CehUpdateException(
-          'Android could not open the staging package installer.',
+          'Android could not open the package installer.',
         ),
     };
   }
@@ -105,7 +105,7 @@ class _DigestCaptureSink implements Sink<Digest> {
 
 class CehStagingUpdateInstaller {
   const CehStagingUpdateInstaller({
-    this.environment = CehAppEnvironment.staging,
+    this.environment = CehAppEnvironment.current,
     this.client,
     this.platformBridge = const CehAndroidApkPlatformBridge(),
     this.directoryProvider,
@@ -120,11 +120,11 @@ class CehStagingUpdateInstaller {
     CehUpdateInfo update, {
     required void Function(double progress) onProgress,
   }) async {
-    if (!environment.isStaging ||
-        update.environment != 'STAGING' ||
-        update.applicationId != CehAppEnvironment.stagingApplicationId) {
+    if (update.environment != environment.updateEnvironment ||
+        update.applicationId != environment.applicationId ||
+        (!environment.isStaging && update.buildNumber < 98)) {
       throw const CehUpdateException(
-        'Only approved CEH STAGING packages can use this installer.',
+        'Only approved CEH packages can use this installer.',
       );
     }
 
@@ -135,25 +135,26 @@ class CehStagingUpdateInstaller {
       environment.updateSigningCertificateSha256,
     );
     if (filename == null ||
+        !environment.updateFilenamePattern.hasMatch(filename) ||
         expectedSize == null ||
         expectedSha == null ||
         expectedCertificate == null ||
         update.signingCertificateSha256 != expectedCertificate) {
       throw const CehUpdateException(
-        'The staging APK verification metadata is incomplete.',
+        'The APK verification metadata is incomplete.',
       );
     }
 
     final uri = Uri.parse(update.downloadUrl);
     if (uri.scheme != 'https' ||
-        uri.host != 'staging.concretehireng.com' ||
+        uri.host != Uri.parse(environment.updateManifestUrl!).host ||
         (uri.hasPort && uri.port != 443) ||
         uri.userInfo.isNotEmpty ||
         uri.query.isNotEmpty ||
         uri.fragment.isNotEmpty ||
-        uri.path != '/updates/staging/$filename') {
+        uri.path != '/updates/${environment.kind.name}/$filename') {
       throw const CehUpdateException(
-        'The staging APK URL is outside the approved update channel.',
+        'The APK URL is outside the approved update channel.',
       );
     }
 
@@ -161,7 +162,7 @@ class CehStagingUpdateInstaller {
         ? await getTemporaryDirectory()
         : await directoryProvider!();
     final updateDirectory = Directory(
-      '${baseDirectory.path}${Platform.pathSeparator}ceh-staging-updates',
+      '${baseDirectory.path}${Platform.pathSeparator}ceh-${environment.kind.name}-updates',
     );
     await updateDirectory.create(recursive: true);
     final finalFile = File(
@@ -184,18 +185,18 @@ class CehStagingUpdateInstaller {
           await activeClient.send(request).timeout(const Duration(seconds: 30));
       if (response.isRedirect || response.request?.url != uri) {
         throw const CehUpdateException(
-          'The staging APK download attempted an unexpected redirect.',
+          'The APK download attempted an unexpected redirect.',
         );
       }
       if (response.statusCode != 200) {
         throw CehUpdateException(
-          'The staging APK download returned HTTP ${response.statusCode}.',
+          'The APK download returned HTTP ${response.statusCode}.',
         );
       }
       if (response.contentLength != null &&
           response.contentLength != expectedSize) {
         throw const CehUpdateException(
-          'The staging APK download size does not match the manifest.',
+          'The APK download size does not match the manifest.',
         );
       }
 
@@ -203,11 +204,12 @@ class CehStagingUpdateInstaller {
       hashSink = sha256.startChunkedConversion(digestSink);
       fileSink = partialFile.openWrite(mode: FileMode.writeOnly);
       var received = 0;
-      await for (final chunk in response.stream) {
+      await for (final chunk
+          in response.stream.timeout(const Duration(seconds: 30))) {
         received += chunk.length;
         if (received > expectedSize) {
           throw const CehUpdateException(
-            'The staging APK exceeded the approved manifest size.',
+            'The APK exceeded the approved manifest size.',
           );
         }
         hashSink.add(chunk);
@@ -222,12 +224,12 @@ class CehStagingUpdateInstaller {
 
       if (received != expectedSize) {
         throw const CehUpdateException(
-          'The staging APK download was incomplete.',
+          'The APK download was incomplete.',
         );
       }
       if (digestSink.value?.toString().toLowerCase() != expectedSha) {
         throw const CehUpdateException(
-          'The staging APK SHA-256 verification failed.',
+          'The APK SHA-256 verification failed.',
         );
       }
 
@@ -241,18 +243,18 @@ class CehStagingUpdateInstaller {
       } catch (error) {
         if (error is CehUpdateException) rethrow;
         throw const CehUpdateException(
-          'The downloaded CEH STAGING APK failed Android package validation.',
+          'The downloaded CEH APK failed Android package validation.',
         );
       }
       final actualCertificate =
           _normaliseFingerprint(metadata.signingCertificateSha256);
-      if (metadata.applicationId != CehAppEnvironment.stagingApplicationId ||
-          metadata.environment != 'STAGING' ||
+      if (metadata.applicationId != environment.applicationId ||
+          metadata.environment != environment.updateEnvironment ||
           metadata.versionCode != update.buildNumber ||
           metadata.versionName != update.versionName ||
           actualCertificate != expectedCertificate) {
         throw const CehUpdateException(
-          'The downloaded APK is not the approved CEH STAGING update.',
+          'The downloaded APK is not the approved CEH update.',
         );
       }
 
@@ -279,9 +281,12 @@ class CehStagingUpdateInstaller {
   Future<CehInstallerLaunchResult> launchInstaller(
     CehVerifiedStagingUpdate update,
   ) {
-    if (!environment.isStaging) {
+    if (update.metadata.applicationId != environment.applicationId ||
+        update.metadata.environment != environment.updateEnvironment ||
+        _normaliseFingerprint(update.metadata.signingCertificateSha256) !=
+            environment.updateSigningCertificateSha256) {
       throw const CehUpdateException(
-        'The staging installer is unavailable in production.',
+        'The package does not belong to this CEH update channel.',
       );
     }
     return platformBridge.launchInstaller(update.apkPath);

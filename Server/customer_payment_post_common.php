@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/billing_common.php';
 require_once __DIR__ . '/company_regional_common.php';
 require_once __DIR__ . '/bank_payment_common.php';
+require_once __DIR__ . '/customer_payment_draft_state.php';
 
 function customer_payment_post(PDO $db, array $user, array $input): array {
     if (($user['role'] ?? '') !== 'ADMIN') accounts_fail('FORBIDDEN', 403);
@@ -14,12 +15,19 @@ function customer_payment_post(PDO $db, array $user, array $input): array {
         $receipt = $statement->fetch();
         if (!$receipt) accounts_fail('RECEIPT_NOT_FOUND', 404);
         $backed = $receipt['statement_row_id'] !== null;
+        $reviewed = customer_payment_reviewed_intent($receipt);
         $payloadHash = bank_payment_payload_hash($input);
-        if ($backed && $receipt['status'] === 'POSTED') {
+        if (($backed || $reviewed !== null) && $receipt['status'] === 'POSTED') {
             if (!hash_equals((string)$receipt['posting_payload_sha256'], $payloadHash)) accounts_fail('PAYMENT_RETRY_PAYLOAD_MISMATCH', 409);
             return bank_payment_result($db, $receipt, true);
         }
         if ($receipt['status'] !== 'DRAFT') accounts_fail('RECEIPT_ALREADY_POSTED', 409);
+        if (customer_payment_legacy_review_required($receipt)) accounts_fail('LEGACY_PAYMENT_REVIEW_REQUIRED', 409);
+        if ($reviewed !== null) {
+            if ((int)($input['draft_revision'] ?? -1) !== (int)$receipt['draft_revision']) accounts_fail('PAYMENT_DRAFT_CHANGED_REFRESH',409);
+            if (!isset($input['allocations']) || bank_payment_payload_hash($input['allocations']) !== bank_payment_payload_hash($reviewed['allocations'])) accounts_fail('REVIEWED_PAYMENT_INTENT_CHANGED',409);
+            if (isset($input['wht_amount'])) accounts_fail('MIXED_WHT_CONTRACT_NOT_ALLOWED',409);
+        }
         billing_client($db, $receipt['client_id']);
         if ($backed) {
             bank_payment_statement($db, $receipt);
@@ -55,6 +63,7 @@ function customer_payment_post(PDO $db, array $user, array $input): array {
             if (isset($invoiceIds[$invoiceId])) accounts_fail('DUPLICATE_INVOICE_ALLOCATION', 409);
             $invoiceIds[$invoiceId] = true;
             $invoice = billing_invoice_outstanding($db, $invoiceId, true);
+            if ($reviewed !== null && (int)($allocation['outstanding_minor_snapshot'] ?? -1) !== (int)$invoice['outstanding_minor']) accounts_fail('PAYMENT_ALLOCATION_REVIEW_REQUIRED',409);
             if ($invoice['status'] !== 'ISSUED' || (int)$invoice['client_id'] !== (int)$receipt['client_id']) {
                 accounts_fail('INVOICE_ALLOCATION_MISMATCH', 409);
             }
@@ -124,6 +133,7 @@ function customer_payment_post(PDO $db, array $user, array $input): array {
         if ($whtAllocated !== $wht) accounts_fail('WHT_MUST_BE_FULLY_ALLOCATED', 409);
         $unallocatedCash = $cash - $cashAllocated;
         if ($unallocatedCash < 0) accounts_fail('RECEIPT_OVERALLOCATION', 409);
+        if ($reviewed !== null && $unallocatedCash > 0 && ($reviewed['client_credit_confirmed'] ?? false) !== true) accounts_fail('EXPLICIT_CLIENT_CREDIT_DECISION_REQUIRED',409);
 
         $certificateReceived = $certificateStatus === 'CERTIFICATE_RECEIVED';
         if ($certificateReceived) {
@@ -214,8 +224,10 @@ function customer_payment_post(PDO $db, array $user, array $input): array {
             'wht_allocated' => accounts_minor_decimal($whtAllocated),
             'unallocated_cash' => accounts_minor_decimal($unallocatedCash),
         ]);
-        if ($backed) {
+        if ($backed || $reviewed !== null) {
             $db->prepare('UPDATE qbook_customer_receipts SET posting_payload_sha256=? WHERE id=?')->execute([$payloadHash, $id]);
+        }
+        if ($backed) {
             $db->prepare("INSERT INTO qbook_bank_matches(statement_row_id,source_type,source_record_id,matched_by) VALUES(?,'CUSTOMER_RECEIPT',?,?)")
                 ->execute([$receipt['statement_row_id'], $id, $user['id']]);
             $matchId = (int)$db->lastInsertId();

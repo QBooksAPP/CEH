@@ -16,12 +16,7 @@ import java.security.MessageDigest
 class MainActivity : FlutterActivity() {
     private var bankPicker: BankStatementPicker? = null
     companion object {
-        private const val CHANNEL = "com.concreteequipmenthire.ceh/staging_update"
-        private const val STAGING_PACKAGE = "com.concreteequipmenthire.ceh.staging"
-        private const val STAGING_ENVIRONMENT = "STAGING"
         private const val ENVIRONMENT_METADATA = "com.concreteequipmenthire.ceh.ENVIRONMENT"
-        private const val STAGING_CERTIFICATE_SHA256 =
-            "AFAFCE4A89211E7CBE6F0F665DB977F78CD96EF9343002F0A892B42F3FCDD057"
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -30,14 +25,14 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.concreteequipmenthire.ceh/bank_picker")
             .setMethodCallHandler { call, result ->
                 if (call.method != "pick") result.notImplemented()
-                else if (packageName != STAGING_PACKAGE) result.error("UNAVAILABLE", "Unavailable", null)
+                else if (!isBankingPackage()) result.error("UNAVAILABLE", "Unavailable", null)
                 else bankPicker!!.pick(result)
             }
         // Read-only document viewing. Never use ACTION_SEND or grant write access.
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.concreteequipmenthire.ceh/bank_document")
             .setMethodCallHandler { call, result ->
                 try {
-                    requireStagingRuntime()
+                    check(isBankingPackage()) { "Bank documents are unavailable for this package." }
                     if (call.method != "viewOriginal") { result.notImplemented(); return@setMethodCallHandler }
                     val root = File(cacheDir, "bank-originals").canonicalFile
                     val file = File(call.argument<String>("path") ?: error("Missing file")).canonicalFile
@@ -51,12 +46,12 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 } catch (error: Throwable) { result.error("DOCUMENT_VIEW_FAILED", "No compatible viewer or document unavailable.", null) }
             }
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, UpdateTrust.CHANNEL)
             .setMethodCallHandler { call, result ->
                 try {
-                    requireStagingRuntime()
+                    requireUpdateRuntime()
                     val path = call.argument<String>("path")
-                        ?: error("A staging APK path is required.")
+                        ?: error("An APK path is required.")
                     when (call.method) {
                         "inspectApk" -> result.success(inspectApk(path).asMap())
                         "launchInstaller" -> result.success(launchInstaller(path))
@@ -64,17 +59,20 @@ class MainActivity : FlutterActivity() {
                     }
                 } catch (error: Throwable) {
                     result.error(
-                        "CEH_STAGING_UPDATE_REJECTED",
-                        error.message ?: "The staging update was rejected.",
+                        "CEH_UPDATE_REJECTED",
+                        error.message ?: "The update was rejected.",
                         null,
                     )
                 }
             }
     }
 
-    private fun requireStagingRuntime() {
-        check(applicationContext.packageName == STAGING_PACKAGE) {
-            "The staging update bridge is unavailable in production."
+    private fun isBankingPackage(): Boolean =
+        packageName == UpdateTrust.PACKAGE
+
+    private fun requireUpdateRuntime() {
+        check(applicationContext.packageName == UpdateTrust.PACKAGE) {
+            "The update bridge is unavailable for this package."
         }
     }
 
@@ -84,13 +82,13 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun approvedApkFile(path: String): File {
-        val updateRoot = File(cacheDir, "ceh-staging-updates").canonicalFile
+        val updateRoot = File(cacheDir, UpdateTrust.CACHE).canonicalFile
         val apk = File(path).canonicalFile
         check(apk.isFile && apk.name.endsWith(".apk", ignoreCase = false)) {
-            "The downloaded staging APK is unavailable."
+            "The downloaded APK is unavailable."
         }
         check(apk.path.startsWith(updateRoot.path + File.separator)) {
-            "The staging APK is outside the private update cache."
+            "The APK is outside the private update cache."
         }
         return apk
     }
@@ -113,7 +111,7 @@ class MainActivity : FlutterActivity() {
                 apk.path,
                 (metadataFlag or signingFlag).toInt(),
             )
-        } ?: error("Android could not parse the downloaded staging APK.")
+        } ?: error("Android could not parse the downloaded APK.")
     }
 
     @Suppress("DEPRECATION")
@@ -122,9 +120,9 @@ class MainActivity : FlutterActivity() {
             info.signingInfo?.apkContentsSigners
         } else {
             info.signatures
-        } ?: error("The staging APK has no signing certificate.")
+        } ?: error("The APK has no signing certificate.")
         check(signatures.size == 1) {
-            "The staging APK must have exactly one current signer."
+            "The APK must have exactly one current signer."
         }
         return MessageDigest.getInstance("SHA-256")
             .digest(signatures.single().toByteArray())
@@ -163,11 +161,12 @@ class MainActivity : FlutterActivity() {
             installed.versionCode.toLong()
         }
         check(
-            inspected.applicationId == STAGING_PACKAGE &&
-                inspected.environment == STAGING_ENVIRONMENT &&
+            inspected.applicationId == packageName &&
+                inspected.environment == UpdateTrust.ENVIRONMENT &&
                 inspected.versionCode > installedVersion &&
-                inspected.signingCertificateSha256 == STAGING_CERTIFICATE_SHA256,
-        ) { "The package failed the final CEH STAGING installation check." }
+                inspected.versionCode >= UpdateTrust.MINIMUM_VERSION &&
+                inspected.signingCertificateSha256 == UpdateTrust.CERTIFICATE_SHA256,
+        ) { "The package failed the final CEH installation check." }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             !packageManager.canRequestPackageInstalls()
@@ -183,7 +182,7 @@ class MainActivity : FlutterActivity() {
 
         val contentUri = FileProvider.getUriForFile(
             this,
-            "$packageName.update_files",
+            UpdateTrust.PROVIDER,
             apk,
         )
         val intent = Intent(Intent.ACTION_VIEW).apply {

@@ -14,6 +14,7 @@ import '../../models/mixer_context.dart';
 import '../../models/project.dart';
 import '../../models/session.dart';
 import '../../widgets/accounts_widgets.dart';
+import 'legacy_payment_review_screen.dart';
 
 Future<void> _shareBillingPdf(
     BuildContext context,
@@ -76,7 +77,13 @@ class _ClientPaymentsScreenState extends State<ClientPaymentsScreen> {
   Widget build(BuildContext context) => Scaffold(
       appBar: AppBar(
           title: const Text('Client Payments'),
-          actions: cehHomeAction(context)),
+          actions: [
+            TextButton(onPressed: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => LegacyPaymentDraftsScreen(
+                    api: widget.api, session: widget.session))),
+                child: const Text('Review drafts')),
+            ...cehHomeAction(context)
+          ]),
       floatingActionButton: FloatingActionButton.extended(
           label: const Text('New Client Payment'),
           icon: const Icon(Icons.add),

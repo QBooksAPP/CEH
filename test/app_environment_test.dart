@@ -110,7 +110,7 @@ void main() {
     );
     expect(
       CehAppEnvironment.production.updateChannel,
-      CehUpdateChannel.productionGithub,
+      CehUpdateChannel.productionVps,
     );
     expect(
       CehAppEnvironment.staging.updateChannel,

@@ -21,8 +21,10 @@ void main() {
 
   test('native installer pins staging package, signer and private cache', () {
     final kotlin = File(
-      'android/app/src/main/kotlin/com/concreteequipmenthire/ceh/MainActivity.kt',
-    ).readAsStringSync();
+          'android/app/src/main/kotlin/com/concreteequipmenthire/ceh/MainActivity.kt',
+        ).readAsStringSync() +
+        File('android/app/src/staging/kotlin/com/concreteequipmenthire/ceh/UpdateTrust.kt')
+            .readAsStringSync();
 
     expect(kotlin, contains('com.concreteequipmenthire.ceh.staging'));
     expect(

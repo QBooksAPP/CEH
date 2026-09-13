@@ -18,8 +18,8 @@ class CehUpdateInfo {
     required this.buildNumber,
     required this.downloadUrl,
     required this.releaseName,
-    this.environment = 'PRODUCTION',
-    this.applicationId = CehAppEnvironment.productionApplicationId,
+    this.environment = CehAppEnvironment.compiledEnvironmentName,
+    this.applicationId = CehAppEnvironment.compiledApplicationId,
     this.versionName = '',
     this.byteSize,
     this.sha256,
@@ -57,65 +57,12 @@ class CehUpdateService {
 
   bool get updateChecksEnabled => _environment.updateChecksEnabled;
 
-  static const latestProductionReleaseUrl =
-      'https://api.github.com/repos/QBooksAPP/CEH/releases/latest';
-
   Future<CehUpdateInfo?> checkForUpdate({
     required int currentBuild,
   }) async {
     if (!updateChecksEnabled) return null;
 
-    if (_environment.updateChannel == CehUpdateChannel.productionGithub) {
-      return _checkProduction(currentBuild: currentBuild);
-    }
     return _checkStaging(currentBuild: currentBuild);
-  }
-
-  Future<CehUpdateInfo?> _checkProduction({required int currentBuild}) async {
-    final ownedClient = client == null;
-    final activeClient = client ?? http.Client();
-    try {
-      final response = await activeClient.get(
-        Uri.parse(latestProductionReleaseUrl),
-        headers: const {
-          'Accept': 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28',
-        },
-      ).timeout(const Duration(seconds: 15));
-
-      if (response.statusCode != 200) return null;
-
-      final data = jsonDecode(response.body);
-      if (data is! Map) return null;
-
-      final tag = (data['tag_name'] ?? '').toString();
-      final match = RegExp(r'^build-(\d+)$').firstMatch(tag);
-      if (match == null) return null;
-
-      final latestBuild = int.tryParse(match.group(1) ?? '');
-      if (latestBuild == null || latestBuild <= currentBuild) return null;
-
-      final assets = data['assets'];
-      if (assets is! List) return null;
-
-      String? downloadUrl;
-      for (final asset in assets) {
-        if (asset is Map && asset['name']?.toString() == 'CEH.apk') {
-          downloadUrl = asset['browser_download_url']?.toString();
-          break;
-        }
-      }
-
-      if (downloadUrl == null || downloadUrl.isEmpty) return null;
-
-      return CehUpdateInfo(
-        buildNumber: latestBuild,
-        downloadUrl: downloadUrl,
-        releaseName: (data['name'] ?? tag).toString(),
-      );
-    } finally {
-      if (ownedClient) activeClient.close();
-    }
   }
 
   Future<CehUpdateInfo?> _checkStaging({required int currentBuild}) async {
@@ -124,7 +71,7 @@ class CehUpdateService {
         _normaliseFingerprint(_environment.updateSigningCertificateSha256);
     if (manifestValue == null || pinnedCertificate == null) {
       throw const CehUpdateException(
-        'The CEH STAGING update channel is not configured.',
+        'The CEH update channel is not configured.',
       );
     }
 
@@ -142,26 +89,27 @@ class CehUpdateService {
           await activeClient.send(request).timeout(const Duration(seconds: 15));
       if (response.isRedirect) {
         throw const CehUpdateException(
-          'The staging update manifest must not redirect.',
+          'The update manifest must not redirect.',
         );
       }
       if (response.statusCode != 200) {
         throw CehUpdateException(
-          'The staging update service returned HTTP ${response.statusCode}.',
+          'The update service returned HTTP ${response.statusCode}.',
         );
       }
       if (response.request?.url != manifestUri) {
         throw const CehUpdateException(
-          'The staging update manifest resolved to an unexpected URL.',
+          'The update manifest resolved to an unexpected URL.',
         );
       }
 
       final bytes = <int>[];
-      await for (final chunk in response.stream) {
+      await for (final chunk
+          in response.stream.timeout(const Duration(seconds: 15))) {
         bytes.addAll(chunk);
         if (bytes.length > 64 * 1024) {
           throw const CehUpdateException(
-            'The staging update manifest is unexpectedly large.',
+            'The update manifest is unexpectedly large.',
           );
         }
       }
@@ -171,12 +119,12 @@ class CehUpdateService {
         decoded = jsonDecode(utf8.decode(bytes));
       } catch (_) {
         throw const CehUpdateException(
-          'The staging update manifest is not valid JSON.',
+          'The update manifest is not valid JSON.',
         );
       }
       if (decoded is! Map<String, dynamic>) {
         throw const CehUpdateException(
-          'The staging update manifest has an invalid structure.',
+          'The update manifest has an invalid structure.',
         );
       }
 
@@ -193,14 +141,14 @@ class CehUpdateService {
       final apk = decoded['apk'];
 
       if (schemaVersion != 1 ||
-          channel != 'staging' ||
-          manifestEnvironment != 'STAGING' ||
-          applicationId != CehAppEnvironment.stagingApplicationId ||
+          channel != _environment.kind.name ||
+          manifestEnvironment != _environment.updateEnvironment ||
+          applicationId != _environment.applicationId ||
           versionName is! String ||
           versionName.isEmpty ||
           versionName.length > 80 ||
           versionCode is! int ||
-          versionCode <= 0 ||
+          versionCode < (_environment.isStaging ? 1 : 98) ||
           build is! int ||
           build <= 0 ||
           commit is! String ||
@@ -208,20 +156,20 @@ class CehUpdateService {
           publishedAtValue is! String ||
           apk is! Map<String, dynamic>) {
         throw const CehUpdateException(
-          'The staging update manifest failed validation.',
+          'The update manifest failed validation.',
         );
       }
       if (releaseNotesValue != null &&
           (releaseNotesValue is! String || releaseNotesValue.length > 2000)) {
         throw const CehUpdateException(
-          'The staging release notes failed validation.',
+          'The release notes failed validation.',
         );
       }
 
       final publishedAt = DateTime.tryParse(publishedAtValue)?.toUtc();
       if (publishedAt == null) {
         throw const CehUpdateException(
-          'The staging publication timestamp is invalid.',
+          'The publication timestamp is invalid.',
         );
       }
 
@@ -231,7 +179,7 @@ class CehUpdateService {
       final shaValue = apk['sha256'];
       final signingValue = apk['signingCertificateSha256'];
       if (filename is! String ||
-          !RegExp(r'^CEH-STAGING-[0-9A-Za-z._-]+\.apk$').hasMatch(filename) ||
+          !_environment.updateFilenamePattern.hasMatch(filename) ||
           urlValue is! String ||
           byteSize is! int ||
           byteSize <= 0 ||
@@ -240,7 +188,7 @@ class CehUpdateService {
           !RegExp(r'^[0-9a-f]{64}$').hasMatch(shaValue) ||
           signingValue is! String) {
         throw const CehUpdateException(
-          'The staging APK metadata failed validation.',
+          'The APK metadata failed validation.',
         );
       }
 
@@ -248,13 +196,13 @@ class CehUpdateService {
       if (signingCertificate == null ||
           signingCertificate != pinnedCertificate) {
         throw const CehUpdateException(
-          'The staging manifest signing certificate is not approved.',
+          'The manifest signing certificate is not approved.',
         );
       }
 
       final downloadUri = Uri.tryParse(urlValue);
       if (downloadUri == null) {
-        throw const CehUpdateException('The staging APK URL is invalid.');
+        throw const CehUpdateException('The APK URL is invalid.');
       }
       _requireApprovedStagingUri(downloadUri, expectedFilename: filename);
 
@@ -263,7 +211,8 @@ class CehUpdateService {
       return CehUpdateInfo(
         buildNumber: versionCode,
         downloadUrl: downloadUri.toString(),
-        releaseName: 'CEH STAGING $versionName',
+        releaseName:
+            'CEH ${_environment.isStaging ? "STAGING " : ""}$versionName',
         environment: manifestEnvironment,
         applicationId: applicationId,
         versionName: versionName,
@@ -280,20 +229,20 @@ class CehUpdateService {
     }
   }
 
-  static void _requireApprovedStagingUri(
+  void _requireApprovedStagingUri(
     Uri uri, {
     required String expectedFilename,
   }) {
-    final expectedPath = '/updates/staging/$expectedFilename';
+    final expectedPath = '/updates/${_environment.kind.name}/$expectedFilename';
     if (uri.scheme != 'https' ||
-        uri.host != 'staging.concretehireng.com' ||
+        uri.host != Uri.parse(_environment.updateManifestUrl!).host ||
         (uri.hasPort && uri.port != 443) ||
         uri.userInfo.isNotEmpty ||
         uri.query.isNotEmpty ||
         uri.fragment.isNotEmpty ||
         uri.path != expectedPath) {
       throw const CehUpdateException(
-        'The update URL is outside the approved CEH STAGING channel.',
+        'The update URL is outside the approved CEH channel.',
       );
     }
   }

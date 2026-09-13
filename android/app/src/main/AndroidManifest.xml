@@ -5,6 +5,11 @@
         android:label="@string/app_name"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <provider android:name="com.concreteequipmenthire.ceh.BankDocumentProvider"
+            android:authorities="${applicationId}.bank_documents"
+            android:exported="false" android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/ceh_bank_document_paths" />
+        </provider>
         <activity
             android:name=".MainActivity"
             android:exported="true"

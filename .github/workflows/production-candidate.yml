@@ -1,0 +1,71 @@
+name: CEH production candidate - artifact only
+
+on:
+  workflow_dispatch:
+    inputs:
+      approved_commit:
+        description: Exact reviewed 40-character candidate commit SHA
+        required: true
+        type: string
+      confirm_candidate_only:
+        description: Authorize private candidate build only, not publication
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ceh-production-candidate
+  cancel-in-progress: false
+
+jobs:
+  candidate:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirm_candidate_only == true && github.event.repository.private == true
+    environment: production-android
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify exact approved source
+        env:
+          APPROVED_COMMIT: ${{ inputs.approved_commit }}
+        run: |
+          set -euo pipefail
+          [[ "$APPROVED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$APPROVED_COMMIT"
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Validate candidate
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter analyze
+          flutter test
+          python3 -B -m unittest discover -s test -p apk_trust_isolation_test.py
+      - name: Build and verify without publication
+        env:
+          CEH_KEYSTORE_BASE64: ${{ secrets.CEH_KEYSTORE_BASE64 }}
+          CEH_KEYSTORE_PASSWORD: ${{ secrets.CEH_KEYSTORE_PASSWORD }}
+          CEH_KEY_PASSWORD: ${{ secrets.CEH_KEY_PASSWORD }}
+          CEH_KEY_ALIAS: ${{ secrets.CEH_KEY_ALIAS }}
+        run: python3 tools/production_candidate.py
+      - name: Upload private verified candidate only
+        uses: actions/upload-artifact@v4
+        with:
+          name: CEH-production-candidate-0.4.0-97-${{ github.sha }}
+          path: |
+            candidate-output/CEH-0.4.0-97.apk
+            candidate-output/manifest.json
+          if-no-files-found: error
+          retention-days: 7
+          include-hidden-files: false

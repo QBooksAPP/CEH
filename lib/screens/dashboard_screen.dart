@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../core/app_environment.dart';
 import '../core/ceh_theme.dart';
@@ -114,28 +113,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final update = _update;
     if (update == null) return;
 
-    if (environment.isStaging) {
-      await _downloadStagingUpdate(update);
-      return;
-    }
-
-    final uri = Uri.parse(update.downloadUrl);
-    final opened = await launchUrl(
-      uri,
-      mode: LaunchMode.externalApplication,
-    );
-
-    if (!opened && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open the CEH update.')),
-      );
-    }
+    await _downloadStagingUpdate(update);
   }
 
   Future<void> _downloadStagingUpdate(CehUpdateInfo update) async {
     if (_downloadingUpdate) return;
-    final installer =
-        widget.stagingUpdateInstaller ?? const CehStagingUpdateInstaller();
+    final installer = widget.stagingUpdateInstaller ??
+        CehStagingUpdateInstaller(
+          environment: environment,
+          platformBridge: CehAndroidApkPlatformBridge(environment: environment),
+        );
     CehVerifiedStagingUpdate verified;
 
     if (mounted) {
@@ -161,7 +148,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             content: Text(
               error is CehUpdateException
                   ? error.message
-                  : 'The CEH STAGING update could not be downloaded.',
+                  : 'The CEH update could not be downloaded.',
             ),
           ),
         );
@@ -182,7 +169,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'Allow CEH STAGING to install updates, then tap Download & Install again.',
+              'Allow CEH to install updates, then retry the update.',
             ),
           ),
         );
@@ -194,7 +181,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             content: Text(
               error is CehUpdateException
                   ? error.message
-                  : 'Android could not open the staging installer.',
+                  : 'Android could not open the installer.',
             ),
           ),
         );
@@ -346,9 +333,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         '(build ${_update!.buildNumber}) is ready.'
                                     : 'Build ${_update!.buildNumber} is ready.',
                               ),
-                              if (environment.isStaging &&
-                                  (_update!.releaseNotes?.trim().isNotEmpty ??
-                                      false)) ...[
+                              if ((_update!.releaseNotes?.trim().isNotEmpty ??
+                                  false)) ...[
                                 const SizedBox(height: 6),
                                 Text(_update!.releaseNotes!.trim()),
                               ],

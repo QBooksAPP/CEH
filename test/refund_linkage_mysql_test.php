@@ -65,7 +65,7 @@ try {
     $db->exec("INSERT INTO qbook_general_expenses VALUES(1,100000,1,'APPROVED',1),(2,1000,1,'APPROVED',2),(3,1000,1,'APPROVED',3),(4,1000,1,'APPROVED',4),(5,1000,1,'DRAFT',NULL)");
     $db->exec('ALTER TABLE qbook_general_expenses ADD created_from_statement_row_id BIGINT NULL UNIQUE');
     $db->exec('CREATE TABLE qbook_bank_matches(statement_row_id BIGINT PRIMARY KEY,source_type VARCHAR(60),source_record_id BIGINT) ENGINE=InnoDB');
-    $db->exec('CREATE TABLE qbook_customer_receipts(id BIGINT PRIMARY KEY,statement_row_id BIGINT UNIQUE,status VARCHAR(30)) ENGINE=InnoDB');
+    $db->exec('CREATE TABLE qbook_customer_receipts(id BIGINT PRIMARY KEY,statement_row_id BIGINT UNIQUE,status VARCHAR(30),journal_id BIGINT NULL) ENGINE=InnoDB');
     $db->exec('INSERT INTO qbook_general_expense_references VALUES(1,1)');
     $db->exec("INSERT INTO qbook_financial_journals VALUES(1,'Original immutable journal'); INSERT INTO qbook_financial_journal_lines VALUES(1,100000,0),(2,0,100000)");
     $insert = $db->prepare("INSERT INTO qbook_bank_statement_rows VALUES(?,?,?,'2026-09-01',?,?,'UNMATCHED')");

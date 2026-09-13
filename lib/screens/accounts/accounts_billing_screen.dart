@@ -548,6 +548,7 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
   }
 
   Future<void> _sharePdf(BillingInvoiceDetail invoice) async {
+    if (invoice.originalPdfUnavailable) return;
     setState(() => _busy = true);
     try {
       final pdf = await widget.api.invoicePdf(widget.session, invoice.id);
@@ -895,6 +896,23 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
                           onPressed: _busy ? null : () => _issue(i),
                           child: const Text('Issue Invoice')))
                 ])
+              else if (i.originalPdfUnavailable)
+                const Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Original invoice PDF unavailable',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
+                        SizedBox(height: 8),
+                        Text('This historical invoice does not contain the '
+                            'company/payment snapshot required to reproduce the '
+                            'original document. The accounting record remains available.'),
+                      ],
+                    ),
+                  ),
+                )
               else
                 FilledButton.icon(
                     onPressed: _busy ? null : () => _sharePdf(i),

@@ -131,7 +131,8 @@ void main() {
       );
     });
 
-    test('production updater still queries only GitHub releases', () async {
+    test('production updater rejects legacy GitHub payloads without fallback',
+        () async {
       Uri? requestUri;
       final client = MockClient((request) async {
         requestUri = request.url;
@@ -151,14 +152,14 @@ void main() {
           request: request,
         );
       });
-      final update = await CehUpdateService(
-        environment: CehAppEnvironment.production,
-        client: client,
-      ).checkForUpdate(currentBuild: 96);
+      await expectLater(
+          CehUpdateService(
+            environment: CehAppEnvironment.production,
+            client: client,
+          ).checkForUpdate(currentBuild: 97),
+          throwsA(isA<CehUpdateException>()));
       expect(
-          requestUri.toString(), CehUpdateService.latestProductionReleaseUrl);
-      expect(update!.buildNumber, 97);
-      expect(update.downloadUrl, contains('github.com'));
+          requestUri.toString(), CehAppEnvironment.productionUpdateManifestUrl);
     });
   });
 
@@ -208,6 +209,7 @@ void main() {
 
     CehStagingUpdateInstaller installer({List<int>? responseBytes}) =>
         CehStagingUpdateInstaller(
+          environment: CehAppEnvironment.staging,
           client: MockClient((request) async => http.Response.bytes(
                 responseBytes ?? apkBytes,
                 200,

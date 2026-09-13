@@ -1048,6 +1048,21 @@ class CehApiClient {
     return data;
   }
 
+  Future<Map<String, dynamic>> ordinaryPaymentReview(CehSession session,
+      {int? receiptId, int page = 1, Map<String, dynamic>? action}) async {
+    if (action != null) {
+      return _postJson(session, 'customer_payment_review.php', action,
+          'PAYMENT_REVIEW_FAILED');
+    }
+    final uri = Uri.parse('$baseUrl/customer_payment_review.php').replace(
+        queryParameters: {'page': '$page', if (receiptId != null) 'receipt_id': '$receiptId'});
+    final response = await http.get(uri, headers: authHeaders(session))
+        .timeout(const Duration(seconds: 25));
+    final data = _decodeObject(response);
+    _requireOk(response, data, 'PAYMENT_REVIEW_FAILED');
+    return data;
+  }
+
   Future<Map<String, dynamic>> postCustomerPayment(
       CehSession session, Map<String, dynamic> payload) async {
     final data = await _postJson(session, 'customer_receipt_post.php', payload,

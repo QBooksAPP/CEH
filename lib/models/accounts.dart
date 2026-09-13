@@ -605,6 +605,7 @@ class BillingInvoiceDetail {
       this.originEstimateId,
       this.originEstimateReference,
       this.rawStatus = '',
+      this.originalPdfUnavailable = false,
       this.canVoid = false,
       this.voidBlockingReasons = const [],
       this.voidReason,
@@ -615,6 +616,7 @@ class BillingInvoiceDetail {
       this.reversalJournalId,
       this.reversalJournalReference});
   final String rawStatus;
+  final bool originalPdfUnavailable;
   final bool canVoid;
   final List<String> voidBlockingReasons;
   final String? voidReason, voidedByName, voidedAt, effectiveVoidDate;
@@ -690,6 +692,14 @@ class BillingInvoiceDetail {
             : _int(json['origin_estimate_id']),
         originEstimateReference: json['origin_estimate_reference']?.toString(),
         rawStatus: '${json['raw_status'] ?? json['status'] ?? ''}',
+        originalPdfUnavailable:
+            '${json['raw_status'] ?? json['status'] ?? ''}' == 'ISSUED' &&
+            const [
+              'company_legal_name_snapshot',
+              'company_address_snapshot',
+              'tax_identifier_snapshot',
+              'payment_bank_details_snapshot',
+            ].any((field) => '${json[field] ?? ''}'.trim().isEmpty),
         canVoid: json['can_void'] == true,
         voidBlockingReasons:
             (json['void_blocking_reasons'] as List? ?? const [])
